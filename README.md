@@ -24,3 +24,34 @@ It's not usable yet but the tests should give a relatively clear picture as to
 where I'm going.
 
 `example.mlfe` is a work in progress showing roughly what I'm aiming for.
+
+# Parsing Approach
+I'm planning on parsing/validating over several passes:
+
+1. `yecc` for the initial rough syntax form and basic module structure.  This is
+   where exports and top-level function definitions are collected.
+2. Validating function definitions and bindings inside of them.  This stage uses
+   environments to track whether a function application is referring to a known
+   function or a variable and further turns what would be a no-argument function
+   into a variable binding in `let` forms.  The output of this stage is a
+   concrete AST for the compiler later.
+3. Eventual type checking.  I suspect this will have some awkward overlaps with
+the environments built in the previous step.
+
+# Current TODO
+An unordered list of what it will take to get to something usable, even before
+worrying about tooling around dependency management, etc (doesn't include type
+checker):
+
+- unit type/constructor
+- binaries
+- booleans
+- strings
+- inter-module calls
+- basic erlang FFI
+- base number type for arithmetic
+- remaining arithmetic operations (*, /, %)
+- structs
+- pattern matching guards
+- maps
+- data types (tagged unions)
