@@ -19,6 +19,24 @@ I want a variant of ML on the Erlang VM with:
 I'll flesh out this list better later, the above is a very rough and incomplete
 set of ideal things.
 
+# FFI Thoughts
+At present I'm thinking the FFI to call erlang code will take a standard
+module-function-arguments tuple and a set of patterns to coerce the return into
+a known type:
+
+    type ExpectedUnion = Atom | String | Int
+    type Try = Ok ExpectedUnion | Error String
+
+    erlang_ffi (module_name, returns_term_or_atom, [a_message])
+    | Atom a -> Ok a
+    | String s -> Ok s
+    | Int i -> Ok i
+    | _ -> Error "returned something I don't know"
+
+There's clearly room to provide a version that skips the pattern match and
+succeeds if dialyzer supplies a return type for the function that matches a type
+in scope (union or otherwise).
+
 # Using It
 It's not usable yet but the tests should give a relatively clear picture as to
 where I'm going.
