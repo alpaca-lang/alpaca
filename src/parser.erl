@@ -104,7 +104,8 @@ let_binding_test_() ->
                                       operator={add, 1},
                                       left={symbol, 1, "x"},
                                       right={symbol, 1, "x"}}},
-                        {apply, {symbol, 1, "double"}, [{int, 1, 2}]}}}, 
+                        #mlfe_apply{name={symbol, 1, "double"}, 
+                                    args=[{int, 1, 2}]}}}, 
                    parse(scanner:scan("let double x = x + x in double 2"))),
      ?_assertEqual({ok, {defn,
                          [{symbol, 1, "doubler"}, {symbol, 1, "x"}],
@@ -115,7 +116,8 @@ let_binding_test_() ->
                                        operator={add, 2}, 
                                        left={symbol, 2, "x"}, 
                                        right={symbol, 2, "x"}}},
-                          {apply, {symbol, 3, "double"}, [{int, 3, 2}]}}}}, 
+                          #mlfe_apply{name={symbol, 3, "double"},
+                                      args=[{int, 3, 2}]}}}}, 
                    parse(scanner:scan(
                            "doubler x =\n"
                            "  let double x = x + x in\n"
@@ -139,8 +141,10 @@ let_binding_test_() ->
                                     right={symbol,1,"b"}}},
                        #mlfe_infix{type=undefined,
                                    operator={add,1},
-                                   left={apply,{symbol,1,"xer"},[{symbol,1,"x"}]},
-                                   right={apply,{symbol,1,"yer"},[{symbol,1,"y"}]}}}}}},
+                                   left=#mlfe_apply{name={symbol,1,"xer"},
+                                                    args=[{symbol,1,"x"}]},
+                                   right=#mlfe_apply{name={symbol,1,"yer"},
+                                                     args=[{symbol,1,"y"}]}}}}}},
                    parse(scanner:scan(
                            "my_fun x y ="
                            "  let xer a = a + a in"
@@ -149,12 +153,19 @@ let_binding_test_() ->
     ].
 
 application_test_() ->
-    [?_assertEqual({ok, {apply, {symbol, 1, "double"}, [{int, 1, 2}]}},
+    [?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "double"},
+                                    args=[{int, 1, 2}]}},
                   parse(scanner:scan("double 2"))),
-     ?_assertEqual({ok, {apply, {symbol, 1, "two"}, [{symbol, 1, "symbols"}]}},
+     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "two"}, 
+                                    args=[{symbol, 1, "symbols"}]}},
                    parse(scanner:scan("two symbols"))),
-     ?_assertEqual({ok, {apply, {symbol, 1, "x"}, [{symbol, 1, "y"}, {symbol, 1, "z"}]}},
-                   parse(scanner:scan("x y z")))
+     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "x"}, 
+                                    args=[{symbol, 1, "y"}, {symbol, 1, "z"}]}},
+                   parse(scanner:scan("x y z"))),
+     ?_assertEqual({ok, {error, {invalid_fun_application,
+                            {int, 1, 1},
+                           [{symbol, 1, "x"}, {symbol, 1, "y"}]}}},
+                    parse(scanner:scan("1 x y")))
     ].
 
 
@@ -195,31 +206,20 @@ expr_test_() ->
                                     left={int, 1, 1}, 
                                     right={int, 1, 5}}},
                   parse(scanner:scan("1 + 5"))),
-     ?_assertEqual({ok, {apply,
-                         {symbol, 1, "add"}, 
-                         [{symbol, 1, "x"},
-                          {int, 1, 2}]}},
+     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "add"}, 
+                                    args=[{symbol, 1, "x"},
+                                          {int, 1, 2}]}},
                    parse(scanner:scan("add x 2"))),
-     ?_assertEqual({ok, {apply,
-                         {symbol, 1, "tuple_func"},
-                         [{tuple, [{symbol, 1, "x"}, {int, 1, 1}]},
-                          {symbol, 1, "y"}]}},
+     ?_assertEqual({ok, 
+                    #mlfe_apply{name={symbol, 1, "double"},
+                                args=[{symbol, 1, "x"}]}}, 
+                   parse(scanner:scan("(double x)"))),
+     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "tuple_func"},
+                                    args=[{tuple, [{symbol, 1, "x"}, 
+                                                   {int, 1, 1}]},
+                                          {symbol, 1, "y"}]}},
                    parse(scanner:scan("tuple_func (x, 1) y")))
     ].
-
-nesting_test_() ->
-    [?_assertEqual({ok, 
-                    {apply, 
-                     {symbol, 1, "double"},
-                     [{symbol, 1, "x"}]}}, 
-                   parse(scanner:scan("(double x)"))),
-     ?_assertEqual({ok, {apply, 
-                         {symbol, 1, "add"},
-                         [{apply,{symbol, 1, "double"}, [{symbol, 1, "x"}]},
-                          {int, 1, 2}]}},
-                   parse(scanner:scan("add (double x) 2")))
-    ].
-
 
 module_with_let_test() ->
     Code =
@@ -240,9 +240,8 @@ module_with_let_test() ->
                                   operator={add,6},
                                   left={symbol,6,"a"},
                                   right={symbol,6,"b"}}},
-                     {apply,
-                      {symbol,7,"adder"},
-                      [{symbol,7,"x"},{symbol,7,"y"}]}}}]}, 
+                     #mlfe_apply{name={symbol,7,"adder"},
+                                 args=[{symbol,7,"x"},{symbol,7,"y"}]}}}]},
                  parse_module(Code)).
 
 match_test_() ->
@@ -254,9 +253,8 @@ match_test_() ->
                            "| 0 -> zero\n"
                            "| _ -> non_zero\n"))),
      ?_assertEqual({ok, {match, 
-                         {apply, 
-                          {symbol, 1, "add"}, 
-                          [{symbol, 1, "x"}, {symbol, 1, "y"}]},
+                         #mlfe_apply{name={symbol, 1, "add"}, 
+                                     args=[{symbol, 1, "x"}, {symbol, 1, "y"}]},
                          [{match_clause, {int, 2, 0}, {atom, 2, "zero"}},
                           {match_clause, {int, 3, 1}, {atom, 3, "one"}},
                           {match_clause, {'_', 4}, {atom, 4, "more_than_one"}}
@@ -343,10 +341,11 @@ simple_module_test() ->
                                 left={symbol,5,"x"},
                                 right={symbol,5,"y"}}},
                    {[{symbol,7,"add1"},{symbol,7,"x"}],
-                    {apply,{symbol,7,"adder"},[{symbol,7,"x"},{int,7,1}]}},
+                    #mlfe_apply{name={symbol,7,"adder"},
+                                args=[{symbol,7,"x"},{int,7,1}]}},
                    {[{symbol,9,"add"},{symbol,9,"x"},{symbol,9,"y"}],
-                    {apply,{symbol,9,"adder"},
-                     [{symbol,9,"x"},{symbol,9,"y"}]}},
+                    #mlfe_apply{name={symbol,9,"adder"},
+                                args=[{symbol,9,"x"},{symbol,9,"y"}]}},
                    {[{symbol,11,"sub"},{symbol,11,"x"},{symbol,11,"y"}],
                     #mlfe_infix{type=undefined,
                                 operator={minus,11},

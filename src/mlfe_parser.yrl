@@ -96,8 +96,12 @@ case '$1' of
     [T] ->
         T;
     [{symbol, _, _} = S | T] ->
-        {apply, S, T}
+        #mlfe_apply{name=S, args=T};
+%        {apply, S, T};
+    [Term|Args] ->
+        {error, {invalid_fun_application, Term, Args}}
 end.
+
 simple_expr -> binding : '$1'.
 simple_expr -> match_with : '$1'.
 simple_expr -> cons : '$1'.

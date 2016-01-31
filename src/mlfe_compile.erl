@@ -70,7 +70,7 @@ compile_expr(_, {nil, _}) ->
     cerl:c_nil();
 compile_expr(Env, {cons, H, T}) ->
     cerl:c_cons(compile_expr(Env, H), compile_expr(Env, T));
-compile_expr(Env, {apply, {symbol, _Line, Name}, Args}) ->
+compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
     io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
