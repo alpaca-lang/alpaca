@@ -31,15 +31,14 @@ compile_export({N, A}) ->
 
 compile_funs(Env, Funs, []) ->
     {Env, Funs};
-compile_funs(Env, Funs, [{ArgList, _}=F|T]) ->
-    [{symbol, _, N} | Args] = ArgList,
-    NewEnv = [{N, length(Args)}|Env],
+compile_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=A}=F|T]) ->
+    NewEnv = [{N, length(A)}|Env],
     io:format("Env is ~w~n", [NewEnv]),
     NewF = compile_fun(NewEnv, F),
     compile_funs(NewEnv, [NewF|Funs], T).
 
-compile_fun(Env, {ArgList, Body}) ->
-    [{symbol, _, N} | Args] = ArgList,
+%% TODO:  account for functions that take only unit
+compile_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     FName = cerl:c_fname(list_to_atom(N), length(Args)),
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
     B = compile_expr(Env, Body),
@@ -82,17 +81,15 @@ compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
 %% Pattern, expression
 compile_expr(Env, {match_clause, P, E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
-compile_expr(Env, {pattern_tuple, T}) ->
-    cerl:c_tuple([compile_expr(Env, E) || E <- T]);
 compile_expr(Env, {tuple, T}) ->
     cerl:c_tuple([compile_expr(Env, E) || E <- T]);
 %% Expressions, Clauses
 compile_expr(Env, {match, E, Cs}) ->
     cerl:c_case(compile_expr(Env, E), [compile_expr(Env, X) || X <- Cs]);
-compile_expr(Env, {bind_in, {defn, Args, Body}, E}) ->
-    [{symbol, _, N} | RemArgs] = Args,
-    NewEnv = [{N, length(RemArgs)}|Env],
-    cerl:c_letrec([compile_fun(NewEnv, {Args, Body})], compile_expr(NewEnv, E)).
+compile_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
+    #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
+    NewEnv = [{N, length(A)}|Env],
+    cerl:c_letrec([compile_fun(NewEnv, F)], compile_expr(NewEnv, E)).
     
 
 -ifdef(TEST).

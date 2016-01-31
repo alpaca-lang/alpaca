@@ -63,11 +63,12 @@
                          | mlfe_binding()
                            .
 
--record(fun_binding, {def :: fun_def(),
+-record(fun_binding, {def :: mlfe_fun_def(),
                       expr :: mlfe_expression()
                      }).
                       
--record(var_binding, {name :: mlfe_symbol(),
+-record(var_binding, {type=undefined :: atom(),
+                      name :: mlfe_symbol(),
                       to_bind :: mlfe_expression(),
                       expr :: mlfe_expression()
                      }).
@@ -97,11 +98,11 @@
                      }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
--record (fun_def, {type=undefined :: atom(),
+-record (mlfe_fun_def, {type=undefined :: atom(),
                    name :: atom(),
                    args :: list(mlfe_symbol())
                          | mlfe_unit(),
                    body :: mlfe_expression()
                   }).
 
--type fun_def() :: #fun_def{}.
+-type mlfe_fun_def() :: #mlfe_fun_def{}.

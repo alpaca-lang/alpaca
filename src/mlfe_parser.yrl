@@ -75,8 +75,8 @@ match_clauses -> match_clause match_clauses : ['$1'|'$2'].
 
 match_with  -> match simple_expr with match_clauses : {match, '$2', '$4'}.
 
-defn -> terms assign simple_expr : {defn, '$1', '$3'}.
-binding -> let defn in simple_expr : {bind_in, '$2', '$4'}.
+defn -> terms assign simple_expr : make_define('$1', '$3').
+binding -> let defn in simple_expr : make_binding('$2', '$4').
 
 module_def -> module symbol : 
 {symbol, _, Name} = '$2',
@@ -121,3 +121,37 @@ make_infix(Op, A, B) ->
                 operator=Op,
                 left=A,
                 right=B}.
+
+make_define([{symbol, _, N} = Name|A], Expr) ->
+    io:format("~nDefining function ~w ~s~n", [Name, N]),
+    
+    case validate_args(A) of
+        {ok, Args} ->
+            #mlfe_fun_def{name=Name, args=Args, body=Expr};
+        {error, _} = E ->
+            E
+    end;
+make_define([BadName|Args], Expr) ->
+    {error, {invalid_function_name, BadName, Args}}.
+
+%% Unit is only valid for single argument functions as a way around
+%% the problem of distinguishing between nullary functions and 
+%% variable bindings in let forms:
+validate_args([{unit, _}]=Args) ->
+    {ok, Args};
+validate_args(Args) ->
+    validate_args(Args, []).
+
+validate_args([], GoodArgs) ->
+    {ok, lists:reverse(GoodArgs)};
+validate_args([{symbol, _, _}=A|T], Memo) ->
+    validate_args(T, [A|Memo]);
+validate_args([NonSymbol|_], _) ->
+    {error, {invalid_fun_parameter, NonSymbol}}.
+
+%% Convert a nullary def into a variable binding:
+make_binding(#mlfe_fun_def{name=N, args=[], body=B}, Expr) ->
+    #var_binding{name=N, to_bind=B, expr=Expr};
+make_binding(Def, Expr) ->
+    #fun_binding{def=Def, expr=Expr}.
+    
