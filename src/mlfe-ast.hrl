@@ -19,6 +19,13 @@
                     | mlfe_string()
                       .
 
+-record(mlfe_infix, {type :: atom(),
+                     operator :: {atom(), integer()},
+                     left :: mlfe_expression(),
+                     right :: mlfe_expression()
+                    }).
+-type mlfe_infix() :: #mlfe_infix{}.
+
 -record(mlfe_cons, {type :: atom(),
                     val :: mlfe_expression(),
                     tail :: mlfe_cons()
@@ -48,6 +55,7 @@
 -type mlfe_match() :: #mlfe_match{}.
 
 -type mlfe_expression() :: mlfe_const()
+                         | mlfe_infix()
                          | mlfe_apply()
                          | mlfe_list()
                          | mlfe_tuple()
