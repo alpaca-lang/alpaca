@@ -89,7 +89,7 @@
 %%% since core erlang wants the arity specified in the first case but _not_
 %%% in the third.
 
--record(mlfe_apply, {type = undefined :: atom(),
+-record(mlfe_apply, {type=undefined :: atom(),
                      name :: {mlfe_symbol(), integer()} |
                               {atom(), mlfe_symbol(), integer()} |
                               mlfe_symbol(),
@@ -97,7 +97,8 @@
                      }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
--record (fun_def, {name :: atom(),
+-record (fun_def, {type=undefined :: atom(),
+                   name :: atom(),
                    args :: list(mlfe_symbol())
                          | mlfe_unit(),
                    body :: mlfe_expression()
