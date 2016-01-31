@@ -91,13 +91,15 @@ fun_and_arity -> symbol '/' int :
 export_list -> fun_and_arity : ['$1'].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
 
+%% TODO:  we should be able to apply the tail to the result of
+%%        an expression that yields a function.  This check 
+%%        must move to the eventual type checker.
 simple_expr -> terms :
 case '$1' of
     [T] ->
         T;
     [{symbol, _, _} = S | T] ->
         #mlfe_apply{name=S, args=T};
-%        {apply, S, T};
     [Term|Args] ->
         {error, {invalid_fun_application, Term, Args}}
 end.
