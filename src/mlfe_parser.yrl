@@ -55,7 +55,8 @@ tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
 tuple -> '(' tuple_list ')' : {tuple, '$2'}.
 
-infix -> term op term : {infix, '$2', '$1', '$3'}.
+infix -> term op term : make_infix('$2', '$1', '$3').
+%{infix, '$2', '$1', '$3'}.
 
 term -> const : '$1'.
 term -> tuple : '$1'.
@@ -107,4 +108,10 @@ expr -> export_def : '$1'.
 expr -> defn : '$1'.
 
 Erlang code.
--include("mlfe-ast.hrl").
+-include("mlfe_ast.hrl").
+
+make_infix(Op, A, B) ->
+    #mlfe_infix{type=undefined,
+                operator=Op,
+                left=A,
+                right=B}.

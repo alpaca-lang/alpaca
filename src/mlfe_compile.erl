@@ -1,6 +1,8 @@
 -module(mlfe_compile).
 -export([compile/1]).
 
+-include("mlfe_ast.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -43,7 +45,7 @@ compile_fun(Env, {ArgList, Body}) ->
     B = compile_expr(Env, Body),
     {FName, cerl:c_fun(A, B)}.
 
-compile_expr(Env, {infix, Op, A, B}) ->
+compile_expr(Env, #mlfe_infix{operator=Op, left=A, right=B}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
       compile_expr(Env, Op),

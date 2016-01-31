@@ -1,6 +1,8 @@
 -module(parser).
 -export([parse/1, parse_module/1]).
 
+-include("mlfe_ast.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -58,19 +60,19 @@ symbols_test_() ->
     ].
 
 infix_test_() ->
-    [?_assertEqual({ok, {infix,
-                         {add, 1},
-                         {symbol, 1, "x"},
-                         {symbol, 1, "x"}}},
+    [?_assertEqual({ok, #mlfe_infix{type=undefined,
+                                    operator={add, 1},
+                                    left={symbol, 1, "x"},
+                                    right={symbol, 1, "x"}}},
                    begin
                        Res = scanner:scan("x + x"),
                        io:format("RES is ~w~n", [Res]),
                        parse(Res)
                    end),
-     ?_assertEqual({ok, {infix,
-                         {minus, 1},
-                         {int, 1, 5},
-                         {int, 1, 3}}},
+     ?_assertEqual({ok, #mlfe_infix{type=undefined,
+                                   operator={minus, 1},
+                                   left={int, 1, 5},
+                                   right={int, 1, 3}}},
                    parse(scanner:scan("5 - 3")))
     ].
 
@@ -80,17 +82,17 @@ defn_test_() ->
                    parse(scanner:scan("x=5"))),
      ?_assertEqual({ok, {defn, 
                          [{symbol, 1, "double"}, {symbol, 1, "x"}],
-                         {infix, 
-                          {add, 1}, 
-                          {symbol, 1, "x"},
-                          {symbol, 1, "x"}}}},
+                         #mlfe_infix{type=undefined,
+                                     operator={add, 1}, 
+                                     left={symbol, 1, "x"},
+                                     right={symbol, 1, "x"}}}},
                   parse(scanner:scan("double x = x + x"))),
      ?_assertEqual({ok, {defn,
                          [{symbol, 1, "add"}, {symbol, 1, "x"}, {symbol, 1, "y"}],
-                         {infix,
-                          {add, 1},
-                          {symbol, 1, "x"},
-                          {symbol, 1, "y"}}}},
+                         #mlfe_infix{type=undefined,
+                                     operator={add, 1},
+                                     left={symbol, 1, "x"},
+                                     right={symbol, 1, "y"}}}},
                    parse(scanner:scan("add x y = x + y")))
     ].
 
@@ -98,10 +100,10 @@ let_binding_test_() ->
     [?_assertEqual({ok, {bind_in,
                          {defn,
                           [{symbol, 1, "double"}, {symbol, 1, "x"}],
-                          {infix,
-                           {add, 1},
-                           {symbol, 1, "x"},
-                           {symbol, 1, "x"}}},
+                          #mlfe_infix{type=undefined,
+                                      operator={add, 1},
+                                      left={symbol, 1, "x"},
+                                      right={symbol, 1, "x"}}},
                         {apply, {symbol, 1, "double"}, [{int, 1, 2}]}}}, 
                    parse(scanner:scan("let double x = x + x in double 2"))),
      ?_assertEqual({ok, {defn,
@@ -109,7 +111,10 @@ let_binding_test_() ->
                          {bind_in,
                           {defn,
                            [{symbol, 2, "double"}, {symbol, 2, "x"}],
-                           {infix, {add, 2}, {symbol, 2, "x"}, {symbol, 2, "x"}}},
+                           #mlfe_infix{type=undefined, 
+                                       operator={add, 2}, 
+                                       left={symbol, 2, "x"}, 
+                                       right={symbol, 2, "x"}}},
                           {apply, {symbol, 3, "double"}, [{int, 3, 2}]}}}}, 
                    parse(scanner:scan(
                            "doubler x =\n"
@@ -121,15 +126,21 @@ let_binding_test_() ->
                      {bind_in,
                       {defn,
                        [{symbol,1,"xer"},{symbol,1,"a"}],
-                       {infix,{add,1},{symbol,1,"a"},{symbol,1,"a"}}},
+                       #mlfe_infix{type=undefined,
+                                   operator={add,1},
+                                   left={symbol,1,"a"},
+                                   right={symbol,1,"a"}}},
                       {bind_in,
                        {defn,
                         [{symbol,1,"yer"},{symbol,1,"b"}],
-                        {infix,{add,1},{symbol,1,"b"},{symbol,1,"b"}}},
-                       {infix,
-                        {add,1},
-                        {apply,{symbol,1,"xer"},[{symbol,1,"x"}]},
-                        {apply,{symbol,1,"yer"},[{symbol,1,"y"}]}}}}}},
+                        #mlfe_infix{type=undefined,
+                                    operator={add,1},
+                                    left={symbol,1,"b"},
+                                    right={symbol,1,"b"}}},
+                       #mlfe_infix{type=undefined,
+                                   operator={add,1},
+                                   left={apply,{symbol,1,"xer"},[{symbol,1,"x"}]},
+                                   right={apply,{symbol,1,"yer"},[{symbol,1,"y"}]}}}}}},
                    parse(scanner:scan(
                            "my_fun x y ="
                            "  let xer a = a + a in"
@@ -159,7 +170,10 @@ module_parse_test() ->
                    % name and args:
                    [{symbol,5,"add"},{symbol,5,"x"},{symbol,5,"y"}],
                    % body:
-                   {infix,{add,5},{symbol,5,"x"},{symbol,5,"y"}}}]},
+                   #mlfe_infix{type=undefined,
+                               operator={add,5},
+                               left={symbol,5,"x"},
+                               right={symbol,5,"y"}}}]},
     ?assertEqual(Expected, parse_module(Module)).
 
 module_def_test_() ->
@@ -176,7 +190,10 @@ export_test_() ->
 
 expr_test_() ->
     [?_assertEqual({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
-     ?_assertEqual({ok, {infix, {add, 1}, {int, 1, 1}, {int, 1, 5}}},
+     ?_assertEqual({ok, #mlfe_infix{type=undefined,
+                                    operator={add, 1}, 
+                                    left={int, 1, 1}, 
+                                    right={int, 1, 5}}},
                   parse(scanner:scan("1 + 5"))),
      ?_assertEqual({ok, {apply,
                          {symbol, 1, "add"}, 
@@ -219,10 +236,10 @@ module_with_let_test() ->
                       [{symbol,6,"adder"},
                        {symbol,6,"a"},
                        {symbol,6,"b"}],
-                      {infix,
-                       {add,6},
-                       {symbol,6,"a"},
-                       {symbol,6,"b"}}},
+                      #mlfe_infix{type=undefined,
+                                  operator={add,6},
+                                  left={symbol,6,"a"},
+                                  right={symbol,6,"b"}}},
                      {apply,
                       {symbol,7,"adder"},
                       [{symbol,7,"x"},{symbol,7,"y"}]}}}]}, 
@@ -321,16 +338,20 @@ simple_module_test() ->
     ?assertEqual({ok,"test_mod",
                   [{"add",2},{"sub",2}],
                   [{[{symbol,5,"adder"},{symbol,5,"x"},{symbol,5,"y"}],
-                    {infix,{add,5},{symbol,5,"x"},{symbol,5,"y"}}},
+                    #mlfe_infix{type=undefined,
+                                operator={add,5},
+                                left={symbol,5,"x"},
+                                right={symbol,5,"y"}}},
                    {[{symbol,7,"add1"},{symbol,7,"x"}],
                     {apply,{symbol,7,"adder"},[{symbol,7,"x"},{int,7,1}]}},
                    {[{symbol,9,"add"},{symbol,9,"x"},{symbol,9,"y"}],
                     {apply,{symbol,9,"adder"},
                      [{symbol,9,"x"},{symbol,9,"y"}]}},
                    {[{symbol,11,"sub"},{symbol,11,"x"},{symbol,11,"y"}],
-                    {infix,{minus,11},
-                     {symbol,11,"x"},
-                     {symbol,11,"y"}}}]}, 
+                    #mlfe_infix{type=undefined,
+                                operator={minus,11},
+                                left={symbol,11,"x"},
+                                right={symbol,11,"y"}}}]}, 
                  parse_module(Code)).
 
 
