@@ -54,7 +54,20 @@ I'm planning on parsing/validating over several passes:
    into a variable binding in `let` forms.  The output of this stage is a
    concrete AST for the compiler later.
 3. Eventual type checking.  I suspect this will have some awkward overlaps with
-the environments built in the previous step.
+the environments built in the previous step and may need to be integrated there.
+
+## AST Construction
+Several passes internally
+
+- for each source file (module), validate function definitions and report syntax
+  errors, e.g. params that are neither unit nor variable bindings (so-called
+  "symbols" from the `yecc` parser), building a list of top-level internal-only
+  and exported functions for each module.  The output of this is a global
+  environment containing all exported functions by module and an environment of
+  top-level functions per module.
+- for each function defined in each module, check that every variable and
+  function reference is valid.  For function applications, arity is checked
+  where the function applied is not in a variable.
 
 # Current TODO
 An unordered list of what it will take to get to something usable, even before
