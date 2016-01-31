@@ -21,6 +21,7 @@ Rules.
 \:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
+()    : {token, {unit, TokenLine}}.
 
 %% Reserved words
 let    : {token, {'let', TokenLine}}.

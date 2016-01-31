@@ -14,7 +14,7 @@ expr simple_expr.
 Terminals 
 
 module export 
-boolean int float atom string '_'
+boolean int float atom string '_' unit
 symbol
 assign add minus
 '[' ']' ':'
@@ -40,6 +40,7 @@ const -> float : '$1'.
 const -> atom : '$1'.
 const -> string : '$1'.
 const -> '_' : '$1'.
+const -> unit : '$1'.
 
 cons -> '[' ']' : 
   {_, L} = '$1',
@@ -104,3 +105,6 @@ expr -> simple_expr : '$1'.
 expr -> module_def : '$1'.
 expr -> export_def : '$1'.
 expr -> defn : '$1'.
+
+Erlang code.
+-include("mlfe-ast.hrl").

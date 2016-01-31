@@ -69,6 +69,9 @@ Several passes internally
   function reference is valid.  For function applications, arity is checked
   where the function applied is not in a variable.
 
+Entirely possible that the `yecc` parser should just return proper error
+reporting structures alongside a better AST than the tuples it does now.
+
 # Current TODO
 An unordered list of what it will take to get to something usable, even before
 worrying about tooling around dependency management, etc (doesn't include type
