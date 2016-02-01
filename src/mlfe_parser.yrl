@@ -4,7 +4,7 @@ op infix
 const
 cons nil
 term terms nested_terms
-tuple tuple_list
+unit tuple tuple_list
 defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
@@ -14,7 +14,7 @@ expr simple_expr.
 Terminals 
 
 module export 
-boolean int float atom string '_' unit
+boolean int float atom string '_'
 symbol
 assign add minus
 '[' ']' ':'
@@ -50,6 +50,10 @@ cons -> '[' term ']' :
   #mlfe_cons{head='$2', tail={nil, L}}.
 cons -> term ':' cons : #mlfe_cons{head='$1', tail='$3'}.
 cons -> term ':' term : #mlfe_cons{head='$1', tail='$3'}.
+
+unit -> '(' ')':
+  {_, L} = '$1',
+  {unit, L}.
 
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].

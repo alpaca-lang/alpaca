@@ -31,13 +31,23 @@ compile_export({N, A}) ->
 
 compile_funs(Env, Funs, []) ->
     {Env, Funs};
+compile_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}]}=F|T]) ->
+    NewEnv = [{N, 0}|Env],
+    io:format("Env is ~w~n", [NewEnv]),
+    NewF = compile_fun(NewEnv, F),
+    compile_funs(NewEnv, [NewF|Funs], T);
 compile_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=A}=F|T]) ->
     NewEnv = [{N, length(A)}|Env],
     io:format("Env is ~w~n", [NewEnv]),
     NewF = compile_fun(NewEnv, F),
     compile_funs(NewEnv, [NewF|Funs], T).
 
-%% TODO:  account for functions that take only unit
+compile_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
+    io:format("~nCompiling unit function ~s~n", [N]),
+    FName = cerl:c_fname(list_to_atom(N), 0),
+    A = [],
+    B = compile_expr(Env, Body),
+    {FName, cerl:c_fun(A, B)};
 compile_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     FName = cerl:c_fname(list_to_atom(N), length(Args)),
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
@@ -69,6 +79,14 @@ compile_expr(_, {nil, _}) ->
     cerl:c_nil();
 compile_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(compile_expr(Env, H), compile_expr(Env, T));
+compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
+    FName = case proplists:get_value(Name, Env) of
+                undefined ->
+                    cerl:c_var(list_to_atom(Name));
+                0 ->
+                    cerl:c_fname(list_to_atom(Name), 0)
+            end,
+    cerl:c_apply(FName, []);
 compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
     io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
@@ -86,10 +104,20 @@ compile_expr(Env, #mlfe_tuple{values=Vs}) ->
 %% Expressions, Clauses
 compile_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(compile_expr(Env, E), [compile_expr(Env, X) || X <- Cs]);
+
 compile_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
-    NewEnv = [{N, length(A)}|Env],
-    cerl:c_letrec([compile_fun(NewEnv, F)], compile_expr(NewEnv, E)).
+    Arity = case A of
+                [{unit, _}] -> 0;
+                L -> length(L)
+            end,
+    NewEnv = [{N, Arity}|Env],
+    cerl:c_letrec([compile_fun(NewEnv, F)], compile_expr(NewEnv, E));
+compile_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) -> 
+    %% TODO:  environment supporting vars
+    cerl:c_let([cerl:c_var(list_to_atom(N))], 
+               compile_expr(Env, E1),
+               compile_expr(Env, E2)).
     
 
 -ifdef(TEST).
@@ -110,24 +138,35 @@ module_with_internal_apply_test() ->
         "add x y = adder x y",
     {ok, _, Bin} = compile(Code).
 
-parser_compilation_test() ->
+fun_and_var_binding_test() ->
+    Name = fun_and_var_binding,
+    FN = atom_to_list(Name) ++ ".beam",
     Code =
-        "module test_mod\n\n"
-        "export add/2, sub/2, add1/1\n\n"
-        "adder x y = x + y\n\n"
-        "add1 x = adder x 1\n\n"
-        "add x y = adder x y\n\n"
-        "sub x y = x - y",
-    {ok, _, Bin} = compile(Code).
+        "module fun_and_var_binding\n\n"
+        "export test_func/1\n\n"
+        "test_func x =\n"
+        "  let y = x + 2 in\n"
+        "  let double z = z + z in\n"
+        "  double y",
+    {ok, _, Bin} = compile(Code),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    ?assertEqual(8, Name:test_func(2)),
+    true = code:delete(Name).
 
-parser_letrec_test() ->
+unit_function_test() ->
+    Name = unit_function,
+    FN = atom_to_list(Name) ++ ".beam",
     Code =
-        "module test_mod\n\n"
-        "export add/2\n\n"
-        "add x y =\n"
-        "  let adder a b = a + b in\n"
-        "  adder x y",
-    {ok, _, Bin} = compile(Code).
+        "module unit_function\n\n"
+        "export test_func/1\n\n"
+        "test_func x =\n"
+        "  let y () = 5 in\n"
+        "  let z = 3 in\n"
+        "  x + ((y ()) + z)",
+    {ok, _, Bin} = compile(Code),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    ?assertEqual(10, Name:test_func(2)),
+    true = code:delete(Name).
 
 parser_nested_letrec_test() ->
     Code =
