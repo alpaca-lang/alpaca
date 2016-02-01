@@ -47,12 +47,12 @@ where I'm going.
 I'm planning on parsing/validating over several passes:
 
 1. `yecc` for the initial rough syntax form and basic module structure.  This is
-   where exports and top-level function definitions are collected.
+   where exports and top-level function definitions are collected and the
+   initial construction of the AST is completed.
 2. Validating function definitions and bindings inside of them.  This stage uses
    environments to track whether a function application is referring to a known
-   function or a variable and further turns what would be a no-argument function
-   into a variable binding in `let` forms.  The output of this stage is a
-   concrete AST for the compiler later.
+   function or a variable.  The output of this stage is either a module
+   definition or a list of errors found.
 3. Eventual type checking.  I suspect this will have some awkward overlaps with
 the environments built in the previous step and may need to be integrated there.
 
@@ -64,20 +64,16 @@ Several passes internally
   "symbols" from the `yecc` parser), building a list of top-level internal-only
   and exported functions for each module.  The output of this is a global
   environment containing all exported functions by module and an environment of
-  top-level functions per module.
+  top-level functions per module _or_ a list of found errors.
 - for each function defined in each module, check that every variable and
   function reference is valid.  For function applications, arity is checked
   where the function applied is not in a variable.
-
-Entirely possible that the `yecc` parser should just return proper error
-reporting structures alongside a better AST than the tuples it does now.
 
 # Current TODO
 An unordered list of what it will take to get to something usable, even before
 worrying about tooling around dependency management, etc (doesn't include type
 checker):
 
-- unit type/constructor
 - binaries
 - booleans
 - strings
