@@ -261,43 +261,56 @@ module_with_let_test() ->
                  parse_module(Code)).
 
 match_test_() ->
-    [?_assertEqual({ok, {match, {symbol, 1, "x"},
-                         [{match_clause, {int, 2, 0}, {symbol, 2, "zero"}},
-                          {match_clause, {'_', 3}, {symbol, 3, "non_zero"}}]}},
+    [?_assertEqual({ok, #mlfe_match{match_expr={symbol, 1, "x"},
+                                    clauses=[#mlfe_clause{
+                                                pattern={int, 2, 0}, 
+                                                result={symbol, 2, "zero"}},
+                                             #mlfe_clause{
+                                                pattern={'_', 3}, 
+                                                result={symbol, 3, "non_zero"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
                            "| 0 -> zero\n"
                            "| _ -> non_zero\n"))),
-     ?_assertEqual({ok, {match, 
-                         #mlfe_apply{name={symbol, 1, "add"}, 
-                                     args=[{symbol, 1, "x"}, {symbol, 1, "y"}]},
-                         [{match_clause, {int, 2, 0}, {atom, 2, "zero"}},
-                          {match_clause, {int, 3, 1}, {atom, 3, "one"}},
-                          {match_clause, {'_', 4}, {atom, 4, "more_than_one"}}
+     ?_assertEqual({ok, #mlfe_match{match_expr=#mlfe_apply{
+                                                  name={symbol, 1, "add"}, 
+                                                  args=[{symbol, 1, "x"}, 
+                                                        {symbol, 1, "y"}]},
+                                    clauses=[#mlfe_clause{pattern={int, 2, 0}, 
+                                                          result={atom, 2, "zero"}},
+                                             #mlfe_clause{pattern={int, 3, 1}, 
+                                                          result={atom, 3, "one"}},
+                                             #mlfe_clause{pattern={'_', 4}, 
+                                                          result={atom, 4, 
+                                                                  "more_than_one"}}
                          ]}},
                    parse(scanner:scan(
                            "match add x y with\n"
                            "| 0 -> 'zero\n"
                            "| 1 -> 'one\n"
                            "| _ -> 'more_than_one\n"))),
-     ?_assertEqual({ok, {match,
-                         {symbol, 1, "x"},
-                         [{match_clause, 
-                          {tuple, [{'_', 2}, {symbol, 2, "x"}]},
-                          {atom, 2, "anything_first"}},
-                         {match_clause,
-                          {tuple, [{int, 3, 1}, {symbol, 3, "x"}]},
-                          {atom, 3, "one_first"}}]}},
+     ?_assertEqual({ok, #mlfe_match{match_expr={symbol, 1, "x"},
+                                    clauses=[#mlfe_clause{
+                                                pattern={tuple, 
+                                                         [{'_', 2}, 
+                                                          {symbol, 2, "x"}]},
+                                                result={atom, 2, "anything_first"}},
+                                             #mlfe_clause{
+                                                pattern={tuple, 
+                                                         [{int, 3, 1}, 
+                                                          {symbol, 3, "x"}]},
+                                                result={atom, 3, "one_first"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
                            "| (_, x) -> 'anything_first\n"
                            "| (1, x) -> 'one_first\n"))),
-     ?_assertEqual({ok, {match,
-                         {tuple, [{symbol, 1, "x"}, {symbol, 1, "y"}]},
-                         [{match_clause, {tuple, 
-                                          [{tuple, [{'_', 2}, {int, 2, 1}]},
-                                           {symbol, 2, "a"}]},
-                           {atom, 2, "nested_tuple"}}]}},
+     ?_assertEqual({ok, #mlfe_match{
+                           match_expr={tuple, [{symbol, 1, "x"}, {symbol, 1, "y"}]},
+                           clauses=[#mlfe_clause{
+                                       pattern={tuple, 
+                                                [{tuple, [{'_', 2}, {int, 2, 1}]},
+                                                 {symbol, 2, "a"}]},
+                                       result={atom, 2, "nested_tuple"}}]}},
                    parse(scanner:scan(
                            "match (x, y) with\n"
                            "| ((_, 1), a) -> 'nested_tuple")))
@@ -327,12 +340,14 @@ list_test_() ->
                          {int, 1, 1},
                          {symbol, 1, "y"}}},
                    parse(scanner:scan("1 : y"))),
-     ?_assertEqual({ok,{match,
-                        {symbol,1,"x"},
-                        [{match_clause,{nil,2},{nil,2}},
-                         {match_clause,
-                          {cons,{symbol,3,"h"},{symbol,3,"t"}},
-                          {symbol,3,"h"}}]}},
+     ?_assertEqual({ok, #mlfe_match{
+                           match_expr={symbol,1,"x"},
+                           clauses=[#mlfe_clause{pattern={nil,2},
+                                                 result={nil,2}},
+                                    #mlfe_clause{pattern={cons,
+                                                          {symbol,3,"h"},
+                                                          {symbol,3,"t"}},
+                                                 result={symbol,3,"h"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
                            "| [] -> []\n"

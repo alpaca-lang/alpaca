@@ -79,12 +79,12 @@ compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
             end,
     cerl:c_apply(FName, [compile_expr(Env, E) || E <- Args]);
 %% Pattern, expression
-compile_expr(Env, {match_clause, P, E}) ->
+compile_expr(Env, #mlfe_clause{pattern=P, result=E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
 compile_expr(Env, {tuple, T}) ->
     cerl:c_tuple([compile_expr(Env, E) || E <- T]);
 %% Expressions, Clauses
-compile_expr(Env, {match, E, Cs}) ->
+compile_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(compile_expr(Env, E), [compile_expr(Env, X) || X <- Cs]);
 compile_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,

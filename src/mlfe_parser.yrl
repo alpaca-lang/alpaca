@@ -69,11 +69,11 @@ terms -> term terms : ['$1'|'$2'].
 
 match_pattern -> term : '$1'.
 match_pattern -> cons : '$1'.
-match_clause -> '|' match_pattern '->' simple_expr : {match_clause, '$2', '$4'}.
+match_clause -> '|' match_pattern '->' simple_expr : #mlfe_clause{pattern='$2', result='$4'}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause match_clauses : ['$1'|'$2'].
 
-match_with  -> match simple_expr with match_clauses : {match, '$2', '$4'}.
+match_with  -> match simple_expr with match_clauses : #mlfe_match{match_expr='$2', clauses='$4'}.
 
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
