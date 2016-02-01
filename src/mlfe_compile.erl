@@ -67,7 +67,7 @@ compile_expr(_Env, {symbol, _, V}) ->
     cerl:c_var(list_to_atom(V));
 compile_expr(_, {nil, _}) ->
     cerl:c_nil();
-compile_expr(Env, {cons, H, T}) ->
+compile_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(compile_expr(Env, H), compile_expr(Env, T));
 compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
     io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
@@ -81,8 +81,8 @@ compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
 %% Pattern, expression
 compile_expr(Env, #mlfe_clause{pattern=P, result=E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
-compile_expr(Env, {tuple, T}) ->
-    cerl:c_tuple([compile_expr(Env, E) || E <- T]);
+compile_expr(Env, #mlfe_tuple{values=Vs}) ->
+    cerl:c_tuple([compile_expr(Env, E) || E <- Vs]);
 %% Expressions, Clauses
 compile_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(compile_expr(Env, E), [compile_expr(Env, X) || X <- Cs]);

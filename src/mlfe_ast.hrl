@@ -26,8 +26,8 @@
                     }).
 -type mlfe_infix() :: #mlfe_infix{}.
 
--record(mlfe_cons, {type :: atom(),
-                    val :: mlfe_expression(),
+-record(mlfe_cons, {type=undefined :: atom(),
+                    head :: mlfe_expression(),
                     tail :: mlfe_cons()
                           | mlfe_nil()
                    }).
@@ -36,7 +36,7 @@
 -type mlfe_nil() :: {nil, integer()}.
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
--record(mlfe_tuple, {type :: list(atom()),
+-record(mlfe_tuple, {type=undefined :: atom(),
                      arity :: integer(),
                      values :: list(mlfe_expression)
                     }).

@@ -47,13 +47,14 @@ cons -> '[' ']' :
   {nil, L}.
 cons -> '[' term ']' : 
   {_, L} = '$3',
-  {cons, '$2', {nil, L}}.
-cons -> term ':' cons : {cons, '$1', '$3'}.
-cons -> term ':' term : {cons, '$1', '$3'}.
+  #mlfe_cons{head='$2', tail={nil, L}}.
+cons -> term ':' cons : #mlfe_cons{head='$1', tail='$3'}.
+cons -> term ':' term : #mlfe_cons{head='$1', tail='$3'}.
 
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
-tuple -> '(' tuple_list ')' : {tuple, '$2'}.
+tuple -> '(' tuple_list ')' : 
+  #mlfe_tuple{arity=length('$2'), values='$2'}.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
 %{infix, '$2', '$1', '$3'}.
@@ -69,7 +70,8 @@ terms -> term terms : ['$1'|'$2'].
 
 match_pattern -> term : '$1'.
 match_pattern -> cons : '$1'.
-match_clause -> '|' match_pattern '->' simple_expr : #mlfe_clause{pattern='$2', result='$4'}.
+match_clause -> '|' match_pattern '->' simple_expr : 
+  #mlfe_clause{pattern='$2', result='$4'}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause match_clauses : ['$1'|'$2'].
 
