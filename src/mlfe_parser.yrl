@@ -61,7 +61,6 @@ tuple -> '(' tuple_list ')' :
   #mlfe_tuple{arity=length('$2'), values='$2'}.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
-%{infix, '$2', '$1', '$3'}.
 
 term -> const : '$1'.
 term -> tuple : '$1'.
@@ -123,10 +122,17 @@ Erlang code.
 -include("mlfe_ast.hrl").
 
 make_infix(Op, A, B) ->
-    #mlfe_infix{type=undefined,
-                operator=Op,
-                left=A,
-                right=B}.
+%    #mlfe_infix{type=undefined,
+%                operator=Op,
+%                left=A,
+%                right=B}.
+    Name = case Op of
+      {add, L} -> {erlang, {symbol, L, "+"}, 2};
+      {minus, L} -> {erlang, {symbol, L, "-"}, 2}
+    end,
+    #mlfe_apply{type=undefined,
+                name=Name,
+                args=[A, B]}.
 
 make_define([{symbol, _, N} = Name|A], Expr) ->
     io:format("~nDefining function ~w ~s~n", [Name, N]),

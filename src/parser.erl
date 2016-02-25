@@ -60,23 +60,6 @@ symbols_test_() ->
                    parse(scanner:scan("oneSymbol")))
     ].
 
-infix_test_() ->
-    [?_assertEqual({ok, #mlfe_infix{type=undefined,
-                                    operator={add, 1},
-                                    left={symbol, 1, "x"},
-                                    right={symbol, 1, "x"}}},
-                   begin
-                       Res = scanner:scan("x + x"),
-                       io:format("RES is ~w~n", [Res]),
-                       parse(Res)
-                   end),
-     ?_assertEqual({ok, #mlfe_infix{type=undefined,
-                                   operator={minus, 1},
-                                   left={int, 1, 5},
-                                   right={int, 1, 3}}},
-                   parse(scanner:scan("5 - 3")))
-    ].
-
 defn_test_() ->
     [
      %% TODO:  I'm not sure if I want to allow nullary functions
@@ -88,19 +71,19 @@ defn_test_() ->
                    parse(scanner:scan("x=5"))),
      ?_assertEqual({ok, #mlfe_fun_def{name={symbol, 1, "double"}, 
                                        args=[{symbol, 1, "x"}],
-                                       body=#mlfe_infix{
+                                       body=#mlfe_apply{
                                                type=undefined,
-                                               operator={add, 1}, 
-                                               left={symbol, 1, "x"},
-                                               right={symbol, 1, "x"}}}},
+                                               name={erlang, {symbol, 1, "+"}, 2}, 
+                                               args=[{symbol, 1, "x"},
+                                                     {symbol, 1, "x"}]}}},
                   parse(scanner:scan("double x = x + x"))),
      ?_assertEqual({ok, #mlfe_fun_def{name={symbol, 1, "add"}, 
                                       args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
-                                      body=#mlfe_infix{
+                                      body=#mlfe_apply{
                                               type=undefined,
-                                              operator={add, 1},
-                                              left={symbol, 1, "x"},
-                                              right={symbol, 1, "y"}}}},
+                                              name={erlang, {symbol, 1, "+"}, 2},
+                                              args=[{symbol, 1, "x"},
+                                                    {symbol, 1, "y"}]}}},
                    parse(scanner:scan("add x y = x + y")))
     ].
 
@@ -109,11 +92,11 @@ let_binding_test_() ->
                            def=#mlfe_fun_def{
                                   name={symbol, 1, "double"}, 
                                   args=[{symbol, 1, "x"}],
-                                  body=#mlfe_infix{
+                                  body=#mlfe_apply{
                                           type=undefined,
-                                          operator={add, 1},
-                                          left={symbol, 1, "x"},
-                                          right={symbol, 1, "x"}}},
+                                          name={erlang, {symbol, 1, "+"}, 2},
+                                          args=[{symbol, 1, "x"},
+                                                {symbol, 1, "x"}]}},
                            expr=#mlfe_apply{
                                    name={symbol, 1, "double"}, 
                                    args=[{int, 1, 2}]}}}, 
@@ -134,11 +117,11 @@ let_binding_test_() ->
                                    def=#mlfe_fun_def{
                                           name={symbol, 2, "double"}, 
                                           args=[{symbol, 2, "x"}],
-                                          body=#mlfe_infix{
+                                          body=#mlfe_apply{
                                                   type=undefined, 
-                                                  operator={add, 2}, 
-                                                  left={symbol, 2, "x"}, 
-                                                  right={symbol, 2, "x"}}},
+                                                  name={erlang, {symbol, 2, "+"}, 2}, 
+                                                  args=[{symbol, 2, "x"}, 
+                                                        {symbol, 2, "x"}]}},
                                    expr=#mlfe_apply{
                                            name={symbol, 3, "double"},
                                            args=[{int, 3, 2}]}}}}, 
@@ -153,29 +136,29 @@ let_binding_test_() ->
                                    def=#mlfe_fun_def{
                                           name={symbol,1,"xer"},
                                           args=[{symbol,1,"a"}],
-                                          body=#mlfe_infix{
+                                          body=#mlfe_apply{
                                                   type=undefined,
-                                                  operator={add,1},
-                                                  left={symbol,1,"a"},
-                                                  right={symbol,1,"a"}}},
+                                                  name={erlang, {symbol, 1, "+"}, 2},
+                                                  args=[{symbol,1,"a"},
+                                                        {symbol,1,"a"}]}},
                                    expr=#fun_binding{
                                            def=#mlfe_fun_def{
                                                   name={symbol,1,"yer"},
                                                   args=[{symbol,1,"b"}],
-                                                  body=#mlfe_infix{
+                                                  body=#mlfe_apply{
                                                           type=undefined,
-                                                          operator={add,1},
-                                                          left={symbol,1,"b"},
-                                                          right={symbol,1,"b"}}},
-                                           expr=#mlfe_infix{
+                                                          name={erlang, {symbol, 1, "+"}, 2},
+                                                          args=[{symbol,1,"b"},
+                                                                {symbol,1,"b"}]}},
+                                           expr=#mlfe_apply{
                                                    type=undefined,
-                                                   operator={add,1},
-                                                   left=#mlfe_apply{
-                                                           name={symbol,1,"xer"},
-                                                           args=[{symbol,1,"x"}]},
-                                                   right=#mlfe_apply{
+                                                   name={erlang, {symbol, 1, "+"}, 2},
+                                                   args=[#mlfe_apply{
+                                                            name={symbol,1,"xer"},
+                                                            args=[{symbol,1,"x"}]},
+                                                         #mlfe_apply{
                                                             name={symbol,1,"yer"},
-                                                            args=[{symbol,1,"y"}]}}}}}},
+                                                            args=[{symbol,1,"y"}]}]}}}}},
                    parse(scanner:scan(
                            "my_fun x y ="
                            "  let xer a = a + a in"
@@ -213,10 +196,10 @@ export_test_() ->
 
 expr_test_() ->
     [?_assertEqual({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
-     ?_assertEqual({ok, #mlfe_infix{type=undefined,
-                                    operator={add, 1}, 
-                                    left={int, 1, 1}, 
-                                    right={int, 1, 5}}},
+     ?_assertEqual({ok, #mlfe_apply{type=undefined,
+                                    name={erlang, {symbol, 1, "+"}, 2}, 
+                                    args=[{int, 1, 1}, 
+                                          {int, 1, 5}]}},
                   parse(scanner:scan("1 + 5"))),
      ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "add"}, 
                                     args=[{symbol, 1, "x"},
@@ -252,11 +235,11 @@ module_with_let_test() ->
                                                 name={symbol,6,"adder"},
                                                 args=[{symbol,6,"a"},
                                                       {symbol,6,"b"}],
-                                                body=#mlfe_infix{
+                                                body=#mlfe_apply{
                                                         type=undefined,
-                                                        operator={add,6},
-                                                        left={symbol,6,"a"},
-                                                        right={symbol,6,"b"}}},
+                                                        name={erlang, {symbol, 6, "+"}, 2},
+                                                        args=[{symbol,6,"a"},
+                                                              {symbol,6,"b"}]}},
                                          expr=#mlfe_apply{
                                                  name={symbol,7,"adder"},
                                                  args=[{symbol,7,"x"},
@@ -387,10 +370,10 @@ simple_module_test() ->
                   [{"add",2},{"sub",2}],
                   [#mlfe_fun_def{name={symbol,5,"adder"},
                                  args=[{symbol,5,"x"},{symbol,5,"y"}],
-                                 body=#mlfe_infix{type=undefined,
-                                                  operator={add,5},
-                                                  left={symbol,5,"x"},
-                                                  right={symbol,5,"y"}}},
+                                 body=#mlfe_apply{type=undefined,
+                                                  name={erlang, {symbol, 5, "+"}, 2},
+                                                  args=[{symbol,5,"x"},
+                                                        {symbol,5,"y"}]}},
                    #mlfe_fun_def{name={symbol,7,"add1"},
                                  args=[{symbol,7,"x"}],
                                  body=#mlfe_apply{name={symbol,7,"adder"},
@@ -403,10 +386,10 @@ simple_module_test() ->
                                                         {symbol,9,"y"}]}},
                    #mlfe_fun_def{name={symbol,11,"sub"},
                                  args=[{symbol,11,"x"},{symbol,11,"y"}],
-                                 body=#mlfe_infix{type=undefined,
-                                                  operator={minus,11},
-                                                  left={symbol,11,"x"},
-                                                  right={symbol,11,"y"}}}]},
+                                 body=#mlfe_apply{type=undefined,
+                                                  name={erlang, {symbol, 11, "-"}, 2},
+                                                  args=[{symbol,11,"x"},
+                                                        {symbol,11,"y"}]}}]},
                  parse_module(Code)).
 
 
