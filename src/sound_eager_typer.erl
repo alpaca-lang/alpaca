@@ -284,6 +284,13 @@ typ_of_test_() ->
     , ?_assertMatch({{t_arrow, [{unbound, t0, _}],
                       {t_arrow, [{unbound, t1, _}], {unbound, t0, _}}}, _},
                     top_typ_of("f x = let y z = x in y"))
+    , ?_assertMatch({{t_arrow,
+                      [{t_arrow, 
+                        [{unbound, t1, _}, {unbound, t2, _}],
+                        {unbound, t3, _}},
+                       {unbound, t1, _}],
+                      {t_arrow, [{unbound, t2, _}], {unbound, t3, _}}}, _},
+                    top_typ_of("f x y = let a b = x y b in a")) 
     ].
 
 -endif.
