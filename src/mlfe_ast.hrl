@@ -89,7 +89,8 @@
 %% is a way to indicate what the MLFE function name is and the corresponding
 %% actual Erlang BIF.  Making the distinction between the MLFE and Erlang
 %% name to support something like '+' for integers and '+.' for floats.
--type mlfe_bif_name() :: {MlfeFun::atom(), Module::atom(), ErlangFun::atom()}.
+-type mlfe_bif_name() :: 
+        {bif, MlfeFun::atom(), Line::integer(), Module::atom(), ErlangFun::atom()}.
 
 %%% A function application can occur in one of 4 ways:
 %%% 

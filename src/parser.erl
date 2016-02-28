@@ -73,7 +73,7 @@ defn_test_() ->
                                        args=[{symbol, 1, "x"}],
                                        body=#mlfe_apply{
                                                type=undefined,
-                                               name={erlang, {symbol, 1, "+"}, 2}, 
+                                               name={bif, '+', 1, erlang, '+'}, 
                                                args=[{symbol, 1, "x"},
                                                      {symbol, 1, "x"}]}}},
                   parse(scanner:scan("double x = x + x"))),
@@ -81,7 +81,7 @@ defn_test_() ->
                                       args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
                                       body=#mlfe_apply{
                                               type=undefined,
-                                              name={erlang, {symbol, 1, "+"}, 2},
+                                              name={bif, '+', 1, erlang, '+'},
                                               args=[{symbol, 1, "x"},
                                                     {symbol, 1, "y"}]}}},
                    parse(scanner:scan("add x y = x + y")))
@@ -94,7 +94,7 @@ let_binding_test_() ->
                                   args=[{symbol, 1, "x"}],
                                   body=#mlfe_apply{
                                           type=undefined,
-                                          name={erlang, {symbol, 1, "+"}, 2},
+                                          name={bif, '+', 1, erlang, '+'},
                                           args=[{symbol, 1, "x"},
                                                 {symbol, 1, "x"}]}},
                            expr=#mlfe_apply{
@@ -119,7 +119,7 @@ let_binding_test_() ->
                                           args=[{symbol, 2, "x"}],
                                           body=#mlfe_apply{
                                                   type=undefined, 
-                                                  name={erlang, {symbol, 2, "+"}, 2}, 
+                                                  name={bif, '+', 2, erlang, '+'}, 
                                                   args=[{symbol, 2, "x"}, 
                                                         {symbol, 2, "x"}]}},
                                    expr=#mlfe_apply{
@@ -138,7 +138,7 @@ let_binding_test_() ->
                                           args=[{symbol,1,"a"}],
                                           body=#mlfe_apply{
                                                   type=undefined,
-                                                  name={erlang, {symbol, 1, "+"}, 2},
+                                                  name={bif, '+', 1, erlang, '+'},
                                                   args=[{symbol,1,"a"},
                                                         {symbol,1,"a"}]}},
                                    expr=#fun_binding{
@@ -147,12 +147,12 @@ let_binding_test_() ->
                                                   args=[{symbol,1,"b"}],
                                                   body=#mlfe_apply{
                                                           type=undefined,
-                                                          name={erlang, {symbol, 1, "+"}, 2},
+                                                          name={bif, '+', 1, erlang, '+'},
                                                           args=[{symbol,1,"b"},
                                                                 {symbol,1,"b"}]}},
                                            expr=#mlfe_apply{
                                                    type=undefined,
-                                                   name={erlang, {symbol, 1, "+"}, 2},
+                                                   name={bif, '+', 1, erlang, '+'},
                                                    args=[#mlfe_apply{
                                                             name={symbol,1,"xer"},
                                                             args=[{symbol,1,"x"}]},
@@ -197,7 +197,7 @@ export_test_() ->
 expr_test_() ->
     [?_assertEqual({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
      ?_assertEqual({ok, #mlfe_apply{type=undefined,
-                                    name={erlang, {symbol, 1, "+"}, 2}, 
+                                    name={bif, '+', 1, erlang, '+'}, 
                                     args=[{int, 1, 1}, 
                                           {int, 1, 5}]}},
                   parse(scanner:scan("1 + 5"))),
@@ -237,7 +237,7 @@ module_with_let_test() ->
                                                       {symbol,6,"b"}],
                                                 body=#mlfe_apply{
                                                         type=undefined,
-                                                        name={erlang, {symbol, 6, "+"}, 2},
+                                                        name={bif, '+', 6, erlang, '+'},
                                                         args=[{symbol,6,"a"},
                                                               {symbol,6,"b"}]}},
                                          expr=#mlfe_apply{
@@ -371,7 +371,7 @@ simple_module_test() ->
                   [#mlfe_fun_def{name={symbol,5,"adder"},
                                  args=[{symbol,5,"x"},{symbol,5,"y"}],
                                  body=#mlfe_apply{type=undefined,
-                                                  name={erlang, {symbol, 5, "+"}, 2},
+                                                  name={bif, '+', 5, erlang, '+'},
                                                   args=[{symbol,5,"x"},
                                                         {symbol,5,"y"}]}},
                    #mlfe_fun_def{name={symbol,7,"add1"},
@@ -387,7 +387,7 @@ simple_module_test() ->
                    #mlfe_fun_def{name={symbol,11,"sub"},
                                  args=[{symbol,11,"x"},{symbol,11,"y"}],
                                  body=#mlfe_apply{type=undefined,
-                                                  name={erlang, {symbol, 11, "-"}, 2},
+                                                  name={bif, '-', 11, erlang, '-'},
                                                   args=[{symbol,11,"x"},
                                                         {symbol,11,"y"}]}}]},
                  parse_module(Code)).

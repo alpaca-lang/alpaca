@@ -79,12 +79,13 @@ compile_expr(_, {nil, _}) ->
     cerl:c_nil();
 compile_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(compile_expr(Env, H), compile_expr(Env, T));
+compile_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
+    cerl:c_call(
+      cerl:c_atom(Module),
+      cerl:c_atom(FName),
+      [compile_expr(Env, E) || E <- Args]);      
 compile_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, Arity}, args=Args}) ->
-    FName = case N of
-                "-" -> cerl:c_atom('-');
-                "+" -> cerl:c_atom('+');
-                _ -> cerl:c_fname(list_to_atom(N), Arity)
-            end,
+    FName = cerl:c_fname(list_to_atom(N), Arity),
     cerl:c_call(
       cerl:c_atom(Module),
       FName,

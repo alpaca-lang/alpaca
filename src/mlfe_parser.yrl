@@ -122,13 +122,9 @@ Erlang code.
 -include("mlfe_ast.hrl").
 
 make_infix(Op, A, B) ->
-%    #mlfe_infix{type=undefined,
-%                operator=Op,
-%                left=A,
-%                right=B}.
     Name = case Op of
-      {add, L} -> {erlang, {symbol, L, "+"}, 2};
-      {minus, L} -> {erlang, {symbol, L, "-"}, 2}
+      {add, L} -> {bif, '+', L, erlang, '+'};
+      {minus, L} -> {bif, '-', L, erlang, '-'}
     end,
     #mlfe_apply{type=undefined,
                 name=Name,
