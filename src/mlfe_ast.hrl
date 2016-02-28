@@ -1,4 +1,4 @@
--type mlfe_symbol() :: {symbol, integer(), atom()}.
+-type mlfe_symbol() :: {symbol, integer(), string()}.
 
 -type mlfe_unit() :: {unit, integer()}.
 -type mlfe_int() :: {integer, integer(), integer()}.
@@ -42,6 +42,13 @@
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
+-record(struct_member, {type :: atom(),
+                        name :: atom()
+                       }).
+-type struct_member() :: #struct_member{}.
+
+-type mlfe_struct_def() :: list(struct_member()).
+
 -record(mlfe_clause, {type :: atom(),
                       pattern :: mlfe_expression(),
                       result :: mlfe_expression()
@@ -76,10 +83,17 @@
 -type fun_binding() :: #fun_binding{}.
 -type var_binding() :: #var_binding{}.
 -type mlfe_binding() :: fun_binding()|var_binding().
-                      
 
-%%% A function application can occur in one of 3 ways:
+%% When calling BIFs like erlang:'+' it seems core erlang doesn't want
+%% the arity specified as part of the function name.  mlfe_bif_name()
+%% is a way to indicate what the MLFE function name is and the corresponding
+%% actual Erlang BIF.  Making the distinction between the MLFE and Erlang
+%% name to support something like '+' for integers and '+.' for floats.
+-type mlfe_bif_name() :: {MlfeFun::atom(), Module::atom(), ErlangFun::atom()}.
+
+%%% A function application can occur in one of 4 ways:
 %%% 
+%%% - an Erlang BIF
 %%% - intra-module, a function defined in the module it's being called
 %%%   within or one in scope from a let binding
 %%% - inter-module (a "call" in core erlang), calling a function defined
@@ -91,10 +105,11 @@
 %%% in the third.
 
 -record(mlfe_apply, {type=undefined :: atom(),
-                     name :: {mlfe_symbol(), integer()} |
-                              {atom(), mlfe_symbol(), integer()} |
-                              mlfe_symbol(),
-                      args :: list(mlfe_expression())
+                     name :: {mlfe_symbol(), integer()}
+                           | {atom(), mlfe_symbol(), integer()}
+                           | mlfe_symbol()
+                           | mlfe_bif_name(),
+                     args :: list(mlfe_expression())
                      }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
