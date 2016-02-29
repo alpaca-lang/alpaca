@@ -87,6 +87,13 @@ defn_test_() ->
                    parse(scanner:scan("add x y = x + y")))
     ].
 
+float_math_test_() ->
+    [?_assertMatch({ok, #mlfe_apply{name={bif, '+', 1, erlang, '+'}}},
+                   parse(scanner:scan("2 + 1"))),
+     ?_assertMatch({ok, #mlfe_apply{name={bif, '+.', 1, erlang, '+'}}},
+                   parse(scanner:scan("2.0 +. 1.3")))
+    ].
+
 let_binding_test_() ->
     [?_assertEqual({ok, #fun_binding{
                            def=#mlfe_fun_def{

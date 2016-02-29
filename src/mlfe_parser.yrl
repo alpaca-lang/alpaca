@@ -16,7 +16,7 @@ Terminals
 module export 
 boolean int float atom string '_'
 symbol
-assign add minus
+assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
 let in '(' ')' '/' ','.
@@ -31,8 +31,9 @@ module_part -> export_def : '$1'.
 module_parts -> module_part : ['$1'].
 module_parts -> module_part module_parts : ['$1'|'$2'].
 
-op -> add : '$1'.
-op -> minus : '$1'.
+op -> int_math : '$1'.
+op -> float_math : '$1'.
+%op -> int_minus : '$1'.
 
 const -> boolean : '$1'.
 const -> int : '$1'.
@@ -123,8 +124,14 @@ Erlang code.
 
 make_infix(Op, A, B) ->
     Name = case Op of
-      {add, L} -> {bif, '+', L, erlang, '+'};
-      {minus, L} -> {bif, '-', L, erlang, '-'}
+      {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
+      {int_math, L, OpString} ->
+                   OpAtom =  list_to_atom(OpString),
+                   {bif, OpAtom, L, erlang, OpAtom};
+      {float_math, L, OpString} ->
+                   [OpChar|_] = OpString,
+                   OpAtom = list_to_atom([OpChar]),
+                   {bif, list_to_atom(OpString), L, erlang, OpAtom}
     end,
     #mlfe_apply{type=undefined,
                 name=Name,

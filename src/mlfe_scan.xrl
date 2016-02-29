@@ -7,6 +7,7 @@ ATOM = \'{SYM}
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n\n
+FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
 
 Rules.
 %% Separators
@@ -50,8 +51,8 @@ type   : {token, {type_decl, TokenLine}}.
 %% Operators
 =    : {token, {assign, TokenLine}}.
 ==   : {token, {eq, TokenLine}}.
-\+   : {token, {add, TokenLine}}.
--    : {token, {minus, TokenLine}}.
+[\+\-\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
+{FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->   : {token, {'->', TokenLine}}.
 _    : {token, {'_', TokenLine}}.
 
