@@ -38,7 +38,6 @@
 -type t_cell() :: pid().
 
 cell(TypVal) ->
-    io:format("Cell running with ~w~n", [TypVal]),
     receive
         {get, Pid} -> 
             Pid ! TypVal,
@@ -80,28 +79,41 @@ unwrap_cell(C) when is_pid(C) ->
 unwrap_cell(Typ) ->
     Typ.
 
--spec unify(typ(), typ()) -> {typ(), typ()} | {error, atom()}.
+-spec unify(typ(), typ()) -> ok | {error, atom()}.
 unify(T1, T2) ->
-    io:format("Running checker in pid ~w~n", [self()]),
     case {unwrap_cell(T1), unwrap_cell(T2)} of
-        {T, T} -> T;
+        {T, T} -> ok;
         %% only one instance of a type variable is permitted:
         {{unbound, N, _}, {unbound, N, _}}  -> {error, {cannot_unify, T1, T2}};
         {{link, Ty}, _} ->
             unify(Ty, T2);
         {_, {link, Ty}} ->
             unify(T1, Ty);
+        %% Definitely room for cleanup in the next two cases:
         {{unbound, N, Lvl}, Ty} ->
-            T = occurs(N, Lvl, Ty),
-            set_cell(T1, {link, T2}),
-            {{link, T}, Ty};
+            case occurs(N, Lvl, Ty) of
+                {unbound, _, _} = T -> 
+                    set_cell(T2, T),
+                    set_cell(T1, {link, T2});
+                {error, _} = E ->
+                    E;
+                _Other ->
+                    set_cell(T1, {link, T2})
+            end,
+            ok;
         {Ty, {unbound, N, Lvl}} ->
-            T = occurs(N, Lvl, Ty),
-            io:format("Linking ~w to ~w~n", [N, Ty]),
+            case occurs(N, Lvl, Ty) of
+                {unbound, _, _} = T -> 
+                    set_cell(T1, T),            % level adjustment
+                    set_cell(T2, {link, T1});
+                {error, _} = E ->
+                    E;
+                _Other ->
+                    set_cell(T2, {link, T1})
+            end,
             set_cell(T2, {link, T1}),
-            {Ty, {link, T}};
+            ok;
         {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
-            io:format("Arrow arg types to unify ~w ~w~n", [A1, B1]),
             case unify_list(A1, B1) of
                 {error, _} = E ->
                     E;
@@ -109,13 +121,11 @@ unify(T1, T2) ->
                     case unify(A2, B2) of
                         {error, _} = E ->
                             E;
-                        {ResA2, ResB2} ->
-                            io:format("Unified left is ~w -> ~w~n", [ResA1, ResA2]),
-                            {{t_arrow, ResA1, ResA2}, {t_arrow, ResB1, ResB2}}
+                        ok ->
+                            ok
                     end
             end;
         {_T1, _T2} ->
-            io:format("Failed to unify ~w and ~w~n", [_T1, _T2]),
             {error, {cannot_unify, T1, T2}}
     end.
 
@@ -259,12 +269,11 @@ typ_of(Env, Lvl, {unwrapped_apply, Name, Args, TypF}) ->
 
     %% ArgTypes is in reverse order to As from typ_list/3:
     Arrow = new_cell({t_arrow, lists:reverse(ArgTypes), TypRes}),
-    io:format("Will unify ~w with ~w~n", [TypF, Arrow]),
     case unify(TypF, Arrow) of
         {error, _} = E ->
             E;
-        {_T1, _T2} ->
-            {TypRes, update_env(Name, _T2, Env4)}
+        ok ->
+            {TypRes, Env4}
     end;
 
 %% This can't handle recursive functions since the function name
@@ -273,7 +282,6 @@ typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
     {_, NewEnv} = args_to_types(Args, Lvl, Env, []),
     {T, NewEnv2} = typ_of(NewEnv, Lvl, Body),
 
-    io:format("Type of body is ~w~n", [T]),
     dump_env(NewEnv2),
 
     %% Some types may have been unified in NewEnv2 so we need
@@ -335,6 +343,9 @@ typ_of_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _}, 
                    top_typ_of("double x = x + x"))
     , ?_assertMatch({{t_arrow, [{t_arrow, [A], B}, A], B}, _},
-                   top_typ_of("apply f x = f x"))].
+                   top_typ_of("apply f x = f x"))
+    , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                    top_typ_of("doubler x = let double y = y + y in double x"))
+    ].
 
 -endif.
