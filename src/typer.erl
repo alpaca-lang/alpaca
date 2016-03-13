@@ -1,5 +1,7 @@
-%% This is based off of sound_eager_typer and is an attempt to modify
-%% it for use as a type checker for my current AST-in-progress.
+%%% #typer.erl
+%%% 
+%%% This is based off of sound_eager_typer and is an attempt to modify
+%%% it for use as a type checker for my current AST-in-progress.
 
 -module(typer).
 
@@ -11,6 +13,10 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+%%% ## Type-Tracking Data Types 
+%%% 
+%%% These are all of the specs the typer uses to track MLFE types.
 
 -type typ_name() :: atom().
 
@@ -34,15 +40,28 @@
              | t_const()
              | t_list().
 
-%% Reference cells make unification WAY easier:
+%%% ##Data Structures
+%%% 
+%%% Reference cells make unification much simpler (linking is a mutation)
+%%% but we also need a simple way to make complete copies of cells so that
+%%% each expression being typed can refer to its own copies of items from
+%%% the environment and not _globally_ unify another function's types with
+%%% its own, preventing others from doing the same (see Types And Programming
+%%% Languages (Pierce), chapter 22).
+
+%%% A t_cell is just a reference cell for a type.
 -type t_cell() :: pid().
 
+%%% A cell can be sent the message `'stop'` to let the reference cell halt
+%%% and be deallocated.
 cell(TypVal) ->
     receive
         {get, Pid} -> 
             Pid ! TypVal,
             cell(TypVal);
-        {set, NewVal} -> cell(NewVal)
+        {set, NewVal} -> cell(NewVal);
+        stop ->
+            ok
     end.
 
 -spec new_cell(typ()) -> pid().
@@ -57,7 +76,98 @@ get_cell(Cell) ->
     end.
 
 set_cell(Cell, Val) ->
+    case Val of
+        _ when is_pid(Val) ->
+            io:format("!!WARN!! setting ~w to ~w~n", [Cell, Val]);
+        _ -> ok
+    end,
     Cell ! {set, Val}.
+
+%%% Map of unbound type variable atom name to cell.
+-spec copy_cell(t_cell(), map()) -> {t_cell(), map()}.
+copy_cell(Cell, RefMap) ->
+    case get_cell(Cell) of 
+        {link, C} when is_pid(C) ->
+            {NC, NewMap} = copy_cell(C, RefMap),
+            {new_cell({link, NC}), NewMap};
+        {t_arrow, Args, Ret} ->
+            Folder = fun(A, {L, RM}) ->
+                             {V, NM} = copy_cell(A, RM),
+                             {[V|L], NM}
+                     end,
+            {NewArgs, Map2} = lists:foldl(Folder, {[], RefMap}, Args),
+            {NewRet, Map3} = copy_cell(Ret, Map2),
+            {new_cell({t_arrow, lists:reverse(NewArgs), NewRet}), Map3};
+%        P when is_pid(P) ->
+%            {NC, NewMap} = copy_cell(P, RefMap),
+%            {new_cell(NC), NewMap};
+        {unbound, Name, _Lvl} = V ->
+            io:format("Copy is looking for ~w~n", [Name]),
+            case maps:get(Name, RefMap, undefined) of
+                undefined ->
+                    NC = new_cell(V),
+                    {NC, maps:put(Name, NC, RefMap)};
+                Existing ->
+                    io:format("Copy found ~w for ~w~n", [Existing, Name]),
+                    {Existing, RefMap}
+            end;
+        V ->
+            io:format("COPY:  hit V~n", []),
+            {new_cell(V), RefMap}
+    end.
+%    new_cell(get_cell(Cell)).
+
+%%% Environments track two things:
+%%% 
+%%% 1. A counter for naming new type variables
+%%% 2. A proplist of {expression name, expression type} for the types
+%%%    of values and functions so far inferred/checked.
+
+%% The list is {var name, var type}
+-type env() :: {integer(), list({atom(), atom()})}.
+
+-spec new_env() -> env().
+new_env() ->
+    {0, [Typ||Typ <- ?all_bifs]}.
+
+update_env(Name, Typ, {C, L}) ->
+    {C, [{Name, Typ}|[{N, T} || {N, T} <- L, N =/= Name]]}.
+
+update_var_counter(VarNum, {_, Bindings}) ->
+    {VarNum, Bindings}.
+
+
+%%% Make a copy of the named entity from the current environment, replacing
+%%% reference cells with copies of them.  Multiple references of the same
+%%% type variable must end up referencing a new _single_ copy of the type
+%%% variable's cell.
+copy_from_env(Name, {_C, L}) ->
+    copy_from_env_2(proplists:get_value(Name, L), maps:new()).
+
+copy_type_list(TL, RefMap) ->
+    Folder = fun(A, {L, RM}) ->
+                     {V, NM} = copy_type(A, RM),
+                     {[V|L], NM}
+             end,
+    {NewList, Map2} = lists:foldl(Folder, {[], RefMap}, TL),
+    {lists:reverse(NewList), Map2}.
+
+copy_from_env_2({t_arrow, A, B}, RefMap) ->
+    {NewArgs, Map2} = copy_type_list(A, RefMap),
+    {NewRet, _Map3} = copy_type(B, Map2),
+    {t_arrow, NewArgs, NewRet};
+copy_from_env_2({t_list, A}, RefMap) ->
+    {NewList, _} = copy_type_list(A, RefMap),
+    {t_list, NewList};
+%% TODO:  individual cell copy.
+copy_from_env_2(T, _) ->
+    io:format("COPY:  bottom env ~w~n", [T]),
+    T.
+
+copy_type(P, RefMap) when is_pid(P) ->
+    copy_cell(P, RefMap);
+copy_type(T, M) ->
+    {T, M}.
 
 occurs(Label, Level, P) when is_pid(P) ->
     occurs(Label, Level, get_cell(P));
@@ -91,17 +201,21 @@ unify(T1, T2) ->
             unify(T1, Ty);
         %% Definitely room for cleanup in the next two cases:
         {{unbound, N, Lvl}, Ty} ->
+            io:format("UNIFY:  unbound and ty~n", []),
             case occurs(N, Lvl, Ty) of
-                {unbound, _, _} = T -> 
+                {unbound, _, _} = T ->
+                    io:format("Setting ~w to ~w~n", [N, Ty]),
                     set_cell(T2, T),
                     set_cell(T1, {link, T2});
                 {error, _} = E ->
                     E;
                 _Other ->
+                    io:format("Unifying ~w ~w to ~w~n", [T1, get_cell(T1), Ty]),
                     set_cell(T1, {link, T2})
             end,
             ok;
         {Ty, {unbound, N, Lvl}} ->
+            io:format("UNIFY:  ty and unbound~n", []),
             case occurs(N, Lvl, Ty) of
                 {unbound, _, _} = T -> 
                     set_cell(T1, T),            % level adjustment
@@ -109,6 +223,7 @@ unify(T1, T2) ->
                 {error, _} = E ->
                     E;
                 _Other ->
+                    io:format("Unifying ~w ~w to ~w~n", [T2, get_cell(T2), Ty]),
                     set_cell(T2, {link, T1})
             end,
             set_cell(T2, {link, T1}),
@@ -117,7 +232,7 @@ unify(T1, T2) ->
             case unify_list(A1, B1) of
                 {error, _} = E ->
                     E;
-                {ResA1, ResB1} ->
+                {_ResA1, _ResB1} ->
                     case unify(A2, B2) of
                         {error, _} = E ->
                             E;
@@ -144,15 +259,6 @@ unify_list([A|TA], [B|TB], {MA, MB}) ->
         _ -> unify_list(TA, TB, {[A|MA], [B|MB]})
     end.
 
-%% The list is {var name, var type}
--type env() :: {integer(), list({atom(), atom()})}.
-
--spec new_env() -> env().
-new_env() ->
-    {0, [Typ||Typ <- ?all_bifs]}.
-
-update_env(Name, Typ, {C, L}) ->
-    {C, [{Name, Typ}|[{N, T} || {N, T} <- L, N =/= Name]]}.
 
 -spec inst(
         VarName :: atom(), 
@@ -219,11 +325,11 @@ gen(_, T) ->
 
 %% Simple function that takes the place of a foldl over a list of
 %% arguments to an apply.
-typ_list([], _Lvl, Env, Memo) ->
-    {Env, Memo};
+typ_list([], _Lvl, {NextVar, _}, Memo) ->
+    {NextVar, lists:reverse(Memo)};
 typ_list([H|T], Lvl, Env, Memo) ->
-    {Typ, Env2} = typ_of(Env, Lvl, H),
-    typ_list(T, Lvl, Env2, [Typ|Memo]).
+    {Typ, NextVar} = typ_of(Env, Lvl, H),
+    typ_list(T, Lvl, update_var_counter(NextVar, Env), [Typ|Memo]).
 
 unwrap(P) when is_pid(P) ->
     unwrap(get_cell(P));
@@ -242,66 +348,88 @@ typ_of(Env, Exp) ->
         {Typ, NewEnv} -> {unwrap(Typ), NewEnv}
     end.
 
+%% In the past I returned the environment entirely but this contained mutations
+%% beyond just the counter for new type variable names.  The integer in the
+%% successful return tuple is just the next type variable number so that
+%% the environments further up have no possibility of being poluted with 
+%% definitions below.
 -spec typ_of(
         Env::env(),
         Lvl::integer(),
-        Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
+        Exp::mlfe_expression()) -> {typ(), integer()} | {error, term()}.
 
-typ_of(Env, _Lvl, {int, _, _}) ->
-    {t_int, Env};
+typ_of({VarNum, _}, _Lvl, {int, _, _}) ->
+    {t_int, VarNum};
+typ_of({VarNum, _}, _Lvl, {float, _, _}) ->
+    {t_float, VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
-    {T, E2, _} = inst(N, Lvl, Env),
-    {T, E2};
+    {T, {VarNum, _}, _} = inst(N, Lvl, Env),
+    {T, VarNum};
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
-    {T, E2, _} = inst(MlfeName, Lvl, Env),
-    {T, E2};    
+    {T, {VarNum, _}, _} = inst(MlfeName, Lvl, Env),
+    {T, VarNum};    
 
-typ_of(Env, Lvl, #mlfe_apply{name={bif, MlfeName, _, _, _}=N, args=Args}) ->
-    {TypF, Env2} = typ_of(Env, Lvl, N),
-    typ_of(Env2, Lvl, {unwrapped_apply, MlfeName, Args, TypF});
-typ_of(Env, Lvl, #mlfe_apply{name={symbol, _, Name}=N, args=Args}) ->
-    {TypF, Env2} = typ_of(Env, Lvl, N),
-    typ_of(Env2, Lvl, {unwrapped_apply, Name, Args, TypF});
-typ_of(Env, Lvl, {unwrapped_apply, Name, Args, TypF}) ->
-    {Env3, ArgTypes} = typ_list(Args, Lvl, Env, []),
-    {TypRes, Env4} = new_var(Lvl, Env3),
+typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
+    Name = case N of
+               {bif, X, _, _, _} -> X;
+               {symbol, _, X} -> X
+           end,
+    {TypF, NextVar} = typ_of(Env, Lvl, N),
+    dump_env(Env),
+    io:format("~nTypF is ~s from name ~s~n", [dump_term(TypF), Name]),
+    io:format("Args are ~w~n", [Args]),
+    CopiedTypF = copy_from_env_2(TypF, maps:new()),
+    io:format("After copy is ~s from name ~s~n", [dump_term(CopiedTypF), Name]),
 
-    %% ArgTypes is in reverse order to As from typ_list/3:
-    Arrow = new_cell({t_arrow, lists:reverse(ArgTypes), TypRes}),
-    case unify(TypF, Arrow) of
+    {NextVar2, ArgTypes} = typ_list(Args, Lvl, update_var_counter(NextVar, Env), []),
+    {TypRes, Env2} = new_var(Lvl, update_var_counter(NextVar2, Env)),
+
+    Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
+    io:format("Arrow is ~s~n", [dump_term(Arrow)]),
+    case unify(CopiedTypF, Arrow) of
         {error, _} = E ->
+            io:format("Error when unifying, ~w~n", [E]),
             E;
         ok ->
-            {TypRes, Env4}
+            {VarNum, _} = Env2,
+            {TypRes, VarNum}
     end;
 
 %% This can't handle recursive functions since the function name
 %% is not bound in the environment:
 typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
-    {_, NewEnv} = args_to_types(Args, Lvl, Env, []),
-    {T, NewEnv2} = typ_of(NewEnv, Lvl, Body),
+    %% I'm leaving the environment mutation here because the body
+    %% needs the bindings:
+    {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
+    {T, NextVar} = typ_of(Env2, Lvl, Body),
+    Env3 = update_var_counter(NextVar, Env2),
 
-    dump_env(NewEnv2),
+    io:format("===  FUN DEF:  ==============~n", []),
+    dump_env(Env3),
 
     %% Some types may have been unified in NewEnv2 so we need
     %% to replace their occurences in ArgTypes.  This is getting
     %% around the lack of reference cells.
-    {ArgTypesPass2, NewEnv2} = args_to_types(Args, Lvl, NewEnv2, []),
+    %{ArgTypesPass2, NewEnv2} = args_to_types(Args, Lvl, NewEnv2, []),
 
-    JustTypes = [Typ || {_, Typ} <- ArgTypesPass2],
-    {{t_arrow, JustTypes, T}, NewEnv2};
+    JustTypes = [Typ || {_, Typ} <- ArgTypes],
+    {{t_arrow, JustTypes, T}, NextVar};
 
 %% A let binding inside a function:
 typ_of(Env, Lvl, #fun_binding{
                def=#mlfe_fun_def{name={symbol, _, N}}=E, 
                expr=E2}) ->
-    {TypE, Env2} = typ_of(Env, Lvl, E),
+    io:format("=== FUN BIND:  ~s ========~n", [N]),
+    {TypE, NextVar} = typ_of(Env, Lvl, E),
+    Env2 = update_var_counter(NextVar, Env),
     typ_of(update_env(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
 
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    {TypE, Env2} = typ_of(Env, Lvl, E1),
+    io:format("=== VAR BIND:  ~s ========~n", [N]),
+    {TypE, NextVar} = typ_of(Env, Lvl, E1),
+    Env2 = update_var_counter(NextVar, Env),
     typ_of(update_env(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
     
 %% Find or make a type for each arg from a function's
@@ -322,7 +450,17 @@ args_to_types([{symbol, _, N}|T], Lvl, {_, Vs} = Env, Memo) ->
 
 dump_env({C, L}) ->
     io:format("Next var number is ~w~n", [C]),
-    [io:format("Env:  ~w~n", [X])||X <- L].
+    [io:format("Env:  ~s ~s~n", [N, dump_term(T)])||{N, T} <- L].
+
+dump_term({t_arrow, Args, Ret}) ->
+    io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
+dump_term(P) when is_pid(P) ->
+    io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
+dump_term({link, P}) when is_pid(P) ->
+    io_lib:format("{link ~w ~s}", [P, dump_term(P)]);
+dump_term(T) ->
+    io_lib:format("~w", [T]).
+
 
 -ifdef(TEST).
 
@@ -347,5 +485,24 @@ typ_of_test_() ->
     , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
                     top_typ_of("doubler x = let double y = y + y in double x"))
     ].
+
+simple_polymorphic_let_test() ->
+    Code =
+        "double_app int ="
+        "let two_times f x = f (f x) in "
+        "let int_double i = i + i in "
+        "two_times int_double int",
+    ?assertMatch({{t_arrow, [t_int], t_int}, _}, top_typ_of(Code)).
+
+polymorphic_let_test() ->
+    Code = 
+        "double_application int float = "
+        "let two_times f x = f (f x) in "
+        "let int_double a = a + a in "
+        "let float_double b = b +. b in "
+        "let doubled_2 = two_times int_double int in "
+        "two_times float_double float",
+    ?assertMatch({{t_arrow, [t_int, t_float], t_float}, _},
+                 top_typ_of(Code)).
 
 -endif.
