@@ -76,11 +76,6 @@ get_cell(Cell) ->
     end.
 
 set_cell(Cell, Val) ->
-    case Val of
-        _ when is_pid(Val) ->
-            io:format("!!WARN!! setting ~w to ~w~n", [Cell, Val]);
-        _ -> ok
-    end,
     Cell ! {set, Val}.
 
 %%% Map of unbound type variable atom name to cell.
@@ -98,21 +93,15 @@ copy_cell(Cell, RefMap) ->
             {NewArgs, Map2} = lists:foldl(Folder, {[], RefMap}, Args),
             {NewRet, Map3} = copy_cell(Ret, Map2),
             {new_cell({t_arrow, lists:reverse(NewArgs), NewRet}), Map3};
-%        P when is_pid(P) ->
-%            {NC, NewMap} = copy_cell(P, RefMap),
-%            {new_cell(NC), NewMap};
         {unbound, Name, _Lvl} = V ->
-            io:format("Copy is looking for ~w~n", [Name]),
             case maps:get(Name, RefMap, undefined) of
                 undefined ->
                     NC = new_cell(V),
                     {NC, maps:put(Name, NC, RefMap)};
                 Existing ->
-                    io:format("Copy found ~w for ~w~n", [Existing, Name]),
                     {Existing, RefMap}
             end;
         V ->
-            io:format("COPY:  hit V~n", []),
             {new_cell(V), RefMap}
     end.
 %    new_cell(get_cell(Cell)).
@@ -142,8 +131,10 @@ update_var_counter(VarNum, {_, Bindings}) ->
 %%% type variable must end up referencing a new _single_ copy of the type
 %%% variable's cell.
 copy_from_env(Name, {_C, L}) ->
-    copy_from_env_2(proplists:get_value(Name, L), maps:new()).
+    deep_copy_type(proplists:get_value(Name, L), maps:new()).
 
+%% Used by deep_copy_type for a set of function arguments or 
+%% list elements.
 copy_type_list(TL, RefMap) ->
     Folder = fun(A, {L, RM}) ->
                      {V, NM} = copy_type(A, RM),
@@ -152,16 +143,22 @@ copy_type_list(TL, RefMap) ->
     {NewList, Map2} = lists:foldl(Folder, {[], RefMap}, TL),
     {lists:reverse(NewList), Map2}.
 
-copy_from_env_2({t_arrow, A, B}, RefMap) ->
+%%% As referenced in several places, this is, after a fashion, following 
+%%% Pierce's advice in chapter 22 of Types and Programming Languages.
+%%% We make a deep copy of the chain of reference cells so that we can
+%%% unify a polymorphic function with some other types from a function
+%%% application without _permanently_ unifying the types for everyone else
+%%% and thus possibly blocking a legitimate use of said polymorphic function
+%%% in another location.
+deep_copy_type({t_arrow, A, B}, RefMap) ->
     {NewArgs, Map2} = copy_type_list(A, RefMap),
     {NewRet, _Map3} = copy_type(B, Map2),
     {t_arrow, NewArgs, NewRet};
-copy_from_env_2({t_list, A}, RefMap) ->
+deep_copy_type({t_list, A}, RefMap) ->
     {NewList, _} = copy_type_list(A, RefMap),
     {t_list, NewList};
 %% TODO:  individual cell copy.
-copy_from_env_2(T, _) ->
-    io:format("COPY:  bottom env ~w~n", [T]),
+deep_copy_type(T, _) ->
     T.
 
 copy_type(P, RefMap) when is_pid(P) ->
@@ -201,21 +198,17 @@ unify(T1, T2) ->
             unify(T1, Ty);
         %% Definitely room for cleanup in the next two cases:
         {{unbound, N, Lvl}, Ty} ->
-            io:format("UNIFY:  unbound and ty~n", []),
             case occurs(N, Lvl, Ty) of
                 {unbound, _, _} = T ->
-                    io:format("Setting ~w to ~w~n", [N, Ty]),
                     set_cell(T2, T),
                     set_cell(T1, {link, T2});
                 {error, _} = E ->
                     E;
                 _Other ->
-                    io:format("Unifying ~w ~w to ~w~n", [T1, get_cell(T1), Ty]),
                     set_cell(T1, {link, T2})
             end,
             ok;
         {Ty, {unbound, N, Lvl}} ->
-            io:format("UNIFY:  ty and unbound~n", []),
             case occurs(N, Lvl, Ty) of
                 {unbound, _, _} = T -> 
                     set_cell(T1, T),            % level adjustment
@@ -223,7 +216,6 @@ unify(T1, T2) ->
                 {error, _} = E ->
                     E;
                 _Other ->
-                    io:format("Unifying ~w ~w to ~w~n", [T2, get_cell(T2), Ty]),
                     set_cell(T2, {link, T1})
             end,
             set_cell(T2, {link, T1}),
@@ -376,17 +368,16 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
                {symbol, _, X} -> X
            end,
     {TypF, NextVar} = typ_of(Env, Lvl, N),
-    dump_env(Env),
-    io:format("~nTypF is ~s from name ~s~n", [dump_term(TypF), Name]),
-    io:format("Args are ~w~n", [Args]),
-    CopiedTypF = copy_from_env_2(TypF, maps:new()),
-    io:format("After copy is ~s from name ~s~n", [dump_term(CopiedTypF), Name]),
+    %% we make a deep copy of the function we're unifying so that the
+    %% types we apply to the function don't force every other application
+    %% to unify with them where the other callers may be expecting a 
+    %% polymorphic function.  See Pierce's TAPL, chapter 22.
+    CopiedTypF = deep_copy_type(TypF, maps:new()),
 
     {NextVar2, ArgTypes} = typ_list(Args, Lvl, update_var_counter(NextVar, Env), []),
     {TypRes, Env2} = new_var(Lvl, update_var_counter(NextVar2, Env)),
 
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-    io:format("Arrow is ~s~n", [dump_term(Arrow)]),
     case unify(CopiedTypF, Arrow) of
         {error, _} = E ->
             io:format("Error when unifying, ~w~n", [E]),
