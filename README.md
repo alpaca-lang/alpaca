@@ -53,8 +53,10 @@ I'm planning on parsing/validating over several passes:
    environments to track whether a function application is referring to a known
    function or a variable.  The output of this stage is either a module
    definition or a list of errors found.
-3. Eventual type checking.  I suspect this will have some awkward overlaps with
-the environments built in the previous step and may need to be integrated there.
+3. Type checking.  This has some awkward overlaps with the environments built in
+   the previous step and may benefit from some interleaving at some point.  An
+   argument against this mixing might be that having all functions defined
+   before type checking does permit forward references.
 
 ## AST Construction
 Several passes internally
@@ -70,18 +72,35 @@ Several passes internally
   where the function applied is not in a variable.
 
 # Current TODO
+
+## Basic Items
 An unordered list of what it will take to get to something usable, even before
-worrying about tooling around dependency management, etc (doesn't include type
-checker):
+worrying about tooling around dependency management, etc:
 
 - binaries
-- booleans
+- booleans and if-then-else
 - strings
 - inter-module calls
 - basic erlang FFI
-- base number type for arithmetic
-- remaining arithmetic operations (*, /, %)
 - structs
 - pattern matching guards
 - maps
-- data types (tagged unions)
+- data types (tagged unions)/ADTs
+
+## Receive
+Looks like basic clauses as in matches but also requires an optional timeout and associated action.
+
+## Type Checker
+Currently working for basic polymorphism and integers.  Only tested at the
+per-function level.  Next key things:
+
+- check lists
+- check tuples
+- check full modules
+- check inter-module calls
+
+Longer term:
+
+- work with the eventual Erlang FFI
+- check receives
+
