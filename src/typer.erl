@@ -1,7 +1,9 @@
 %%% #typer.erl
 %%% 
-%%% This is based off of sound_eager_typer and is an attempt to modify
-%%% it for use as a type checker for my current AST-in-progress.
+%%% This is based off of the sound and eager type inferencer in 
+%%% http://okmij.org/ftp/ML/generalization.html with some influence
+%%% from https://github.com/tomprimozic/type-systems/blob/master/algorithm_w
+%%% where the arrow type and instantiation are concerned.
 
 -module(typer).
 
@@ -42,6 +44,8 @@
 
 %%% ##Data Structures
 %%% 
+%%% ###Reference Cells
+%%% 
 %%% Reference cells make unification much simpler (linking is a mutation)
 %%% but we also need a simple way to make complete copies of cells so that
 %%% each expression being typed can refer to its own copies of items from
@@ -78,7 +82,12 @@ get_cell(Cell) ->
 set_cell(Cell, Val) ->
     Cell ! {set, Val}.
 
-%%% Map of unbound type variable atom name to cell.
+%%% The `map` is a map of `unbound type variable name` to a `t_cell()`.
+%%% It's used to ensure that each reference or link to a single type
+%%% variable actually points to a single canonical reference cell for that
+%%% variable.  Failing to do so causes problems with unification since
+%%% unifying one variable with another type should impact all occurrences
+%%% of that variable.
 -spec copy_cell(t_cell(), map()) -> {t_cell(), map()}.
 copy_cell(Cell, RefMap) ->
     case get_cell(Cell) of 
@@ -86,6 +95,8 @@ copy_cell(Cell, RefMap) ->
             {NC, NewMap} = copy_cell(C, RefMap),
             {new_cell({link, NC}), NewMap};
         {t_arrow, Args, Ret} ->
+            %% there's some commonality below with copy_type_list/2
+            %% that can probably be exploited in future:
             Folder = fun(A, {L, RM}) ->
                              {V, NM} = copy_cell(A, RM),
                              {[V|L], NM}
@@ -104,8 +115,9 @@ copy_cell(Cell, RefMap) ->
         V ->
             {new_cell(V), RefMap}
     end.
-%    new_cell(get_cell(Cell)).
 
+%%% ###Environments
+%%% 
 %%% Environments track two things:
 %%% 
 %%% 1. A counter for naming new type variables
