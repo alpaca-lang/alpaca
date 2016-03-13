@@ -250,6 +250,7 @@ unify(T1, T2) ->
                     end
             end;
         {_T1, _T2} ->
+            io:format("UNIFY FAIL:  ~s ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
             {error, {cannot_unify, T1, T2}}
     end.
 
@@ -408,17 +409,52 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
             {TypRes, VarNum}
     end;
 
+%% Unify the patterns with each other and resulting expressions with each
+%% other, then unifying the general pattern type with the match expression's
+%% type.
+typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
+    {ETyp, NextVar1} = typ_of(Env, Lvl, E),
+    ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
+                           {TypC, NV} = typ_of(EnvAcc, Lvl, C),
+                           {[TypC|Clauses], update_var_counter(NV, EnvAcc)}
+                   end,
+    {TypedCs, {NextVar2, _}} = lists:foldl(
+                                 ClauseFolder, 
+                                 {[], update_var_counter(NextVar1, Env)}, Cs),
+    UnifyFolder = fun({t_clause, PA, _, RA}, {t_clause, PB, _, RB} = TypC) ->
+                          case unify(PA, PB) of
+                              ok -> case unify(RA, RB) of
+                                        ok -> TypC;
+                                        {error, _} = Err -> Err
+                                    end;
+                              {error, _} = Err -> Err
+                          end
+                  end,
+    [FC|TCs] = lists:reverse(TypedCs),
+    case lists:foldl(UnifyFolder, FC, TCs) of
+        {error, _} = Err ->
+            Err;
+        _ ->
+            %% unify the expression with the unified pattern:
+            {t_clause, PTyp, _, RTyp} = FC,
+            unify(ETyp, PTyp),
+            %% only need to return the result type of the unified clause types:
+            {RTyp, NextVar2}
+    end;
+
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
     {PTyp, NewEnv} = case P of
                          {symbol, _Line, Name} -> 
                              {Typ, Env2} = new_var(Lvl, Env),
                              {Typ, update_env(Name, Typ, Env2)};
+                         {'_', _Line} ->
+                             {Typ, Env2} = new_var(Lvl, Env),
+                             io:format("Stand-in is ~s~n", [dump_term(Typ)]),
+                             {Typ, Env2};
                          _ ->
                              {Typ, NextVar} = typ_of(Env, Lvl, P),
                              {Typ, update_var_counter(NextVar, Env)}
                      end,
-                             
-%    {PTyp, NextVar1} = typ_of(Env, Lvl, P),
     {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
     {{t_clause, PTyp, none, RTyp}, NextVar2};
 
@@ -428,19 +464,23 @@ typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
     %% I'm leaving the environment mutation here because the body
     %% needs the bindings:
     {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
-    {T, NextVar} = typ_of(Env2, Lvl, Body),
-    Env3 = update_var_counter(NextVar, Env2),
-
-    io:format("===  FUN DEF:  ==============~n", []),
-    dump_env(Env3),
-
-    %% Some types may have been unified in NewEnv2 so we need
-    %% to replace their occurences in ArgTypes.  This is getting
-    %% around the lack of reference cells.
-    %{ArgTypesPass2, NewEnv2} = args_to_types(Args, Lvl, NewEnv2, []),
-
-    JustTypes = [Typ || {_, Typ} <- ArgTypes],
-    {{t_arrow, JustTypes, T}, NextVar};
+    case typ_of(Env2, Lvl, Body) of 
+        {error, _} = Err ->
+            Err;
+        {T, NextVar} ->
+            Env3 = update_var_counter(NextVar, Env2),
+            
+            io:format("===  FUN DEF:  ==============~n", []),
+            dump_env(Env3),
+            
+            %% Some types may have been unified in NewEnv2 so we need
+            %% to replace their occurences in ArgTypes.  This is getting
+            %% around the lack of reference cells.
+            %%{ArgTypesPass2, NewEnv2} = args_to_types(Args, Lvl, NewEnv2, []),
+            
+            JustTypes = [Typ || {_, Typ} <- ArgTypes],
+            {{t_arrow, JustTypes, T}, NextVar}
+    end;
 
 %% A let binding inside a function:
 typ_of(Env, Lvl, #fun_binding{
@@ -480,6 +520,8 @@ dump_env({C, L}) ->
 
 dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
+dump_term({t_clause, P, G, R}) ->
+    io_lib:format(" | ~s ~s -> ~s", [dump_term(X)||X<-[P, G, R]]);
 dump_term(P) when is_pid(P) ->
     io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
 dump_term({link, P}) when is_pid(P) ->
@@ -550,6 +592,22 @@ clause_test_() ->
                                             name={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {int, 1, 2}]}}))
+    ].
+
+match_test_() ->
+    [?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                   top_typ_of("f x = match x with\n | i -> i + 2")),
+     ?_assertMatch({error, {cannot_unify, _, _}},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "| i -> i + 1\n"
+                     "| 'atom -> 2")),
+     ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
+                   top_typ_of(
+                     "f x = match x + 1 with\n"
+                     "| 1 -> 'x_was_zero\n"
+                     "| 2 -> 'x_was_one\n"
+                     "| _ -> 'x_was_more_than_one"))
     ].
 
 -endif.
