@@ -30,6 +30,10 @@
 
 -type t_list() :: {t_list, typ()}.
 
+%% pattern, optional guard, result.  Currently I'm doing nothing with 
+%% present guards.
+-type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
+
 -type t_const() :: t_int
                  | t_float
                  | t_atom
@@ -40,7 +44,8 @@
              | tvar()
              | t_arrow()
              | t_const()
-             | t_list().
+             | t_list()
+             | t_clause().
 
 %%% ##Data Structures
 %%% 
@@ -341,6 +346,8 @@ unwrap({link, Ty}) ->
     unwrap(Ty);
 unwrap({t_arrow, A, B}) ->
     {t_arrow, [unwrap(X)||X <- A], unwrap(B)};
+unwrap({t_clause, A, G, B}) ->
+    {t_clause, unwrap(A), unwrap(G), unwrap(B)};
 unwrap(X) ->
     X.
 
@@ -366,6 +373,8 @@ typ_of({VarNum, _}, _Lvl, {int, _, _}) ->
     {t_int, VarNum};
 typ_of({VarNum, _}, _Lvl, {float, _, _}) ->
     {t_float, VarNum};
+typ_of({VarNum, _}, _Lvl, {atom, _, _}) ->
+    {t_atom, VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
     {T, {VarNum, _}, _} = inst(N, Lvl, Env),
     {T, VarNum};
@@ -398,6 +407,20 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
             {VarNum, _} = Env2,
             {TypRes, VarNum}
     end;
+
+typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
+    {PTyp, NewEnv} = case P of
+                         {symbol, _Line, Name} -> 
+                             {Typ, Env2} = new_var(Lvl, Env),
+                             {Typ, update_env(Name, Typ, Env2)};
+                         _ ->
+                             {Typ, NextVar} = typ_of(Env, Lvl, P),
+                             {Typ, update_var_counter(NextVar, Env)}
+                     end,
+                             
+%    {PTyp, NextVar1} = typ_of(Env, Lvl, P),
+    {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
+    {{t_clause, PTyp, none, RTyp}, NextVar2};
 
 %% This can't handle recursive functions since the function name
 %% is not bound in the environment:
@@ -507,5 +530,26 @@ polymorphic_let_test() ->
         "two_times float_double float",
     ?assertMatch({{t_arrow, [t_int, t_float], t_float}, _},
                  top_typ_of(Code)).
+
+clause_test_() ->
+    [?_assertMatch({{t_clause, t_int, none, t_atom}, _},
+                   typ_of(
+                     new_env(),
+                     #mlfe_clause{pattern={int, 1, 1}, 
+                                  result={atom, 1, true}})),
+     ?_assertMatch({{t_clause, {unbound, t0, 0}, none, t_atom}, _},
+                   typ_of(
+                     new_env(),
+                     #mlfe_clause{pattern={symbol, 1, "x"},
+                                  result={atom, 1, true}})),
+     ?_assertMatch({{t_clause, t_int, none, t_int}, _},
+                   typ_of(
+                     new_env(),
+                     #mlfe_clause{pattern={symbol, 1, "x"},
+                                  result=#mlfe_apply{
+                                            name={bif, '+', 1, erlang, '+'},
+                                            args=[{symbol, 1, "x"},
+                                                  {int, 1, 2}]}}))
+    ].
 
 -endif.

@@ -1,7 +1,7 @@
 -type mlfe_symbol() :: {symbol, integer(), string()}.
 
 -type mlfe_unit() :: {unit, integer()}.
--type mlfe_int() :: {integer, integer(), integer()}.
+-type mlfe_int() :: {int, integer(), integer()}.
 -type mlfe_float() :: {float, integer(), float()}.
 -type mlfe_number() :: mlfe_int()|mlfe_float().
 -type mlfe_bool() :: {bool, integer(), boolean()}.
