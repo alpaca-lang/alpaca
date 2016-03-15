@@ -30,6 +30,8 @@
 
 -type t_list() :: {t_list, typ()}.
 
+-type t_tuple() :: {t_tuple, list(typ())}.
+
 %% pattern, optional guard, result.  Currently I'm doing nothing with 
 %% present guards.
 -type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
@@ -45,6 +47,7 @@
              | t_arrow()
              | t_const()
              | t_list()
+             | t_tuple()
              | t_clause().
 
 %%% ##Data Structures
@@ -249,6 +252,11 @@ unify(T1, T2) ->
                             ok
                     end
             end;
+        {{t_tuple, A}, {t_tuple, B}} ->
+            case unify_list(A, B) of
+                {error, _} = Err -> Err;
+                _ -> ok
+            end;
         {_T1, _T2} ->
             io:format("UNIFY FAIL:  ~s ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
             {error, {cannot_unify, T1, T2}}
@@ -336,7 +344,7 @@ gen(_, T) ->
 %% Simple function that takes the place of a foldl over a list of
 %% arguments to an apply.
 typ_list([], _Lvl, {NextVar, _}, Memo) ->
-    {NextVar, lists:reverse(Memo)};
+    {lists:reverse(Memo), NextVar};
 typ_list([H|T], Lvl, Env, Memo) ->
     {Typ, NextVar} = typ_of(Env, Lvl, H),
     typ_list(T, Lvl, update_var_counter(NextVar, Env), [Typ|Memo]).
@@ -349,6 +357,8 @@ unwrap({t_arrow, A, B}) ->
     {t_arrow, [unwrap(X)||X <- A], unwrap(B)};
 unwrap({t_clause, A, G, B}) ->
     {t_clause, unwrap(A), unwrap(G), unwrap(B)};
+unwrap({t_tuple, Vs}) ->
+    {t_tuple, [unwrap(V)||V <- Vs]};
 unwrap(X) ->
     X.
 
@@ -379,6 +389,12 @@ typ_of({VarNum, _}, _Lvl, {atom, _, _}) ->
 typ_of(Env, Lvl, {symbol, _, N}) ->
     {T, {VarNum, _}, _} = inst(N, Lvl, Env),
     {T, VarNum};
+typ_of(Env, Lvl, {'_', _}) ->
+    {T, {VarNum, _}, _} = inst('_', Lvl, Env),
+    {T, VarNum};
+typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
+    {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
+    {{t_tuple, VTyps}, NextVar};
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
     {T, {VarNum, _}, _} = inst(MlfeName, Lvl, Env),
@@ -396,7 +412,7 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
     CopiedTypF = deep_copy_type(TypF, maps:new()),
 
-    {NextVar2, ArgTypes} = typ_list(Args, Lvl, update_var_counter(NextVar, Env), []),
+    {ArgTypes, NextVar2} = typ_list(Args, Lvl, update_var_counter(NextVar, Env), []),
     {TypRes, Env2} = new_var(Lvl, update_var_counter(NextVar2, Env)),
 
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
@@ -442,19 +458,10 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
             {RTyp, NextVar2}
     end;
 
-typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
-    {PTyp, NewEnv} = case P of
-                         {symbol, _Line, Name} -> 
-                             {Typ, Env2} = new_var(Lvl, Env),
-                             {Typ, update_env(Name, Typ, Env2)};
-                         {'_', _Line} ->
-                             {Typ, Env2} = new_var(Lvl, Env),
-                             io:format("Stand-in is ~s~n", [dump_term(Typ)]),
-                             {Typ, Env2};
-                         _ ->
-                             {Typ, NextVar} = typ_of(Env, Lvl, P),
-                             {Typ, update_var_counter(NextVar, Env)}
-                     end,
+typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}=C) ->
+    io:format("~nClause is ~w~n~n", [C]),
+    {PTyp, NewEnv} = add_bindings(P, Env, Lvl),    
+    dump_env(NewEnv),
     {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
     {{t_clause, PTyp, none, RTyp}, NextVar2};
 
@@ -513,6 +520,56 @@ args_to_types([{symbol, _, N}|T], Lvl, {_, Vs} = Env, Memo) ->
         Typ ->
             args_to_types(T, Lvl, Env, [{N, Typ}|Memo])
     end.
+
+%%% For clauses we need to add bindings to the environment for any symbols
+%%% (variables) that occur in the pattern.
+-spec add_bindings(mlfe_expression(), env(), integer()) -> {typ(), env()}.
+add_bindings({symbol, _, Name}, Env, Lvl) ->
+    {Typ, Env2} = new_var(Lvl, Env),
+    {Typ, update_env(Name, Typ, Env2)};
+add_bindings({'_', _}, Env, Lvl) ->
+    {Typ, Env2} = new_var(Lvl, Env),
+    io:format("Stand-in is ~s~n", [dump_term(Typ)]),
+    {Typ, update_env('_', Typ, Env2)};
+%%% Tuples are a slightly more involved case since we want a type for the
+%%% whole tuple as well as any explicit variables to be available in the
+%%% result side of the clause.
+add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl) ->
+    {#mlfe_tuple{values=Vs}=Tup2, _} = rename_tuple_wildcards(Tup1, 0),
+    Env2 = lists:foldl(fun (V, EnvAcc) -> 
+                               {_Typ, NewEnv} = add_bindings(V, EnvAcc, Lvl),
+                               NewEnv
+                       end, Env, Vs),
+    {Typ, NextVar} = typ_of(Env2, Lvl, Tup2),
+    {Typ, update_var_counter(NextVar, Env2)};
+add_bindings(Exp, Env, Lvl) ->
+    {Typ, NextVar} = typ_of(Env, Lvl, Exp),
+    {Typ, update_var_counter(NextVar, Env)}.
+
+%%% Tuples may have multiple instances of the '_' wildcard/"don't care"
+%%% symbol.  Each instance needs a unique name for unification purposes
+%%% so the individual occurrences of '_' get renamed with numbers in order,
+%%% e.g. (1, _, _) would become (1, _0, _1).
+rename_tuple_wildcards(#mlfe_tuple{values=Vs}=Tup, NameNum) ->
+    Folder = fun(V, {Acc, N}) ->
+                     case V of
+                         {'_', L} -> 
+                             {[{symbol, L, integer_to_list(N)++"_"}|Acc], N+1};
+                         Other ->
+                             {NewOther, NewN} = rename_tuple_wildcards(Other, N),
+                             {[NewOther|Acc], NewN}
+                     end
+             end,
+    {Renamed, NN} = lists:foldl(Folder, {[], NameNum}, Vs),
+    {Tup#mlfe_tuple{values=lists:reverse(Renamed)}, NN};
+rename_tuple_wildcards(O, N) ->
+    {O, N}.
+
+                             
+
+%add_binding_to_env({symbol, _, Name}, Env) ->
+%add_binding_to_env({_, _}, Env) ->
+%    Env.
 
 dump_env({C, L}) ->
     io:format("Next var number is ~w~n", [C]),
@@ -608,6 +665,32 @@ match_test_() ->
                      "| 1 -> 'x_was_zero\n"
                      "| 2 -> 'x_was_one\n"
                      "| _ -> 'x_was_more_than_one"))
+    ].
+
+tuple_test_() ->
+    [?_assertMatch({{t_arrow, 
+                    [{t_tuple, [t_int, t_float]}], 
+                    {t_tuple, [t_float, t_int]}}, _},
+                   top_typ_of(
+                     "f tuple = match tuple with\n"
+                     "| (i, f) -> (f +. 1.0, i + 1)")),
+     ?_assertMatch({{t_arrow, [t_int], {t_tuple, [t_int, t_atom]}}, _},
+                   top_typ_of("f i = (i + 2, 'plus_two)")),
+     ?_assertMatch({error, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "| i -> i + 1\n"
+                     "| (_, y) -> y + 1\n")),
+     ?_assertMatch({{t_arrow, [{t_tuple, 
+                                [{unbound, A, _}, 
+                                 {unbound, B, _},
+                                 {t_tuple, 
+                                  [t_int, t_int]}]}],
+                     {t_tuple, [t_int, t_int]}}, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "|(_, _, (1, x)) -> (x + 2, 1)\n"
+                     "|(_, _, (_, x)) -> (x + 2, 50)\n"))
     ].
 
 -endif.
