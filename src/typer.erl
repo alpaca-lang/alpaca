@@ -634,13 +634,6 @@ rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
     
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
-%                     case V of
-%                         {'_', L} -> 
-%                             {[{symbol, L, integer_to_list(N)++"_"}|Acc], N+1};
-%                         Other ->
-%                             {NewOther, NewN} = rename_wildcards(Other, N),
-%                             {[NewOther|Acc], NewN}
-%                     end
                      {NewOther, NewN} = rename_wildcards(V, N),
                      {[NewOther|Acc], NewN}
              end,
@@ -649,11 +642,7 @@ rename_wildcards(Vs, NameNum) when is_list(Vs) ->
 rename_wildcards({'_', L}, N) ->
     {{symbol, L, integer_to_list(N)++"_"}, N+1};
 rename_wildcards(O, N) ->
-    {O, N}.                             
-
-%add_binding_to_env({symbol, _, Name}, Env) ->
-%add_binding_to_env({_, _}, Env) ->
-%    Env.
+    {O, N}.
 
 dump_env({C, L}) ->
     io:format("Next var number is ~w~n", [C]),
