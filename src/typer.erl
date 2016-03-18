@@ -28,7 +28,9 @@
 %% list of parameter types, return type:
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
--type t_list() :: {t_list, typ()}.
+-type t_cons() :: {t_cons, typ(), t_list()}.
+-type t_nil() :: t_nil.
+-type t_list() :: t_cons() | t_nil().
 
 -type t_tuple() :: {t_tuple, list(typ())}.
 
@@ -257,6 +259,14 @@ unify(T1, T2) ->
                 {error, _} = Err -> Err;
                 _ -> ok
             end;
+        {{t_list, _}, t_nil} ->
+            ok;
+        {t_nil, {t_list, _}} ->
+            ok;
+        {{t_list, A}, B} ->
+            unify(A, B);
+        {A, {t_list, B}} ->
+            unify(A, B);
         {_T1, _T2} ->
             io:format("UNIFY FAIL:  ~s ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
             {error, {cannot_unify, T1, T2}}
@@ -359,6 +369,8 @@ unwrap({t_clause, A, G, B}) ->
     {t_clause, unwrap(A), unwrap(G), unwrap(B)};
 unwrap({t_tuple, Vs}) ->
     {t_tuple, [unwrap(V)||V <- Vs]};
+unwrap({t_list, T}) ->
+    {t_list, unwrap(T)};
 unwrap(X) ->
     X.
 
@@ -395,6 +407,40 @@ typ_of(Env, Lvl, {'_', _}) ->
 typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
     {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
     {{t_tuple, VTyps}, NextVar};
+
+typ_of({C, _}, _, {nil, _Line}) ->
+    {t_nil, C};
+typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
+    {HTyp, NV1} = typ_of(Env, Lvl, H),
+    dump_env(Env),
+    {TTyp, NV2} = case T of
+                      {nil, _} -> {{t_list, HTyp}, NV1};
+                      #mlfe_cons{}=Cons ->
+                          typ_of(update_var_counter(NV1, Env), Lvl, Cons);
+                      {symbol, _, _} = S -> 
+                          {STyp, Next} = typ_of(update_var_counter(NV1, Env), Lvl, S),
+                          {TL, {Next2, _}} = new_var(Lvl, update_var_counter(Next, Env)),
+                          unify({t_list, TL}, STyp),
+                          {STyp, Next2};
+                      NonList ->
+                          {error, {cons_to_non_list, NonList}}
+                  end,
+    ListType = case TTyp of
+                   P when is_pid(P) ->
+                       case get_cell(TTyp) of
+                           {link, {t_list, LT}} -> LT;
+                           {t_list, LT} -> LT
+                       end;
+                   {t_list, LT} ->
+                       LT
+               end,
+    case unify(HTyp, ListType) of
+        {error, _} = Err ->
+            Err;
+        ok ->
+            {TTyp, NV2}
+    end;
+
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
     {T, {VarNum, _}, _} = inst(MlfeName, Lvl, Env),
@@ -459,8 +505,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     end;
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}=C) ->
-    io:format("~nClause is ~w~n~n", [C]),
-    {PTyp, NewEnv} = add_bindings(P, Env, Lvl),    
+    {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
     dump_env(NewEnv),
     {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
     {{t_clause, PTyp, none, RTyp}, NextVar2};
@@ -522,50 +567,89 @@ args_to_types([{symbol, _, N}|T], Lvl, {_, Vs} = Env, Memo) ->
     end.
 
 %%% For clauses we need to add bindings to the environment for any symbols
-%%% (variables) that occur in the pattern.
--spec add_bindings(mlfe_expression(), env(), integer()) -> {typ(), env()}.
-add_bindings({symbol, _, Name}, Env, Lvl) ->
+%%% (variables) that occur in the pattern.  "NameNum" is used to give 
+%%% "wildcard" variable names (the '_' throwaway label) sequential and thus
+%%% differing _actual_ variable names.  This is necessary so that two different
+%%% occurrences of '_' with different types don't collide in `unify/2` and
+%%% thus cause typing to fail when it really should succeed.
+%%% 
+%%% In addition to the type determined for the thing we're adding bindings from,
+%%% the return type includes the modified environment with those new bindings
+%%% we've added along with the updated "NameNum" value so that we can recurse
+%%% through a data structure with `add_bindings/4`.
+-spec add_bindings(
+        mlfe_expression(), 
+        env(), 
+        Lvl::integer(),
+        NameNum::integer()) -> {typ(), env(), integer()}.
+add_bindings({symbol, _, Name}, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    {Typ, update_env(Name, Typ, Env2)};
-add_bindings({'_', _}, Env, Lvl) ->
+    {Typ, update_env(Name, Typ, Env2), NameNum};
+
+%%% A single occurrence of the wildcard doesn't matter here as the renaming
+%%% only occurs in structures where multiple instances can show up, e.g.
+%%% in tuples and lists.
+
+add_bindings({'_', _}, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    io:format("Stand-in is ~s~n", [dump_term(Typ)]),
-    {Typ, update_env('_', Typ, Env2)};
+    {Typ, update_env('_', Typ, Env2), NameNum};
+
 %%% Tuples are a slightly more involved case since we want a type for the
 %%% whole tuple as well as any explicit variables to be available in the
 %%% result side of the clause.
-add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl) ->
-    {#mlfe_tuple{values=Vs}=Tup2, _} = rename_tuple_wildcards(Tup1, 0),
-    Env2 = lists:foldl(fun (V, EnvAcc) -> 
-                               {_Typ, NewEnv} = add_bindings(V, EnvAcc, Lvl),
-                               NewEnv
-                       end, Env, Vs),
+add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
+    {#mlfe_tuple{values=Vs}=Tup2, NN2} = rename_wildcards(Tup1, NameNum),
+    {Env2, NN3} = lists:foldl(
+                    fun (V, {EnvAcc, NN}) -> 
+                            {_Typ, NewEnv, NewNN} = add_bindings(V, EnvAcc, Lvl, NN),
+                            {NewEnv, NewNN}
+                    end, 
+                    {Env, NN2}, 
+                    Vs),
     {Typ, NextVar} = typ_of(Env2, Lvl, Tup2),
-    {Typ, update_var_counter(NextVar, Env2)};
-add_bindings(Exp, Env, Lvl) ->
+    {Typ, update_var_counter(NextVar, Env2), NN3};
+
+add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
+    {#mlfe_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
+    {_, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
+    {_, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
+    {Typ, NextVar} = typ_of(Env3, Lvl, RenCons),
+    {Typ, update_var_counter(NextVar, Env3), NN4};
+
+add_bindings(Exp, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, Exp),
-    {Typ, update_var_counter(NextVar, Env)}.
+    {Typ, update_var_counter(NextVar, Env), NameNum}.
 
 %%% Tuples may have multiple instances of the '_' wildcard/"don't care"
 %%% symbol.  Each instance needs a unique name for unification purposes
 %%% so the individual occurrences of '_' get renamed with numbers in order,
 %%% e.g. (1, _, _) would become (1, _0, _1).
-rename_tuple_wildcards(#mlfe_tuple{values=Vs}=Tup, NameNum) ->
+rename_wildcards(#mlfe_tuple{values=Vs}=Tup, NameNum) ->
+    {Renamed, NN} = rename_wildcards(Vs, NameNum),
+    {Tup#mlfe_tuple{values=Renamed}, NN};
+rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
+    {RenH, N1} = rename_wildcards(H, NameNum),
+    {RenT, N2} = rename_wildcards(T, N1),
+    {#mlfe_cons{head=RenH, tail=RenT}, N2};
+    
+rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
-                     case V of
-                         {'_', L} -> 
-                             {[{symbol, L, integer_to_list(N)++"_"}|Acc], N+1};
-                         Other ->
-                             {NewOther, NewN} = rename_tuple_wildcards(Other, N),
-                             {[NewOther|Acc], NewN}
-                     end
+%                     case V of
+%                         {'_', L} -> 
+%                             {[{symbol, L, integer_to_list(N)++"_"}|Acc], N+1};
+%                         Other ->
+%                             {NewOther, NewN} = rename_wildcards(Other, N),
+%                             {[NewOther|Acc], NewN}
+%                     end
+                     {NewOther, NewN} = rename_wildcards(V, N),
+                     {[NewOther|Acc], NewN}
              end,
     {Renamed, NN} = lists:foldl(Folder, {[], NameNum}, Vs),
-    {Tup#mlfe_tuple{values=lists:reverse(Renamed)}, NN};
-rename_tuple_wildcards(O, N) ->
-    {O, N}.
-
-                             
+    {lists:reverse(Renamed), NN};
+rename_wildcards({'_', L}, N) ->
+    {{symbol, L, integer_to_list(N)++"_"}, N+1};
+rename_wildcards(O, N) ->
+    {O, N}.                             
 
 %add_binding_to_env({symbol, _, Name}, Env) ->
 %add_binding_to_env({_, _}, Env) ->
@@ -691,6 +775,22 @@ tuple_test_() ->
                      "f x = match x with\n"
                      "|(_, _, (1, x)) -> (x + 2, 1)\n"
                      "|(_, _, (_, x)) -> (x + 2, 50)\n"))
+    ].
+
+list_test_() ->
+    [?_assertMatch({{t_list, t_float}, _},
+                   top_typ_of("1.0 : []")),
+     ?_assertMatch({{t_list, t_int}, _},
+                   top_typ_of("1 : 2 : []")),
+     ?_assertMatch({error, _}, top_typ_of("1 : 2.0 : []")),
+     ?_assertMatch({{t_arrow, 
+                     [{unbound, A, _}, {t_list, {unbound, A, _}}],
+                     {t_list, {unbound, A, _}}}, _},
+                   top_typ_of("f x y = x : y")),
+     ?_assertMatch({{t_arrow, [{t_list, t_int}], t_int}, _},
+                   top_typ_of(
+                     "f list = match list with\n"
+                     "| h : t -> h + 1"))
     ].
 
 -endif.
