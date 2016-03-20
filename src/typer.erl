@@ -779,7 +779,17 @@ list_test_() ->
      ?_assertMatch({{t_arrow, [{t_list, t_int}], t_int}, _},
                    top_typ_of(
                      "f list = match list with\n"
-                     "| h : t -> h + 1"))
+                     "| h : t -> h + 1")),
+     %% Ensure that a '_' in a list nested in a tuple is renamed properly
+     %% so that one does NOT get unified with the other when they're 
+     %% potentially different types:
+     ?_assertMatch({{t_arrow,
+                    [{t_tuple, [{t_list, t_int}, {unbound, _, _}, t_float]}],
+                    {t_tuple, [t_int, t_float]}}, _},
+                   top_typ_of(
+                     "f list_in_tuple =\n"
+                     "  match list_in_tuple with\n"
+                     "  | (h : 1 : _ : t, _, f) -> (h, f +. 3.0)"))
     ].
 
 -endif.

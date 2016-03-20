@@ -16,7 +16,11 @@ compile(Code) when is_list(Code) ->
 compile({error, _} = E) ->
     io:format("Error was ~w~n", [E]),
     E;
-compile({ok, ModuleName, Exports, Funs}) ->
+compile({ok, Mod}) ->
+    #mlfe_module{
+       name=ModuleName, 
+       function_exports=Exports, 
+       functions=Funs} = Mod,
     {_Env, CompiledFuns} = compile_funs([], [], Funs),
     CompiledExports = [compile_export(E) || E <- Exports],
     {ok, cerl:c_module(

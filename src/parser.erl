@@ -15,34 +15,34 @@ parse(Tokens) when is_list(Tokens) ->
 
 parse_module(Text) ->
     {ok, Tokens, _} = scanner:scan(Text),
-    parse_module(Tokens, {no_module, [], []}).
+    parse_module(Tokens, #mlfe_module{}).
 
-parse_module([], {no_module, _, _}) ->
+parse_module([], #mlfe_module{name=no_module}) ->
     {error, no_module_defined};
-parse_module([], {Mod, Exports, Funs}) ->
-    {ok, Mod, Exports, lists:reverse(Funs)};
-parse_module([{break, _}], Memo) ->
-    parse_module([], Memo);
-parse_module(Tokens, Memo) ->
+parse_module([], #mlfe_module{functions=Funs}=M) ->
+    {ok, M#mlfe_module{functions=lists:reverse(Funs)}};
+parse_module([{break, _}], Mod) ->
+    parse_module([], Mod);
+parse_module(Tokens, Mod) ->
     {NextBatch, Rem} = next_batch(Tokens, []),
     {ok, Parsed} = parse(NextBatch),
-    case update_memo(Memo, Parsed) of
+    case update_memo(Mod, Parsed) of
         {ok, NewMemo} ->
             parse_module(Rem, NewMemo);
         {error, Err} ->
             Err
     end.
 
-update_memo({no_module, Exports, Funs}, {module, Name}) ->
-    {ok, {Name, Exports, Funs}};
-update_memo({Name, _Exports, _Funs}, {module, DupeName}) ->
+update_memo(#mlfe_module{name=no_module}=Mod, {module, Name}) ->
+    {ok, Mod#mlfe_module{name=Name}};
+update_memo(#mlfe_module{name=Name}, {module, DupeName}) ->
     {error, "You are trying to rename the module " ++
          Name ++ " to " ++ DupeName ++ " which is not allowed."};
-update_memo({Name, Exports, Funs}, {export, Es}) ->
-    {ok, {Name, Es ++ Exports, Funs}};
-update_memo({Name, Exports, Funs}, #mlfe_fun_def{name=N} = Def) ->
+update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
+    {ok, M#mlfe_module{function_exports=Es ++ Exports}};
+update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
     io:format("Adding function ~w~n", [N]),
-    {ok, {Name, Exports, [Def|Funs]}};
+    {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(_, Bad) ->
     {error, {"Top level requires defs, module, and export declarations", Bad}}.
 
@@ -233,25 +233,29 @@ module_with_let_test() ->
         "add x y =\n"
         "  let adder a b = a + b in\n"
         "  adder x y",
-    ?assertEqual({ok,"test_mod",
-                  [{"add",2}],
-                  [#mlfe_fun_def{name={symbol,5,"add"},
-                                 args=[{symbol,5,"x"},{symbol,5,"y"}],
-                                 body=#fun_binding{
-                                         def=#mlfe_fun_def{
-                                                name={symbol,6,"adder"},
-                                                args=[{symbol,6,"a"},
-                                                      {symbol,6,"b"}],
-                                                body=#mlfe_apply{
-                                                        type=undefined,
-                                                        name={bif, '+', 6, erlang, '+'},
-                                                        args=[{symbol,6,"a"},
-                                                              {symbol,6,"b"}]}},
-                                         expr=#mlfe_apply{
-                                                 name={symbol,7,"adder"},
-                                                 args=[{symbol,7,"x"},
-                                                       {symbol,7,"y"}]}}}]},
-                 parse_module(Code)).
+    ?assertEqual({ok,
+                  #mlfe_module{
+                     name="test_mod",
+                     function_exports=[{"add",2}],
+                     functions=[
+                                #mlfe_fun_def{
+                                   name={symbol,5,"add"},
+                                   args=[{symbol,5,"x"},{symbol,5,"y"}],
+                                   body=#fun_binding{
+                                           def=#mlfe_fun_def{
+                                                  name={symbol,6,"adder"},
+                                                  args=[{symbol,6,"a"},
+                                                        {symbol,6,"b"}],
+                                                  body=#mlfe_apply{
+                                                          type=undefined,
+                                                          name={bif, '+', 6, erlang, '+'},
+                                                          args=[{symbol,6,"a"},
+                                                                {symbol,6,"b"}]}},
+                                           expr=#mlfe_apply{
+                                                   name={symbol,7,"adder"},
+                                                   args=[{symbol,7,"x"},
+                                                         {symbol,7,"y"}]}}}]}},
+                  parse_module(Code)).
 
 match_test_() ->
     [?_assertEqual({ok, #mlfe_match{match_expr={symbol, 1, "x"},
@@ -373,30 +377,36 @@ simple_module_test() ->
         "add1 x = adder x 1\n\n"
         "add x y = adder x y\n\n"
         "sub x y = x - y",
-    ?assertEqual({ok,"test_mod",
-                  [{"add",2},{"sub",2}],
-                  [#mlfe_fun_def{name={symbol,5,"adder"},
-                                 args=[{symbol,5,"x"},{symbol,5,"y"}],
-                                 body=#mlfe_apply{type=undefined,
-                                                  name={bif, '+', 5, erlang, '+'},
-                                                  args=[{symbol,5,"x"},
-                                                        {symbol,5,"y"}]}},
-                   #mlfe_fun_def{name={symbol,7,"add1"},
-                                 args=[{symbol,7,"x"}],
-                                 body=#mlfe_apply{name={symbol,7,"adder"},
-                                                  args=[{symbol,7,"x"},
-                                                        {int,7,1}]}},
-                   #mlfe_fun_def{name={symbol,9,"add"},
-                                 args=[{symbol,9,"x"},{symbol,9,"y"}],
-                                 body=#mlfe_apply{name={symbol,9,"adder"},
-                                                  args=[{symbol,9,"x"},
-                                                        {symbol,9,"y"}]}},
-                   #mlfe_fun_def{name={symbol,11,"sub"},
-                                 args=[{symbol,11,"x"},{symbol,11,"y"}],
-                                 body=#mlfe_apply{type=undefined,
-                                                  name={bif, '-', 11, erlang, '-'},
-                                                  args=[{symbol,11,"x"},
-                                                        {symbol,11,"y"}]}}]},
+    ?assertEqual({ok, #mlfe_module{
+                         name="test_mod",
+                         function_exports=[{"add",2},{"sub",2}],
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol,5,"adder"},
+                                       args=[{symbol,5,"x"},{symbol,5,"y"}],
+                                       body=#mlfe_apply{type=undefined,
+                                                        name={bif, '+', 5, erlang, '+'},
+                                                        args=[{symbol,5,"x"},
+                                                              {symbol,5,"y"}]}},
+                                    #mlfe_fun_def{
+                                       name={symbol,7,"add1"},
+                                       args=[{symbol,7,"x"}],
+                                       body=#mlfe_apply{name={symbol,7,"adder"},
+                                                        args=[{symbol,7,"x"},
+                                                              {int,7,1}]}},
+                                     #mlfe_fun_def{
+                                        name={symbol,9,"add"},
+                                        args=[{symbol,9,"x"},{symbol,9,"y"}],
+                                        body=#mlfe_apply{name={symbol,9,"adder"},
+                                                         args=[{symbol,9,"x"},
+                                                               {symbol,9,"y"}]}},
+                                    #mlfe_fun_def{
+                                       name={symbol,11,"sub"},
+                                       args=[{symbol,11,"x"},{symbol,11,"y"}],
+                                       body=#mlfe_apply{type=undefined,
+                                                        name={bif, '-', 11, erlang, '-'},
+                                                        args=[{symbol,11,"x"},
+                                                              {symbol,11,"y"}]}}]}},
                  parse_module(Code)).
 
 

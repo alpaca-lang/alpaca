@@ -122,3 +122,10 @@
                   }).
 
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
+
+-record(mlfe_module, {
+          name=no_module :: atom(),
+          function_exports=[] :: list({atom(), integer()}),
+          functions=[] :: list(mlfe_fun_def())
+         }).
+-type mlfe_module() :: #mlfe_module{}.
