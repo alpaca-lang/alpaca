@@ -114,12 +114,13 @@
                      }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
--record (mlfe_fun_def, {type=undefined :: atom(),
-                   name :: atom(),
-                   args :: list(mlfe_symbol())
-                         | mlfe_unit(),
-                   body :: mlfe_expression()
-                  }).
+-record (mlfe_fun_def, {
+           type=undefined :: typer:typ()|undefined,
+           name :: atom(),
+           args :: list(mlfe_symbol())
+                 | mlfe_unit(),
+           body :: mlfe_expression()
+          }).
 
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
 

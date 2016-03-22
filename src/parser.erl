@@ -382,11 +382,11 @@ simple_module_test() ->
                          function_exports=[{"add",2},{"sub",2}],
                          functions=[
                                     #mlfe_fun_def{
-                                       name={symbol,5,"adder"},
-                                       args=[{symbol,5,"x"},{symbol,5,"y"}],
+                                       name={symbol, 5, "adder"},
+                                       args=[{symbol, 5, "x"},{symbol,5 , "y"}],
                                        body=#mlfe_apply{type=undefined,
                                                         name={bif, '+', 5, erlang, '+'},
-                                                        args=[{symbol,5,"x"},
+                                                        args=[{symbol, 5, "x"},
                                                               {symbol,5,"y"}]}},
                                     #mlfe_fun_def{
                                        name={symbol,7,"add1"},

@@ -10,7 +10,8 @@
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
 
--export([cell/1, new_env/0, typ_of/2, typ_of/3]).
+-export([cell/1, typ_of/2, typ_of/3]).
+-export_type([env/0, typ/0]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -134,26 +135,30 @@ copy_cell(Cell, RefMap) ->
 %%% 2. A proplist of {expression name, expression type} for the types
 %%%    of values and functions so far inferred/checked.
 
-%% The list is {var name, var type}
--type env() :: {integer(), list({atom(), atom()})}.
+-record(env, {
+          next_var=0 :: integer(),
+          bindings=[] :: list({term, typer:typ()}),
+          modules=[] :: list(mlfe_module())
+}).
+
+-type env() :: #env{}.
 
 -spec new_env() -> env().
 new_env() ->
-    {0, [Typ||Typ <- ?all_bifs]}.
+    #env{bindings=[Typ||Typ <- ?all_bifs]}.
 
-update_env(Name, Typ, {C, L}) ->
-    {C, [{Name, Typ}|[{N, T} || {N, T} <- L, N =/= Name]]}.
+update_binding(Name, Typ, #env{bindings=Bs} = Env) ->
+    Env#env{bindings=[{Name, Typ}|[{N, T} || {N, T} <- Bs, N =/= Name]]}.
 
-update_var_counter(VarNum, {_, Bindings}) ->
-    {VarNum, Bindings}.
-
+update_counter(VarNum, Env) ->
+    Env#env{next_var=VarNum}.
 
 %%% Make a copy of the named entity from the current environment, replacing
 %%% reference cells with copies of them.  Multiple references of the same
 %%% type variable must end up referencing a new _single_ copy of the type
 %%% variable's cell.
-copy_from_env(Name, {_C, L}) ->
-    deep_copy_type(proplists:get_value(Name, L), maps:new()).
+%copy_from_env(Name, {_C, L}) ->
+%    deep_copy_type(proplists:get_value(Name, L), maps:new()).
 
 %% Used by deep_copy_type for a set of function arguments or 
 %% list elements.
@@ -187,6 +192,17 @@ copy_type(P, RefMap) when is_pid(P) ->
     copy_cell(P, RefMap);
 copy_type(T, M) ->
     {T, M}.
+
+%%% ### Typer
+%%% 
+%%% 
+
+
+%%% Type check all functions in the module, returning a new module with
+%%% the function types set.
+%-spec type_module(Mod::mlfe_module()) -> mlfe_module().
+%type_module(Mod) ->
+    
 
 occurs(Label, Level, P) when is_pid(P) ->
     occurs(Label, Level, get_cell(P));
@@ -293,8 +309,9 @@ unify_list([A|TA], [B|TB], {MA, MB}) ->
         Lvl :: integer(), 
         Env :: env()) -> {typ(), env()} | {error, atom()}.
 
-inst(VarName, Lvl, {_, L} = Env) ->
-    case proplists:get_value(VarName, L, {error, bad_variable_name, VarName}) of
+inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
+    Default = {error, bad_variable_name, VarName},
+    case proplists:get_value(VarName, Bs, Default) of
         {error, _, _} = E ->
             E;
         T ->
@@ -336,10 +353,10 @@ inst(Typ, _Lvl, Env, Map) ->
     {Typ, Env, Map}.
 
 -spec new_var(Lvl :: integer(), Env :: env()) -> {t_cell(), env()}.
-new_var(Lvl, {C, L}) ->
-    N = list_to_atom("t" ++ integer_to_list(C)),
+new_var(Lvl, #env{next_var=VN} = Env) ->
+    N = list_to_atom("t" ++ integer_to_list(VN)),
     TVar = new_cell({unbound, N, Lvl}),
-    {TVar, {C+1, L}}.
+    {TVar, Env#env{next_var=VN+1}}.
 
 -spec gen(integer(), typ()) -> typ().
 gen(Lvl, {unbound, N, L}) when L > Lvl ->
@@ -353,11 +370,11 @@ gen(_, T) ->
 
 %% Simple function that takes the place of a foldl over a list of
 %% arguments to an apply.
-typ_list([], _Lvl, {NextVar, _}, Memo) ->
+typ_list([], _Lvl, #env{next_var=NextVar}, Memo) ->
     {lists:reverse(Memo), NextVar};
 typ_list([H|T], Lvl, Env, Memo) ->
     {Typ, NextVar} = typ_of(Env, Lvl, H),
-    typ_list(T, Lvl, update_var_counter(NextVar, Env), [Typ|Memo]).
+    typ_list(T, Lvl, update_counter(NextVar, Env), [Typ|Memo]).
 
 unwrap(P) when is_pid(P) ->
     unwrap(get_cell(P));
@@ -392,17 +409,17 @@ typ_of(Env, Exp) ->
         Lvl::integer(),
         Exp::mlfe_expression()) -> {typ(), integer()} | {error, term()}.
 
-typ_of({VarNum, _}, _Lvl, {int, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, {int, _, _}) ->
     {t_int, VarNum};
-typ_of({VarNum, _}, _Lvl, {float, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
     {t_float, VarNum};
-typ_of({VarNum, _}, _Lvl, {atom, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {t_atom, VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
-    {T, {VarNum, _}, _} = inst(N, Lvl, Env),
+    {T, #env{next_var=VarNum}, _} = inst(N, Lvl, Env),
     {T, VarNum};
 typ_of(Env, Lvl, {'_', _}) ->
-    {T, {VarNum, _}, _} = inst('_', Lvl, Env),
+    {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
     {T, VarNum};
 typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
     {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
@@ -416,10 +433,15 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
     {TTyp, NV2} = case T of
                       {nil, _} -> {{t_list, HTyp}, NV1};
                       #mlfe_cons{}=Cons ->
-                          typ_of(update_var_counter(NV1, Env), Lvl, Cons);
+                          typ_of(update_counter(NV1, Env), Lvl, Cons);
                       {symbol, _, _} = S -> 
-                          {STyp, Next} = typ_of(update_var_counter(NV1, Env), Lvl, S),
-                          {TL, {Next2, _}} = new_var(Lvl, update_var_counter(Next, Env)),
+                          {STyp, Next} = typ_of(
+                                           update_counter(NV1, Env), 
+                                           Lvl, 
+                                           S),
+                          {TL, #env{next_var=Next2}} = new_var(
+                                               Lvl, 
+                                               update_counter(Next, Env)),
                           unify({t_list, TL}, STyp),
                           {STyp, Next2};
                       NonList ->
@@ -443,7 +465,7 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
 
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
-    {T, {VarNum, _}, _} = inst(MlfeName, Lvl, Env),
+    {T, #env{next_var=VarNum}, _} = inst(MlfeName, Lvl, Env),
     {T, VarNum};    
 
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
@@ -458,8 +480,11 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
     CopiedTypF = deep_copy_type(TypF, maps:new()),
 
-    {ArgTypes, NextVar2} = typ_list(Args, Lvl, update_var_counter(NextVar, Env), []),
-    {TypRes, Env2} = new_var(Lvl, update_var_counter(NextVar2, Env)),
+    {ArgTypes, NextVar2} = typ_list(
+                             Args, 
+                             Lvl, 
+                             update_counter(NextVar, Env), []),
+    {TypRes, Env2} = new_var(Lvl, update_counter(NextVar2, Env)),
 
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
     case unify(CopiedTypF, Arrow) of
@@ -467,7 +492,7 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
             io:format("Error when unifying, ~w~n", [E]),
             E;
         ok ->
-            {VarNum, _} = Env2,
+            #env{next_var=VarNum} = Env2,
             {TypRes, VarNum}
     end;
 
@@ -478,11 +503,11 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     {ETyp, NextVar1} = typ_of(Env, Lvl, E),
     ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
                            {TypC, NV} = typ_of(EnvAcc, Lvl, C),
-                           {[TypC|Clauses], update_var_counter(NV, EnvAcc)}
+                           {[TypC|Clauses], update_counter(NV, EnvAcc)}
                    end,
-    {TypedCs, {NextVar2, _}} = lists:foldl(
-                                 ClauseFolder, 
-                                 {[], update_var_counter(NextVar1, Env)}, Cs),
+    {TypedCs, #env{next_var=NextVar2}} = lists:foldl(
+                                           ClauseFolder, 
+                                           {[], update_counter(NextVar1, Env)}, Cs),
     UnifyFolder = fun({t_clause, PA, _, RA}, {t_clause, PB, _, RB} = TypC) ->
                           case unify(PA, PB) of
                               ok -> case unify(RA, RB) of
@@ -504,7 +529,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
             {RTyp, NextVar2}
     end;
 
-typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}=C) ->
+typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
     {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
     dump_env(NewEnv),
     {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
@@ -520,7 +545,7 @@ typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
         {error, _} = Err ->
             Err;
         {T, NextVar} ->
-            Env3 = update_var_counter(NextVar, Env2),
+            Env3 = update_counter(NextVar, Env2),
             
             io:format("===  FUN DEF:  ==============~n", []),
             dump_env(Env3),
@@ -540,15 +565,15 @@ typ_of(Env, Lvl, #fun_binding{
                expr=E2}) ->
     io:format("=== FUN BIND:  ~s ========~n", [N]),
     {TypE, NextVar} = typ_of(Env, Lvl, E),
-    Env2 = update_var_counter(NextVar, Env),
-    typ_of(update_env(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
+    Env2 = update_counter(NextVar, Env),
+    typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
 
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     io:format("=== VAR BIND:  ~s ========~n", [N]),
     {TypE, NextVar} = typ_of(Env, Lvl, E1),
-    Env2 = update_var_counter(NextVar, Env),
-    typ_of(update_env(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
+    Env2 = update_counter(NextVar, Env),
+    typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
     
 %% Find or make a type for each arg from a function's
 %% argument list.
@@ -557,11 +582,11 @@ args_to_types([], _Lvl, Env, Memo) ->
 args_to_types([{unit, _}|T], Lvl, Env, Memo) ->
     %% have to give t_unit a name for filtering later:
     args_to_types(T, Lvl, Env, [{unit, t_unit}|Memo]);
-args_to_types([{symbol, _, N}|T], Lvl, {_, Vs} = Env, Memo) ->
-    case proplists:get_value(N, Vs) of
+args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
+    case proplists:get_value(N, Bs) of
         undefined ->
-            {Typ, {C, L}} = new_var(Lvl, Env),
-            args_to_types(T, Lvl, {C, [{N, Typ}|L]}, [{N, Typ}|Memo]);
+            {Typ, Env2} = new_var(Lvl, Env),
+            args_to_types(T, Lvl, update_binding(N, Typ, Env2), [{N, Typ}|Memo]);
         Typ ->
             args_to_types(T, Lvl, Env, [{N, Typ}|Memo])
     end.
@@ -584,7 +609,7 @@ args_to_types([{symbol, _, N}|T], Lvl, {_, Vs} = Env, Memo) ->
         NameNum::integer()) -> {typ(), env(), integer()}.
 add_bindings({symbol, _, Name}, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    {Typ, update_env(Name, Typ, Env2), NameNum};
+    {Typ, update_binding(Name, Typ, Env2), NameNum};
 
 %%% A single occurrence of the wildcard doesn't matter here as the renaming
 %%% only occurs in structures where multiple instances can show up, e.g.
@@ -592,7 +617,7 @@ add_bindings({symbol, _, Name}, Env, Lvl, NameNum) ->
 
 add_bindings({'_', _}, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    {Typ, update_env('_', Typ, Env2), NameNum};
+    {Typ, update_binding('_', Typ, Env2), NameNum};
 
 %%% Tuples are a slightly more involved case since we want a type for the
 %%% whole tuple as well as any explicit variables to be available in the
@@ -607,18 +632,19 @@ add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
                     {Env, NN2}, 
                     Vs),
     {Typ, NextVar} = typ_of(Env2, Lvl, Tup2),
-    {Typ, update_var_counter(NextVar, Env2), NN3};
+    
+    {Typ, update_counter(NextVar, Env2), NN3};
 
 add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
     {#mlfe_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
     {_, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
     {_, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
     {Typ, NextVar} = typ_of(Env3, Lvl, RenCons),
-    {Typ, update_var_counter(NextVar, Env3), NN4};
+    {Typ, update_counter(NextVar, Env3), NN4};
 
 add_bindings(Exp, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, Exp),
-    {Typ, update_var_counter(NextVar, Env), NameNum}.
+    {Typ, update_counter(NextVar, Env), NameNum}.
 
 %%% Tuples may have multiple instances of the '_' wildcard/"don't care"
 %%% symbol.  Each instance needs a unique name for unification purposes
@@ -644,9 +670,9 @@ rename_wildcards({'_', L}, N) ->
 rename_wildcards(O, N) ->
     {O, N}.
 
-dump_env({C, L}) ->
-    io:format("Next var number is ~w~n", [C]),
-    [io:format("Env:  ~s ~s~n", [N, dump_term(T)])||{N, T} <- L].
+dump_env(#env{next_var=V, bindings=Bs}) ->
+    io:format("Next var number is ~w~n", [V]),
+    [io:format("Env:  ~s ~s~n", [N, dump_term(T)])||{N, T} <- Bs].
 
 dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
