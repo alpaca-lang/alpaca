@@ -10,7 +10,7 @@
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
 
--export([cell/1, typ_of/2, typ_of/3]).
+-export([cell/1, new_env/0, typ_of/2, typ_of/3]).
 -export_type([env/0, typ/0]).
 
 -ifdef(TEST).
@@ -129,11 +129,24 @@ copy_cell(Cell, RefMap) ->
 
 %%% ###Environments
 %%% 
-%%% Environments track two things:
+%%% Environments track three things:
 %%% 
 %%% 1. A counter for naming new type variables
 %%% 2. A proplist of {expression name, expression type} for the types
 %%%    of values and functions so far inferred/checked.
+%%% 3. The set of modules included in type checking.
+%%% 
+%%% I'm including the modules in the typing environment so that when a call
+%%% crosses a module boundary into a module not yet checked, we can add the
+%%% bindings the other function expects.  An example:
+%%% 
+%%% Function `A.f` (f in module A) calls function `B.g` (g in module B).  `B.g`
+%%% calls an unexported function `B.h`.  If the module B has not been checked
+%%% before we check `A.f`, we have to check `B.g` in order to determine `A.f`'s
+%%% type.  In order to check `B.g`, `B.h` must be in the enviroment to also be
+%%% checked.  
+%%% 
+%%% Currently missing:  cycle detection and termination.
 
 -record(env, {
           next_var=0 :: integer(),
