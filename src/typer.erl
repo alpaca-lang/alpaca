@@ -150,7 +150,7 @@ copy_cell(Cell, RefMap) ->
 
 -record(env, {
           next_var=0 :: integer(),
-          bindings=[] :: list({term, typer:typ()}),
+          bindings=[] :: list({term(), typer:typ()|t_cell()}),
           modules=[] :: list(mlfe_module())
 }).
 
@@ -165,7 +165,7 @@ update_binding(Name, Typ, #env{bindings=Bs} = Env) ->
 
 update_counter(VarNum, Env) ->
     Env#env{next_var=VarNum}.
-
+ 
 %%% Make a copy of the named entity from the current environment, replacing
 %%% reference cells with copies of them.  Multiple references of the same
 %%% type variable must end up referencing a new _single_ copy of the type
@@ -320,12 +320,12 @@ unify_list([A|TA], [B|TB], {MA, MB}) ->
 -spec inst(
         VarName :: atom(), 
         Lvl :: integer(), 
-        Env :: env()) -> {typ(), env()} | {error, atom()}.
+        Env :: env()) -> {typ(), env()} | {error, term()}.
 
 inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
-    Default = {error, bad_variable_name, VarName},
+    Default = {error, {bad_variable_name, VarName}},
     case proplists:get_value(VarName, Bs, Default) of
-        {error, _, _} = E ->
+        {error, _} = E ->
             E;
         T ->
             inst(T, Lvl, Env, maps:new())
@@ -339,7 +339,7 @@ inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
 %% 
 %% The return is the instantiated type, the updated environment and the 
 %% updated cache map.
--spec inst(typ(), integer(), env(), CachedMap::map()) -> {typ(), env(), map()} | {error, atom()}.
+-spec inst(typ(), integer(), env(), CachedMap::map()) -> {typ(), env(), map()} | {error, term()}.
 inst({link, Typ}, Lvl, Env, CachedMap) ->
     inst(Typ, Lvl, Env, CachedMap);
 inst({unbound, _, _}=Typ, _, Env, M) ->
@@ -404,12 +404,23 @@ unwrap({t_list, T}) ->
 unwrap(X) ->
     X.
 
+-spec typ_module(M::mlfe_module(), Env::env()) -> mlfe_module().
+typ_module(#mlfe_module{functions=Fs}=M, Env) ->
+    M#mlfe_module{functions=typ_module_funs(Fs, Env, [])}.
+
+typ_module_funs([], _Env, Memo) ->
+    lists:reverse(Memo);
+typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}=N}=F|Rem], Env, Memo) ->
+    {Typ, Env2} = typ_of(Env, F),
+    Env3 = update_binding(Name, Typ, Env2),
+    typ_module_funs(Rem, Env2, [F#mlfe_fun_def{type=Typ}|Memo]).
+
 %% Top-level typ_of unwraps the reference cells used in unification.
 -spec typ_of(Env::env(), Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
 typ_of(Env, Exp) ->
     case typ_of(Env, 0, Exp) of
         {error, _} = E -> E;
-        {Typ, NewEnv} -> {unwrap(Typ), NewEnv}
+        {Typ, NewVar} -> {unwrap(Typ), update_counter(NewVar, Env)}
     end.
 
 %% In the past I returned the environment entirely but this contained mutations
@@ -478,8 +489,12 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
 
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
-    {T, #env{next_var=VarNum}, _} = inst(MlfeName, Lvl, Env),
-    {T, VarNum};    
+    case inst(MlfeName, Lvl, Env) of
+        {error, _} = E ->
+            E;
+        {T, #env{next_var=VarNum}, _} ->
+            {T, VarNum}
+    end;
 
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     Name = case N of
@@ -830,5 +845,29 @@ list_test_() ->
                      "  match list_in_tuple with\n"
                      "  | (h : 1 : _ : t, _, f) -> (h, f +. 3.0)"))
     ].
+
+module_typing_test() ->
+    Code =
+        "module typing_test\n\n"
+        "export add/2\n\n"
+        "add x y = x + y\n\n"
+        "head l = match l with\n"
+        "| h : t -> h",
+    {ok, M} = parser:parse_module(Code),
+    ?assertMatch(#mlfe_module{
+                             functions=[
+                                       #mlfe_fun_def{
+                                          name={symbol, 5, "add"},
+                                          type={t_arrow, 
+                                                [t_int, t_int],
+                                                t_int}},
+                                        #mlfe_fun_def{
+                                           name={symbol, 7, "head"},
+                                           type={t_arrow,
+                                                 [{t_list, {unbound, A, _}}],
+                                                 {unbound, A, _}}}
+                                       ]},
+                 typ_module(M, new_env())).
+        
 
 -endif.
