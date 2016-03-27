@@ -240,7 +240,8 @@ unwrap_cell(Typ) ->
 -spec unify(typ(), typ()) -> ok | {error, atom()}.
 unify(T1, T2) ->
     case {unwrap_cell(T1), unwrap_cell(T2)} of
-        {T, T} -> ok;
+        {T, T} ->
+            ok;
         %% only one instance of a type variable is permitted:
         {{unbound, N, _}, {unbound, N, _}}  -> {error, {cannot_unify, T1, T2}};
         {{link, Ty}, _} ->
@@ -466,8 +467,10 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
                           {TL, #env{next_var=Next2}} = new_var(
                                                Lvl, 
                                                update_counter(Next, Env)),
-                          unify({t_list, TL}, STyp),
-                          {STyp, Next2};
+                          case unify({t_list, TL}, STyp) of
+                              {error, _} = E -> E;
+                              ok -> {STyp, Next2}
+                          end;
                       NonList ->
                           {error, {cons_to_non_list, NonList}}
                   end,
@@ -499,7 +502,7 @@ typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     Name = case N of
                {bif, X, _, _, _} -> X;
-               {symbol, _, X} -> X
+               {symbol, _, X}    -> X
            end,
     {TypF, NextVar} = typ_of(Env, Lvl, N),
     %% we make a deep copy of the function we're unifying so that the
@@ -517,7 +520,6 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
     case unify(CopiedTypF, Arrow) of
         {error, _} = E ->
-            io:format("Error when unifying, ~w~n", [E]),
             E;
         ok ->
             #env{next_var=VarNum} = Env2,
@@ -552,17 +554,23 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
         _ ->
             %% unify the expression with the unified pattern:
             {t_clause, PTyp, _, RTyp} = FC,
-            unify(ETyp, PTyp),
-            %% only need to return the result type of the unified clause types:
-            {RTyp, NextVar2}
+            case unify(ETyp, PTyp) of
+                {error, _} = Err ->
+                    Err;
+                %% only need to return the result type of the unified clause types:
+                ok -> 
+                    {RTyp, NextVar2} 
+            end
     end;
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
     {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
     dump_env(NewEnv),
-    {RTyp, NextVar2} = typ_of(NewEnv, Lvl, R),
-    {{t_clause, PTyp, none, RTyp}, NextVar2};
-
+    case typ_of(NewEnv, Lvl, R) of
+        {error, _} = E   -> E;
+        {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
+    end;
+            
 %% This can't handle recursive functions since the function name
 %% is not bound in the environment:
 typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
@@ -843,7 +851,13 @@ list_test_() ->
                    top_typ_of(
                      "f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
-                     "  | (h : 1 : _ : t, _, f) -> (h, f +. 3.0)"))
+                     "  | (h : 1 : _ : t, _, f) -> (h, f +. 3.0)")),
+     ?_assertMatch({error, {cannot_unify, t_int, t_float}},
+                   top_typ_of(
+                     "f should_fail x =\n"
+                     "let l = 1 : 2 : 3 : [] in\n"
+                     "match l with\n"
+                     "| a : b : _ -> a +. b"))
     ].
 
 module_typing_test() ->
