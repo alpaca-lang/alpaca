@@ -4,20 +4,23 @@ mlfe
 ML-flavoured/fronted Erlang.
 
 # Intentions/Goals
-I want a variant of ML on the Erlang VM with:
+I want something that looks and operates a little bit like ML on the Erlang VM with:
 
 - static typing of itself
+- parametric polymorphism
+- infinitely recursive functions as a distinct and allowable type for processes
+looping on receive.
+- recursive data types
 - syntax somewhere between [OCaml](https://ocaml.org/) and
 [Elm](http://elm-lang.org/), likely favouring Elm's for new data types
-- FFI to erlang code that does not allow `term()` or `any()`
-- dialyzer to check the type coming back from the FFI, suggest possible union
-  types if there isn't an appropriate one in scope
+- FFI to erlang code that does not allow the return of values typed as `term()` or `any()`
 - simple test annotations for something like
   [eunit](http://erlang.org/doc/apps/eunit/chapter.html), tests live beside the
   functions they test
 
-I'll flesh out this list better later, the above is a very rough and incomplete
-set of ideal things.
+The above is still a very rough and incomplete set of wishes.  In future it
+might be nice to have dialyzer check the type coming back from the FFI and
+suggest possible union types if there isn't an appropriate one in scope.
 
 # FFI Thoughts
 At present I'm thinking the FFI to call erlang code will take a standard
@@ -88,14 +91,15 @@ worrying about tooling around dependency management, etc:
 - data types (tagged unions)/ADTs
 
 ## Receive
-Looks like basic clauses as in matches but also requires an optional timeout and associated action.
+I think this will look like basic clauses as in matches but also requires an
+optional timeout and associated action.  I'm as yet unsure of how I'm going to
+handle guards on types but likely in the same way I do for the Erlang FFI.  I'm
+thinking a form of predicate at the moment.
 
 ## Type Checker
 Currently working for basic polymorphism and integers.  Only tested at the
 per-function level.  Next key things:
 
-- check lists
-- check tuples
 - check full modules
 - check inter-module calls
 
