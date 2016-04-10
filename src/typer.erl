@@ -39,7 +39,12 @@
 %% present guards.
 -type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
 
--type t_const() :: t_int
+%%% `t_rec` is a special type that denotes an infinitely recursive function.
+%%% Since all functions here are considered recursive, the return type for 
+%%% any function must begin as `t_rec`.  `t_rec` unifies with anything else by 
+%%% becoming that other thing and as such should be in its own reference cell. 
+-type t_const() :: t_rec
+                 | t_int
                  | t_float
                  | t_atom
                  | t_bool
@@ -158,7 +163,10 @@ copy_cell(Cell, RefMap) ->
 
 -spec new_env() -> env().
 new_env() ->
-    #env{bindings=[Typ||Typ <- ?all_bifs]}.
+    #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs]}.
+
+celled_binding({Name, {t_arrow, Args, Ret}}) ->
+    {Name, {t_arrow, [new_cell(A) || A <- Args], new_cell(Ret)}}.
 
 update_binding(Name, Typ, #env{bindings=Bs} = Env) ->
     Env#env{bindings=[{Name, Typ}|[{N, T} || {N, T} <- Bs, N =/= Name]]}.
@@ -248,6 +256,12 @@ unify(T1, T2) ->
             unify(Ty, T2);
         {_, {link, Ty}} ->
             unify(T1, Ty);
+        {t_rec, _} ->
+            set_cell(T1, {link, T2}),
+            ok;
+        {_, t_rec} ->
+            set_cell(T2, {link, T1}),
+            ok;
         %% Definitely room for cleanup in the next two cases:
         {{unbound, N, Lvl}, Ty} ->
             case occurs(N, Lvl, Ty) of
@@ -290,16 +304,20 @@ unify(T1, T2) ->
                 _ -> ok
             end;
         {{t_list, _}, t_nil} ->
+            set_cell(T2, {link, T1}),
             ok;
         {t_nil, {t_list, _}} ->
+            set_cell(T1, {link, T2}),
             ok;
+        {{t_list, A}, {t_list, B}} ->
+            unify(A, B);
         {{t_list, A}, B} ->
             unify(A, B);
         {A, {t_list, B}} ->
             unify(A, B);
         {_T1, _T2} ->
             io:format("UNIFY FAIL:  ~s ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
-            {error, {cannot_unify, T1, T2}}
+            {error, {cannot_unify, _T1, _T2}}
     end.
 
 %% Unify two parameter lists, e.g. from a function arrow.
@@ -449,12 +467,15 @@ typ_of(Env, Lvl, {'_', _}) ->
 typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
     {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
     {{t_tuple, VTyps}, NextVar};
-
-typ_of({C, _}, _, {nil, _Line}) ->
-    {t_nil, C};
+typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
+    %% 20160403 a nil type isn't making much sense to
+    %% me at the moment, it's just another list to be
+    %% unified:
+%    {new_cell(t_nil), VarNum};
+    {TL, #env{next_var=NV}} = new_var(Lvl, Env),
+    {new_cell({t_list, TL}), NV};
 typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
     {HTyp, NV1} = typ_of(Env, Lvl, H),
-    dump_env(Env),
     {TTyp, NV2} = case T of
                       {nil, _} -> {{t_list, HTyp}, NV1};
                       #mlfe_cons{}=Cons ->
@@ -470,6 +491,12 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
                           case unify({t_list, TL}, STyp) of
                               {error, _} = E -> E;
                               ok -> {STyp, Next2}
+                          end;
+                      #mlfe_apply{}=Apply ->
+                          {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
+                          case unify({t_list, HTyp}, TApp) of
+                              {error, _} = E -> E;
+                              ok -> {TApp, Next}
                           end;
                       NonList ->
                           {error, {cons_to_non_list, NonList}}
@@ -515,7 +542,9 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
                              Args, 
                              Lvl, 
                              update_counter(NextVar, Env), []),
-    {TypRes, Env2} = new_var(Lvl, update_counter(NextVar2, Env)),
+    %{TypRes, Env2} = new_var(Lvl, update_counter(NextVar2, Env)),
+    TypRes = new_cell(t_rec),
+    Env2 = update_counter(NextVar2, Env),
 
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
     case unify(CopiedTypF, Arrow) of
@@ -538,16 +567,22 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     {TypedCs, #env{next_var=NextVar2}} = lists:foldl(
                                            ClauseFolder, 
                                            {[], update_counter(NextVar1, Env)}, Cs),
-    UnifyFolder = fun({t_clause, PA, _, RA}, {t_clause, PB, _, RB} = TypC) ->
-                          case unify(PA, PB) of
-                              ok -> case unify(RA, RB) of
-                                        ok -> TypC;
-                                        {error, _} = Err -> Err
-                                    end;
-                              {error, _} = Err -> Err
+    UnifyFolder = fun({t_clause, PA, _, RA}, Acc) ->
+                          case Acc of
+                              {t_clause, PB, _, RB} = TypC ->
+                                  case unify(PA, PB) of
+                                      ok -> case unify(RA, RB) of
+                                                ok -> TypC;
+                                                {error, _} = Err -> Err
+                                            end;
+                                      {error, _} = Err -> Err
+                                  end;
+                              {error, _} = Err ->
+                                  Err
                           end
                   end,
     [FC|TCs] = lists:reverse(TypedCs),
+
     case lists:foldl(UnifyFolder, FC, TCs) of
         {error, _} = Err ->
             Err;
@@ -565,7 +600,6 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
     {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
-    dump_env(NewEnv),
     case typ_of(NewEnv, Lvl, R) of
         {error, _} = E   -> E;
         {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
@@ -573,11 +607,15 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
             
 %% This can't handle recursive functions since the function name
 %% is not bound in the environment:
-typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
+typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     %% I'm leaving the environment mutation here because the body
     %% needs the bindings:
     {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
-    case typ_of(Env2, Lvl, Body) of 
+    JustTypes = [Typ || {_, Typ} <- ArgTypes],
+    RecursiveType = {t_arrow, JustTypes, new_cell(t_rec)},
+    EnvWithLetRec = update_binding(N, RecursiveType, Env2),
+
+    case typ_of(EnvWithLetRec, Lvl, Body) of 
         {error, _} = Err ->
             Err;
         {T, NextVar} ->
@@ -585,12 +623,6 @@ typ_of(Env, Lvl, #mlfe_fun_def{args=Args, body=Body}) ->
             
             io:format("===  FUN DEF:  ==============~n", []),
             dump_env(Env3),
-            
-            %% Some types may have been unified in NewEnv2 so we need
-            %% to replace their occurences in ArgTypes.  This is getting
-            %% around the lack of reference cells.
-            %%{ArgTypesPass2, NewEnv2} = args_to_types(Args, Lvl, NewEnv2, []),
-            
             JustTypes = [Typ || {_, Typ} <- ArgTypes],
             {{t_arrow, JustTypes, T}, NextVar}
     end;
@@ -607,6 +639,7 @@ typ_of(Env, Lvl, #fun_binding{
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     io:format("=== VAR BIND:  ~s ========~n", [N]),
+    dump_env(Env),
     {TypE, NextVar} = typ_of(Env, Lvl, E1),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
@@ -883,5 +916,30 @@ module_typing_test() ->
                                        ]},
                  typ_module(M, new_env())).
         
+recursive_fun_test_() ->
+    [?_assertMatch({{t_arrow, [t_int], t_rec}, _},
+                   top_typ_of(
+                     "f x =\n"
+                     "let y = x + 1 in\n"
+                     "f y")),
+     ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "| 0 -> 'zero\n"
+                     "| x -> f (x - 1)")),
+     ?_assertMatch({error, {cannot_unify, t_int, t_atom}},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "| 0 -> 'zero\n"
+                     "| 1 -> 1\n"
+                     "| y -> y - 1\n")),
+     ?_assertMatch({{t_arrow, [{t_list, {unbound, A, _}}, 
+                              {t_arrow, [{unbound, A, _}], {unbound, B, _}}],
+                    {t_list, {unbound, B, _}}}, _} when A =/= B,
+                   top_typ_of(
+                     "map list f = match list with\n"
+                     "| [] -> []\n"
+                     "| h : t -> (f h) : (map t f)"))
+    ].
 
 -endif.
