@@ -75,20 +75,27 @@ Several passes internally
   where the function applied is not in a variable.
 
 # Current TODO
+A somewhat structured (but unordered) set of what it will take to get to
+something usable, even before worrying about tooling around dependency
+management, etc.
+
+## Missing Types
+
+- binary
+- boolean
+- pid
+- string
+- map
+- iolist
+- structs
+- data types (tagged unions)/ADTs
 
 ## Basic Items
-An unordered list of what it will take to get to something usable, even before
-worrying about tooling around dependency management, etc:
 
-- binaries
-- booleans and if-then-else
-- strings
+- if-then-else
 - inter-module calls
 - basic erlang FFI
-- structs
 - pattern matching guards
-- maps
-- data types (tagged unions)/ADTs
 
 ## Receive
 I think this will look like basic clauses as in matches but also requires an
