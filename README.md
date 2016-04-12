@@ -74,6 +74,59 @@ Several passes internally
   function reference is valid.  For function applications, arity is checked
   where the function applied is not in a variable.
 
+# Type Inferencing and Checking
+At present this is based off of the sound and eager type inferencer in
+http://okmij.org/ftp/ML/generalization.html with some influence from
+https://github.com/tomprimozic/type-systems/blob/master/algorithm_w where the
+arrow type and type schema instantiation are concerned.
+
+## Single Module Typing
+
+    module example
+
+    export add/2
+
+    add x y = adder x y
+
+    adder x y = x + y
+
+The forward reference in `add/2` is permitted but currently leads to some wasted
+work.  When typing `add/2` the typer encounters a reference to `adder/2` that is
+not yet bound in its environment but is available in the module's definition.
+The typer will look ahead in the module's definition to determine the type of
+`adder/2`, use it to type `add/2`, and then throw that work away before
+proceeding to type `adder/2` again.  It may be beneficial to leverage something
+like [ETS](http://erlang.org/doc/man/ets.html) here in the near term.
+
+## Recursion
+Infinitely recursive functions are typed as such and permitted as they're
+necessary for processes that loop on `receive`.  I'm presently planning on
+restricting bi-directional calls between modules for simplicity.  This means
+that given module `A` and `B`, calls can occur from functions in `A` to those in
+`B` and vice-versa but *not* in both.
+
+I think this is generally pretty reasonable as bidirectional references probably
+indicate a failure to separate concerns but it has the additional benefit of
+bounding how complicated inferencing a set of mutually recursive functions can
+get.  The case I'm particularly concerned with can be illustrated with the
+following `Module.function` examples:
+
+    let A.x = B.y ()
+    let B.y = C.z ()
+    let C.z = A.x ()
+
+This loop, while I belive possible to check, necessitates either a great deal of
+state tracking complexity or an enormous amount of wasted work and likely has
+some nasty corner cases I'm as yet unaware of.
+
+The mechanism for preventing this is simple and relatively naive to start:
+entering a module during type inferencing/checking adds that module to the list
+of modules encountered in this pass.  When a call occurs (a function application
+that crosses module boundaries), we check to see if the referenced module is
+already in the list of entered modules.  If so, type checking fails with an
+error.
+
+
 # Current TODO
 A somewhat structured (but unordered) set of what it will take to get to
 something usable, even before worrying about tooling around dependency
