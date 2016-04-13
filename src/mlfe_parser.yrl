@@ -15,7 +15,7 @@ Terminals
 
 module export 
 boolean int float atom string '_'
-symbol
+symbol module_fun
 assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
@@ -67,6 +67,7 @@ term -> const : '$1'.
 term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : '$1'.
+term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 
 terms -> term : ['$1'].
@@ -106,6 +107,12 @@ case '$1' of
         T;
     [{symbol, _, _} = S | T] ->
         #mlfe_apply{name=S, args=T};
+    [{module_fun, L, MF} | T] ->
+        % this should be safe given the definition of a module-function
+        % reference in mlfe_scan.xrl:
+        [Mod, Fun] = string:tokens(MF, "."),
+        Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
+        #mlfe_apply{name=Name, args=T};
     [Term|Args] ->
         {error, {invalid_fun_application, Term, Args}}
 end.

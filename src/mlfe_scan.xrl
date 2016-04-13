@@ -48,6 +48,9 @@ type   : {token, {type_decl, TokenLine}}.
 %% Type
 {TYPE} : {token, {type_name, TokenLine, TokenChars}}.
 
+%% Module-function reference
+{SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
+
 %% Operators
 =    : {token, {assign, TokenLine}}.
 ==   : {token, {eq, TokenLine}}.

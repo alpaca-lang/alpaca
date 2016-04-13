@@ -186,7 +186,11 @@ application_test_() ->
      ?_assertEqual({ok, {error, {invalid_fun_application,
                             {int, 1, 1},
                            [{symbol, 1, "x"}, {symbol, 1, "y"}]}}},
-                    parse(scanner:scan("1 x y")))
+                    parse(scanner:scan("1 x y"))),
+     ?_assertEqual({ok, #mlfe_apply{
+                           name={'module', {symbol, 1, "fun"}, 2},
+                           args=[{int, 1, 1}, {symbol, 1, "x"}]}},
+                   parse(scanner:scan("module.fun 1 x")))
     ].
 
 module_def_test_() ->

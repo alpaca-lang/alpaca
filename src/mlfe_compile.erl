@@ -12,7 +12,7 @@ compile(Code) when is_list(Code) ->
     io:format("AST is ~w~n", [AST]),
     {ok, Forms} = compile(AST),
     io:format("Forms for ~s~n ARE ~n~w~n", [Code, Forms]),
-    compile:forms(Forms, [report_errors, verbose, from_core]);
+    compile:forms(Forms, [report, verbose, from_core]);
 compile({error, _} = E) ->
     io:format("Error was ~w~n", [E]),
     E;
@@ -88,8 +88,8 @@ compile_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
       cerl:c_atom(Module),
       cerl:c_atom(FName),
       [compile_expr(Env, E) || E <- Args]);      
-compile_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, Arity}, args=Args}) ->
-    FName = cerl:c_fname(list_to_atom(N), Arity),
+compile_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
+    FName = cerl:c_atom(N),
     cerl:c_call(
       cerl:c_atom(Module),
       FName,
@@ -240,5 +240,26 @@ cons_test() ->
     ?assertEqual([2, 3], Name:map(fun(X) -> X+1 end, [1, 2])),
     ?assertEqual([3, 4], Name:map(fun(X) -> X+1 end, Name:make_list(2, 3))),
     true = code:delete(Name).
+
+call_test() ->
+    Code1 =
+        "module call_test_a\n\n"
+        "export a/1\n\n"
+        "a x = call_test_b.add x 1",
+    Code2 =
+        "module call_test_b\n\n"
+        "export add/2\n\n"
+        "add x y = x + y",
+
+    {ok, _, Bin1} = compile(Code1),
+    {ok, _, Bin2} = compile(Code2),
+    {module, call_test_a} = code:load_binary(call_test_a, "call_test_a.beam", Bin1),
+    {module, call_test_b} = code:load_binary(call_test_b, "call_test_b.beam", Bin2),
+
+
+    Name = call_test_a,
+    ?assertEqual(3, Name:a(2)),
+    true = code:delete(call_test_a),
+    true = code:delete(call_test_b).
 
 -endif.
