@@ -318,7 +318,7 @@ unify(T1, T2) ->
         {A, {t_list, B}} ->
             unify(A, B);
         {_T1, _T2} ->
-            io:format("UNIFY FAIL:  ~s ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
+            io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
             {error, {cannot_unify, _T1, _T2}}
     end.
 
@@ -428,14 +428,21 @@ unwrap(X) ->
 -spec typ_module(M::mlfe_module(), Env::env()) -> mlfe_module().
 typ_module(#mlfe_module{functions=Fs, name=Name}=M, Env) ->
     Env2 = Env#env{current_module=M, entered_modules=[Name]},
-    M#mlfe_module{functions=typ_module_funs(Fs, Env2, [])}.
+    case typ_module_funs(Fs, Env2, []) of
+        {error, _} = E -> E;
+        [_|_] = Funs   -> M#mlfe_module{functions=Funs}
+    end.
 
 typ_module_funs([], _Env, Memo) ->
     lists:reverse(Memo);
 typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}=N}=F|Rem], Env, Memo) ->
-    {Typ, Env2} = typ_of(Env, F),
-    Env3 = update_binding(Name, Typ, Env2),
-    typ_module_funs(Rem, Env2, [F#mlfe_fun_def{type=Typ}|Memo]).
+    case typ_of(Env, F) of
+        {error, _} = E -> 
+            E;
+        {Typ, Env2} ->
+            Env3 = update_binding(Name, Typ, Env2),
+            typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=Typ}|Memo])
+    end.
 
 %% Top-level typ_of unwraps the reference cells used in unification.
 -spec typ_of(Env::env(), Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
@@ -542,8 +549,12 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, _, X}, Arity}, args=Args}) ->
                 {ok, Module, Fun} -> 
                     Env2 = Env#env{current_module=Module, 
                                    entered_modules=[Mod | Env#env.entered_modules]},
-                    {TypF, NextVar} = typ_of(Env2, Lvl, Fun),
-                    typ_apply(update_counter(NextVar, Env), Lvl, TypF, NextVar, Args)
+                    case typ_of(Env2, Lvl, Fun) of
+                        {error, _} = E -> E;
+                        {TypF, NextVar} ->
+                            typ_apply(update_counter(NextVar, Env), 
+                                      Lvl, TypF, NextVar, Args)
+                    end
             end;
         _  -> 
             [CurrMod|_] = Env#env.entered_modules,
@@ -693,7 +704,6 @@ typ_apply(Env, Lvl, TypF, NextVar, Args) ->
                              {error, {no_module, atom()}} |
                              {error, {not_exported, string(), integer()}} .
 extract_fun(Env, ModuleName, FunName, Arity) ->
-    io:format("~nMODULES~n~w~n", [Env#env.modules]),
     case [M || M <- Env#env.modules, M#mlfe_module.name =:= ModuleName] of
         [] -> {error, {no_module, ModuleName}};
         [Module] ->
@@ -1032,6 +1042,26 @@ simple_inter_module_test() ->
                                   name={symbol, 3, "add"},
                                   type={t_arrow, [t_int, t_int], t_int}}]},
                   typ_module(M1, Env)).
+
+bidirectional_module_fail_test() ->
+    Mod1 =
+        "module inter_module_one\n\n"
+        "export add/2\n\n"
+        "add x y = inter_module_two.adder x y",
+    Mod2 =
+        "module inter_module_two\n\n"
+        "export adder/2, failing_fun/1\n\n"
+        "adder x y = x + y\n\n"
+        "failing_fun x = inter_module_one.add x x",
+    {ok, M1} = parser:parse_module(Mod1),
+    {ok, M2} = parser:parse_module(Mod2),
+    E = new_env(),
+    Env = E#env{modules=[M1, M2]},
+    ?assertMatch({error, {bidirectional_module_ref, 
+                          inter_module_two, 
+                          inter_module_one}},
+                 typ_module(M2, Env)).
+
         
 recursive_fun_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_rec}, _},
