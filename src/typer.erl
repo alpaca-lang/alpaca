@@ -154,9 +154,11 @@ copy_cell(Cell, RefMap) ->
 %%% Currently missing:  cycle detection and termination.
 
 -record(env, {
-          next_var=0 :: integer(),
-          bindings=[] :: list({term(), typer:typ()|t_cell()}),
-          modules=[] :: list(mlfe_module())
+          next_var=0          :: integer(),
+          entered_modules=[]  :: list(atom()),
+          current_module=none :: none | mlfe_module(),
+          bindings=[]         :: list({term(), typer:typ()|t_cell()}),
+          modules=[]          :: list(mlfe_module())
 }).
 
 -type env() :: #env{}.
@@ -425,7 +427,8 @@ unwrap(X) ->
 
 -spec typ_module(M::mlfe_module(), Env::env()) -> mlfe_module().
 typ_module(#mlfe_module{functions=Fs}=M, Env) ->
-    M#mlfe_module{functions=typ_module_funs(Fs, Env, [])}.
+    Env2 = Env#env{current_module=M},
+    M#mlfe_module{functions=typ_module_funs(Fs, Env2, [])}.
 
 typ_module_funs([], _Env, Memo) ->
     lists:reverse(Memo);
@@ -459,8 +462,13 @@ typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {t_atom, VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
-    {T, #env{next_var=VarNum}, _} = inst(N, Lvl, Env),
-    {T, VarNum};
+    %% A symbol with no corresponding type schema may be a
+    %% forward reference:
+    case inst(N, Lvl, Env) of
+        {error, _} = E -> E;
+        {T, #env{next_var=VarNum}, _} -> {T, VarNum}
+    end;
+
 typ_of(Env, Lvl, {'_', _}) ->
     {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
     {T, VarNum};
@@ -526,33 +534,66 @@ typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
             {T, VarNum}
     end;
 
+typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, _, X}, Arity}, args=Args}) ->
+    case [M || M <- Env#env.entered_modules, M == Mod] of
+        [] ->
+            %% Naively assume a single call to the same function for now.
+            % does the module exist and does it export the function?
+            case extract_fun(Env, Mod, X, Arity) of
+                {ok, Fun} -> ok
+            end;        
+            
+
+        _  -> 
+            [CurrMod|_] = Env#env.entered_modules,
+            {error, {bidirectional_module_ref, Mod, CurrMod}}
+    end;
+
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
-    Name = case N of
-               {bif, X, _, _, _} -> X;
-               {symbol, _, X}    -> X
-           end,
-    {TypF, NextVar} = typ_of(Env, Lvl, N),
-    %% we make a deep copy of the function we're unifying so that the
-    %% types we apply to the function don't force every other application
-    %% to unify with them where the other callers may be expecting a 
-    %% polymorphic function.  See Pierce's TAPL, chapter 22.
-    CopiedTypF = deep_copy_type(TypF, maps:new()),
+    TypApply = fun(TypF, NextVar) ->
+                       typ_of(Env, Lvl, N),
+                       %% we make a deep copy of the function we're unifying 
+                       %% eso that the types we apply to the function don't 
+                       %% force every other application to unify with them 
+                       %% where the other callers may be expecting a 
+                       %% polymorphic function.  See Pierce's TAPL, chapter 22.
+                       CopiedTypF = deep_copy_type(TypF, maps:new()),
+                       
+                       {ArgTypes, NextVar2} = 
+                           typ_list(Args, Lvl, update_counter(NextVar, Env), []),
 
-    {ArgTypes, NextVar2} = typ_list(
-                             Args, 
-                             Lvl, 
-                             update_counter(NextVar, Env), []),
-    %{TypRes, Env2} = new_var(Lvl, update_counter(NextVar2, Env)),
-    TypRes = new_cell(t_rec),
-    Env2 = update_counter(NextVar2, Env),
+                       TypRes = new_cell(t_rec),
+                       Env2 = update_counter(NextVar2, Env),
+            
+                       Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
+                       case unify(CopiedTypF, Arrow) of
+                           {error, _} = E ->
+                               E;
+                           ok ->
+                               #env{next_var=VarNum} = Env2,
+                               {TypRes, VarNum}
+                       end
+               end,
 
-    Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-    case unify(CopiedTypF, Arrow) of
-        {error, _} = E ->
-            E;
-        ok ->
-            #env{next_var=VarNum} = Env2,
-            {TypRes, VarNum}
+    %% When a symbol isn't bound to a function in the environment,
+    %% attempt to find it in the module.  Here we're assuming that
+    %% the user has referred to a function that is defined later than
+    %% the one being typed.
+    ForwardFun = fun() ->
+                         Mod = Env#env.current_module,
+                         {symbol, _, FN} = N,
+                         case get_fun(Mod, FN, length(Args)) of
+                             {ok, Fun} ->
+                                 {TypF, NextVar} = typ_of(Env, Lvl, Fun),
+                                 TypApply(TypF, NextVar);
+                             {error, _} = E -> E
+                         end
+                 end,                                       
+
+    case typ_of(Env, Lvl, N) of
+        {error, {bad_variable_name, _}} -> ForwardFun();
+        {error, _} = E -> E;
+        {TypF, NextVar} -> TypApply(TypF, NextVar)
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
@@ -643,6 +684,43 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     {TypE, NextVar} = typ_of(Env, Lvl, E1),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
+
+-spec extract_fun(
+        Env::env(), 
+        ModuleName::atom(), 
+        FunName::string(), 
+        Arity::integer()) -> {ok, mlfe_fun_def()} |
+                             {error, {no_module, atom()}} |
+                             {error, {not_exported, string(), integer()}} .
+extract_fun(Env, ModuleName, FunName, Arity) ->
+    case [M || M <- Env#env.modules, M =:= ModuleName] of
+        [] -> {error, {no_module, ModuleName}};
+        [Module] ->
+            Exports = Module#mlfe_module.function_exports,
+            case [F || {FN, A} = F <- Exports, FN =:= FunName, A =:= Arity] of
+                [_] -> get_fun(Module, FunName, Arity);
+                []  -> {error, {not_exported, FunName, Arity}}
+            end
+    end.
+
+-spec get_fun(
+        Mod::atom(), 
+        FunName::string(), 
+        Arity::integer()) -> {ok, mlfe_fun_def()} |
+                             {error, {not_found, atom(), string, integer()}}.
+get_fun(Module, FunName, Arity) ->
+    case filter_to_fun(Module#mlfe_module.functions, FunName, Arity) of
+        not_found    -> {error, {not_found, Module, FunName, Arity}};
+        {ok, _} = OK -> OK
+    end.
+
+filter_to_fun([], _, _) ->
+    not_found;
+filter_to_fun(
+  [#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A) when length(Args) =:= A, N =:= FN ->
+    {ok, Fun};
+filter_to_fun([_|Rem], FN, Arity) ->
+    filter_to_fun(Rem, FN, Arity).
     
 %% Find or make a type for each arg from a function's
 %% argument list.
@@ -915,6 +993,24 @@ module_typing_test() ->
                                                  {unbound, A, _}}}
                                        ]},
                  typ_module(M, new_env())).
+
+module_with_forward_reference_test() ->
+    Code =
+        "module forward_ref\n\n"
+        "export add/2\n\n"
+        "add x y = adder x y\n\n"
+        "adder x y = x + y",
+    {ok, M} = parser:parse_module(Code),
+    Env = new_env(),
+    ?assertMatch(#mlfe_module{
+                    functions=[
+                               #mlfe_fun_def{
+                                  name={symbol, 5, "add"},
+                                  type={t_arrow, [t_int, t_int], t_int}},
+                               #mlfe_fun_def{
+                                  name={symbol, 7, "adder"},
+                                  type={t_arrow, [t_int, t_int], t_int}}]},
+                 typ_module(M, Env#env{current_module=M, modules=[M]})).
         
 recursive_fun_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_rec}, _},
