@@ -194,9 +194,9 @@ application_test_() ->
     ].
 
 module_def_test_() ->
-    [?_assertEqual({ok, {module, "test_mod"}}, 
+    [?_assertEqual({ok, {module, 'test_mod'}}, 
                    parse(scanner:scan("module test_mod"))),
-     ?_assertEqual({ok, {module, "myMod"}}, 
+     ?_assertEqual({ok, {module, 'myMod'}}, 
                    parse(scanner:scan("module myMod")))
     ].
 
@@ -239,7 +239,7 @@ module_with_let_test() ->
         "  adder x y",
     ?assertEqual({ok,
                   #mlfe_module{
-                     name="test_mod",
+                     name='test_mod',
                      function_exports=[{"add",2}],
                      functions=[
                                 #mlfe_fun_def{
@@ -382,7 +382,7 @@ simple_module_test() ->
         "add x y = adder x y\n\n"
         "sub x y = x - y",
     ?assertEqual({ok, #mlfe_module{
-                         name="test_mod",
+                         name='test_mod',
                          function_exports=[{"add",2},{"sub",2}],
                          functions=[
                                     #mlfe_fun_def{

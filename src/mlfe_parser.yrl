@@ -87,7 +87,7 @@ binding -> let defn in simple_expr : make_binding('$2', '$4').
 
 module_def -> module symbol : 
 {symbol, _, Name} = '$2',
-{module, Name}.
+{module, list_to_atom(Name)}.
 
 export_def -> export export_list : {export, '$2'}.
 

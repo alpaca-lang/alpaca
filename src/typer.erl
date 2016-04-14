@@ -426,8 +426,8 @@ unwrap(X) ->
     X.
 
 -spec typ_module(M::mlfe_module(), Env::env()) -> mlfe_module().
-typ_module(#mlfe_module{functions=Fs}=M, Env) ->
-    Env2 = Env#env{current_module=M},
+typ_module(#mlfe_module{functions=Fs, name=Name}=M, Env) ->
+    Env2 = Env#env{current_module=M, entered_modules=[Name]},
     M#mlfe_module{functions=typ_module_funs(Fs, Env2, [])}.
 
 typ_module_funs([], _Env, Memo) ->
@@ -462,8 +462,6 @@ typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {t_atom, VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
-    %% A symbol with no corresponding type schema may be a
-    %% forward reference:
     case inst(N, Lvl, Env) of
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
@@ -540,41 +538,19 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, _, X}, Arity}, args=Args}) ->
             %% Naively assume a single call to the same function for now.
             % does the module exist and does it export the function?
             case extract_fun(Env, Mod, X, Arity) of
-                {ok, Fun} -> ok
-            end;        
-            
-
+                {error, _} = E -> E;
+                {ok, Module, Fun} -> 
+                    Env2 = Env#env{current_module=Module, 
+                                   entered_modules=[Mod | Env#env.entered_modules]},
+                    {TypF, NextVar} = typ_of(Env2, Lvl, Fun),
+                    typ_apply(update_counter(NextVar, Env), Lvl, TypF, NextVar, Args)
+            end;
         _  -> 
             [CurrMod|_] = Env#env.entered_modules,
             {error, {bidirectional_module_ref, Mod, CurrMod}}
     end;
 
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
-    TypApply = fun(TypF, NextVar) ->
-                       typ_of(Env, Lvl, N),
-                       %% we make a deep copy of the function we're unifying 
-                       %% eso that the types we apply to the function don't 
-                       %% force every other application to unify with them 
-                       %% where the other callers may be expecting a 
-                       %% polymorphic function.  See Pierce's TAPL, chapter 22.
-                       CopiedTypF = deep_copy_type(TypF, maps:new()),
-                       
-                       {ArgTypes, NextVar2} = 
-                           typ_list(Args, Lvl, update_counter(NextVar, Env), []),
-
-                       TypRes = new_cell(t_rec),
-                       Env2 = update_counter(NextVar2, Env),
-            
-                       Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-                       case unify(CopiedTypF, Arrow) of
-                           {error, _} = E ->
-                               E;
-                           ok ->
-                               #env{next_var=VarNum} = Env2,
-                               {TypRes, VarNum}
-                       end
-               end,
-
     %% When a symbol isn't bound to a function in the environment,
     %% attempt to find it in the module.  Here we're assuming that
     %% the user has referred to a function that is defined later than
@@ -583,9 +559,9 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
                          Mod = Env#env.current_module,
                          {symbol, _, FN} = N,
                          case get_fun(Mod, FN, length(Args)) of
-                             {ok, Fun} ->
+                             {ok, _, Fun} ->
                                  {TypF, NextVar} = typ_of(Env, Lvl, Fun),
-                                 TypApply(TypF, NextVar);
+                                 typ_apply(Env, Lvl, TypF, NextVar, Args);
                              {error, _} = E -> E
                          end
                  end,                                       
@@ -593,7 +569,7 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     case typ_of(Env, Lvl, N) of
         {error, {bad_variable_name, _}} -> ForwardFun();
         {error, _} = E -> E;
-        {TypF, NextVar} -> TypApply(TypF, NextVar)
+        {TypF, NextVar} -> typ_apply(Env, Lvl, TypF, NextVar, Args)
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
@@ -685,15 +661,40 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
 
+typ_apply(Env, Lvl, TypF, NextVar, Args) ->
+    %typ_of(Env, Lvl, N),
+    %% we make a deep copy of the function we're unifying 
+    %% eso that the types we apply to the function don't 
+    %% force every other application to unify with them 
+    %% where the other callers may be expecting a 
+    %% polymorphic function.  See Pierce's TAPL, chapter 22.
+    CopiedTypF = deep_copy_type(TypF, maps:new()),
+    
+    {ArgTypes, NextVar2} = 
+        typ_list(Args, Lvl, update_counter(NextVar, Env), []),
+
+    TypRes = new_cell(t_rec),
+    Env2 = update_counter(NextVar2, Env),
+    
+    Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
+    case unify(CopiedTypF, Arrow) of
+        {error, _} = E ->
+            E;
+        ok ->
+            #env{next_var=VarNum} = Env2,
+            {TypRes, VarNum}
+    end.
+
 -spec extract_fun(
         Env::env(), 
         ModuleName::atom(), 
         FunName::string(), 
-        Arity::integer()) -> {ok, mlfe_fun_def()} |
+        Arity::integer()) -> {ok, mlfe_module(), mlfe_fun_def()} |
                              {error, {no_module, atom()}} |
                              {error, {not_exported, string(), integer()}} .
 extract_fun(Env, ModuleName, FunName, Arity) ->
-    case [M || M <- Env#env.modules, M =:= ModuleName] of
+    io:format("~nMODULES~n~w~n", [Env#env.modules]),
+    case [M || M <- Env#env.modules, M#mlfe_module.name =:= ModuleName] of
         [] -> {error, {no_module, ModuleName}};
         [Module] ->
             Exports = Module#mlfe_module.function_exports,
@@ -704,14 +705,14 @@ extract_fun(Env, ModuleName, FunName, Arity) ->
     end.
 
 -spec get_fun(
-        Mod::atom(), 
+        Module::mlfe_module(), 
         FunName::string(), 
         Arity::integer()) -> {ok, mlfe_fun_def()} |
                              {error, {not_found, atom(), string, integer()}}.
 get_fun(Module, FunName, Arity) ->
     case filter_to_fun(Module#mlfe_module.functions, FunName, Arity) of
         not_found    -> {error, {not_found, Module, FunName, Arity}};
-        {ok, _} = OK -> OK
+        {ok, Fun} -> {ok, Module, Fun}
     end.
 
 filter_to_fun([], _, _) ->
@@ -1011,6 +1012,26 @@ module_with_forward_reference_test() ->
                                   name={symbol, 7, "adder"},
                                   type={t_arrow, [t_int, t_int], t_int}}]},
                  typ_module(M, Env#env{current_module=M, modules=[M]})).
+
+simple_inter_module_test() ->
+    Mod1 =
+        "module inter_module_one\n\n"
+        "add x y = inter_module_two.adder x y",
+    Mod2 =
+        "module inter_module_two\n\n"
+        "export adder/2\n\n"
+        "adder x y = x + y",
+    {ok, M1} = parser:parse_module(Mod1),
+    {ok, M2} = parser:parse_module(Mod2),
+    E = new_env(),
+    Env = E#env{modules=[M1, M2]},
+    ?assertMatch(#mlfe_module{
+                    function_exports=[],
+                    functions=[
+                               #mlfe_fun_def{
+                                  name={symbol, 3, "add"},
+                                  type={t_arrow, [t_int, t_int], t_int}}]},
+                  typ_module(M1, Env)).
         
 recursive_fun_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_rec}, _},

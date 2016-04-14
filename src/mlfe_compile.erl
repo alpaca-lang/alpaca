@@ -24,7 +24,7 @@ compile({ok, Mod}) ->
     {_Env, CompiledFuns} = compile_funs([], [], Funs),
     CompiledExports = [compile_export(E) || E <- Exports],
     {ok, cerl:c_module(
-           cerl:c_atom(list_to_atom(ModuleName)),
+           cerl:c_atom(ModuleName),
            CompiledExports,
            [],
            CompiledFuns)
