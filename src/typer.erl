@@ -1089,4 +1089,42 @@ recursive_fun_test_() ->
                      "| h : t -> (f h) : (map t f)"))
     ].
 
+infinite_mutual_recursion_test() ->
+    Code =
+        "module mutual_rec_test\n\n"
+        "a x = b x\n\n"
+        "b x = let y = x + 1 in a y",
+    {ok, M} = parser:parse_module(Code),
+    E = new_env(),
+    ?assertMatch(#mlfe_module{
+                    name=mutual_rec_test,
+                    functions=[
+                               #mlfe_fun_def{
+                                  name={symbol, 3, "a"},
+                                  type={t_arrow, [t_int], t_rec}},
+                               #mlfe_fun_def{
+                                  name={symbol, 5, "b"},
+                                  type={t_arrow, [t_int], t_rec}}]},
+                 typ_module(M, E)).
+
+terminating_mutual_recursion_test() ->
+    Code =
+        "module terminating_mutual_rec_test\n\n"
+        "a x = let y = x + 1 in b y\n\n"
+        "b x = match x with\n"
+        "| 10 -> 'ten\n"
+        "| y -> a y",
+    {ok, M} = parser:parse_module(Code),
+    E = new_env(),
+    ?assertMatch(#mlfe_module{
+                    name=terminating_mutual_rec_test,
+                    functions=[
+                               #mlfe_fun_def{
+                                  name={symbol, 3, "a"},
+                                  type={t_arrow, [t_int], t_atom}},
+                               #mlfe_fun_def{
+                                  name={symbol, 5, "b"},
+                                  type={t_arrow, [t_int], t_atom}}]},
+                 typ_module(M, E)).
+    
 -endif.
