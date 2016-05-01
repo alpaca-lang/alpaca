@@ -53,7 +53,7 @@ type        : {token, {type_decl, TokenLine}}.
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
 
 %% String
-"(\\.|\"|[^"])*" : 
+"([^"]|\\.|\")*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
   {token, {string, TokenLine, S}}.
 

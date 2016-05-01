@@ -349,7 +349,14 @@ tuple_test_() ->
     ].
 
 list_test_() ->
-    [?_assertEqual({ok, {nil, 1}}, parse(scanner:scan("[]"))),
+    [?_assertMatch({ok, #mlfe_cons{head={int, 1, 1}, 
+                                   tail=#mlfe_cons{
+                                          head={int, 1, 2},
+                                          tail=#mlfe_cons{
+                                                  head={int, 1, 3},
+                                                  tail={nil, 0}}}}},
+                   test_parse("[1, 2, 3]")),
+     ?_assertEqual({ok, {nil, 1}}, parse(scanner:scan("[]"))),
      ?_assertEqual({ok, #mlfe_cons{head={int, 1, 1}, tail={nil, 1}}},
                    parse(scanner:scan("[1]"))),
      ?_assertEqual({ok, #mlfe_cons{
@@ -379,7 +386,22 @@ string_test_() ->
      ?_assertEqual({ok, {string, 1, "Nested \" quotes"}},
                    test_parse("\"Nested " "\"" " quotes\""))
     ].
-                         
+
+ffi_test_() ->                         
+    [?_assertMatch({ok, #mlfe_ffi{
+                          module={atom, 1, "io"},
+                          function_name={atom, 1, "format"},
+                          args=#mlfe_cons{
+                                  head={string, 1, "One is ~s~n"},
+                                  tail=#mlfe_cons{
+                                          head=#mlfe_cons{
+                                                   head={int, 1, 1},
+                                                   tail={nil, 1}},
+                                          tail={nil, 0}}}}},
+                   test_parse(
+                     "call_erlang 'io 'format [\"One is ~s~n\", [1]] with\n"
+                     " _ -> 0"))
+    ].
 
 simple_module_test() ->
     Code =

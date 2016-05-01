@@ -2,7 +2,7 @@ Nonterminals
 
 op infix
 const
-cons nil
+cons nil literal_cons_items
 term terms nested_terms
 unit tuple tuple_list
 defn binding
@@ -35,7 +35,6 @@ module_parts -> module_part module_parts : ['$1'|'$2'].
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.
-%op -> int_minus : '$1'.
 
 const -> boolean : '$1'.
 const -> int : '$1'.
@@ -45,14 +44,19 @@ const -> string : '$1'.
 const -> '_' : '$1'.
 const -> unit : '$1'.
 
+literal_cons_items -> term : ['$1'].
+literal_cons_items -> term ',' literal_cons_items: ['$1' | '$3'].
+
 cons -> '[' ']' : 
   {_, L} = '$1',
   {nil, L}.
 cons -> '[' term ']' : 
   {_, L} = '$3',
   #mlfe_cons{head='$2', tail={nil, L}}.
-cons -> term ':' cons : #mlfe_cons{head='$1', tail='$3'}.
 cons -> term ':' term : #mlfe_cons{head='$1', tail='$3'}.
+cons -> '[' literal_cons_items ']':
+  F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
+  lists:foldr(F, {nil, 0}, '$2').
 
 unit -> '(' ')':
   {_, L} = '$1',
@@ -69,6 +73,7 @@ term -> const : '$1'.
 term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : '$1'.
+term -> cons : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 
@@ -76,8 +81,7 @@ terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
 
 match_pattern -> term : '$1'.
-match_pattern -> cons : '$1'.
-match_clause -> match_pattern '->' simple_expr : 
+match_clause -> match_pattern '->' simple_expr :
   #mlfe_clause{pattern='$1', result='$3'}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
@@ -87,11 +91,11 @@ match_with  -> match simple_expr with match_clauses : #mlfe_match{match_expr='$2
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
-%ffi_call -> call_erlang atom atom cons with match_clauses:
-%  #mlfe_ffi{module=$2,
-%            function=$3,
-%            args=$4,
-%            clauses=$6}.
+ffi_call -> call_erlang atom atom cons with match_clauses:
+  #mlfe_ffi{module='$2',
+            function_name='$3',
+            args='$4',
+            clauses='$6'}.
 
 module_def -> module symbol : 
 {symbol, _, Name} = '$2',
@@ -127,7 +131,7 @@ end.
 
 simple_expr -> binding : '$1'.
 simple_expr -> match_with : '$1'.
-simple_expr -> cons : '$1'.
+simple_expr -> ffi_call : '$1'.
 
 expr -> simple_expr : '$1'.
 expr -> module_def : '$1'.

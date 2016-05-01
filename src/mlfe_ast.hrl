@@ -66,7 +66,7 @@
 -record(mlfe_ffi, {type=undefined :: atom(),
                    module :: atom(),
                    function_name :: atom(),
-                   args :: mlfe_expression(),
+                   args :: mlfe_list(),
                    clauses :: list(mlfe_clause())
                   }).
 
