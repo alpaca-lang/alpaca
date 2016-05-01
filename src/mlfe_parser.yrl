@@ -87,6 +87,12 @@ match_with  -> match simple_expr with match_clauses : #mlfe_match{match_expr='$2
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
+%ffi_call -> call_erlang atom atom cons with match_clauses:
+%  #mlfe_ffi{module=$2,
+%            function=$3,
+%            args=$4,
+%            clauses=$6}.
+
 module_def -> module symbol : 
 {symbol, _, Name} = '$2',
 {module, list_to_atom(Name)}.

@@ -55,6 +55,9 @@ next_batch([Token|Tail], Memo) ->
 
 -ifdef(TEST).
 
+test_parse(S) ->
+    parse(scanner:scan(S)).
+
 symbols_test_() ->
     [?_assertEqual({ok, {symbol, 1, "oneSymbol"}}, 
                    parse(scanner:scan("oneSymbol")))
@@ -370,7 +373,12 @@ list_test_() ->
                            "  [] -> []\n"
                            "| h : t -> h\n")))
     ].
-                         
+
+string_test_() ->
+    [?_assertEqual({ok, {string, 1, "Hello world"}}, test_parse("\"Hello world\"")),
+     ?_assertEqual({ok, {string, 1, "Nested \" quotes"}},
+                   test_parse("\"Nested " "\"" " quotes\""))
+    ].
                          
 
 simple_module_test() ->

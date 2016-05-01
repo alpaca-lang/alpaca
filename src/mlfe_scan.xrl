@@ -52,6 +52,11 @@ type        : {token, {type_decl, TokenLine}}.
 %% Module-function reference
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
 
+%% String
+"(\\.|\"|[^"])*" : 
+  S = string:substr(TokenChars, 2, TokenLen - 2),
+  {token, {string, TokenLine, S}}.
+
 %% Operators
 =    : {token, {assign, TokenLine}}.
 ==   : {token, {eq, TokenLine}}.
