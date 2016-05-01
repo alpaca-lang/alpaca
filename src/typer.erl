@@ -632,7 +632,32 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
         {error, _} = E   -> E;
         {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
     end;
-            
+
+%%% Calls to Erlang code are only have their return value typed.
+typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs}) ->
+    ClauseFolder = fun(C, {Typs, EnvAcc}) ->
+                           {{t_clause, _, _, T}, X} = typ_of(EnvAcc, Lvl, C),
+                           {[T|Typs], update_counter(X, EnvAcc)}
+                   end,
+    {TypedCs, #env{next_var=NV2}} = lists:foldl(
+                                           ClauseFolder, 
+                                           {[], update_counter(NV, Env)}, Cs),
+    UnifyFolder = fun(A, Acc) ->
+                             case unify(A, Acc) of
+                                 ok -> Acc;
+                                 {error, _} = Err -> Err
+                             end
+                     end,
+    [FC|TCs] = lists:reverse(TypedCs),
+
+    case lists:foldl(UnifyFolder, FC, TCs) of
+        {error, _} = Err ->
+            Err;
+        _ ->
+            {FC, NV2}
+    end;
+    
+
 %% This can't handle recursive functions since the function name
 %% is not bound in the environment:
 typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
@@ -1126,5 +1151,23 @@ terminating_mutual_recursion_test() ->
                                   name={symbol, 5, "b"},
                                   type={t_arrow, [t_int], t_atom}}]},
                  typ_module(M, E)).
+
+ffi_test_() ->
+    [?_assertMatch({t_int, _},
+                   top_typ_of(
+                     "call_erlang 'io 'format [\"One is ~w~n\", [1]] with\n"
+                     " _ -> 1")),
+     ?_assertMatch({error, {cannot_unify, t_atom, t_int}},
+                   top_typ_of(
+                     "call_erlang 'a 'b [1] with\n"
+                     "  ('ok, x) -> 1\n"
+                     "| ('error, x) -> 'error")),
+     ?_assertMatch({{t_arrow, [{unbound, _, _}], t_atom}, _},
+                   top_typ_of(
+                     "f x = call_erlang 'a 'b [x] with\n"
+                     "  1 -> 'one\n"
+                     "| _ -> 'not_one"))
+     
+    ].
     
 -endif.
