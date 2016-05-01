@@ -58,11 +58,6 @@ compile_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     B = compile_expr(Env, Body),
     {FName, cerl:c_fun(A, B)}.
 
-compile_expr(Env, #mlfe_infix{operator=Op, left=A, right=B}) ->
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      compile_expr(Env, Op),
-      [compile_expr(Env, A), compile_expr(Env, B)]);
 compile_expr(_, {add, _}) ->
     cerl:c_atom('+');
 compile_expr(_, {minus, _}) ->
@@ -222,7 +217,7 @@ module_with_match_test() ->
     io:format("Fake name is ~s~n", [FN]),
     Code = 
         "module compile_module_with_match\n\n"
-        "export test/1, first/1\n\n"
+        "export test/1, first/1, compare/2\n\n"
         "test x = match x with\n"
         "  0 -> 'zero\n"
         "| 1 -> 'one\n"
@@ -230,12 +225,17 @@ module_with_match_test() ->
         "first t =\n"
         "  match t with\n"
         "    (f, _) -> f\n"
-        "  | _ -> 'not_a_2_tuple\n",
+        "  | _ -> 'not_a_2_tuple\n\n"
+        "compare x y = match x with\n"
+        "  y -> 'matched\n"
+        "| _ -> 'not_matched",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(one, Name:test(1)),
     ?assertEqual(1, Name:first({1, a})),
     ?assertEqual(not_a_2_tuple, Name:first(an_atom)),
+    ?assertEqual('matched', Name:compare(1, 1)),
+    ?assertEqual('not_matched', Name:compare(1, 2)),
     true = code:delete(Name).
 
 cons_test() ->
