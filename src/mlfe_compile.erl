@@ -115,6 +115,24 @@ compile_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
 compile_expr(Env, #mlfe_apply{name={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
     cerl:c_apply(FName, [compile_expr(Env, E) || E <- Args]);
+
+compile_expr(Env, #mlfe_ffi{}=FFI) ->
+    #mlfe_ffi{
+       module=M,
+       function_name=FN,
+       args=Cons,
+       clauses=Clauses} = FFI,
+
+    %% calling apply/3 with the compiled cons cell is simplest for now:
+    Apply = cerl:c_call(
+              cerl:c_atom('erlang'),
+              cerl:c_atom('apply'),
+              [compile_expr(Env, M), 
+               compile_expr(Env, FN), 
+               compile_expr(Env, Cons)]),
+    
+    cerl:c_case(Apply, [compile_expr(Env, X) || X <- Clauses]);
+
 %% Pattern, expression
 compile_expr(Env, #mlfe_clause{pattern=P, result=E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
@@ -261,5 +279,20 @@ call_test() ->
     ?assertEqual(3, Name:a(2)),
     true = code:delete(call_test_a),
     true = code:delete(call_test_b).
+
+ffi_test() ->
+    Code =
+        "module ffi_test\n\n"
+        "export a/1\n\n"
+        "a x = call_erlang 'erlang 'list_to_integer [x] with\n"
+        "  1 -> 'one\n"
+        "| _ -> 'not_one\n",
+    {ok, _, Bin} = compile(Code),
+    {module, ffi_test} = code:load_binary(ffi_test, "ffi_test.beam", Bin),
+    
+    Mod = ffi_test,
+    ?assertEqual('one', Mod:a("1")),
+    ?assertEqual('not_one', Mod:a("2")),
+    true = code:delete(ffi_test).
 
 -endif.
