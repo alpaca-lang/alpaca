@@ -123,15 +123,16 @@ compile_expr(Env, #mlfe_ffi{}=FFI) ->
        args=Cons,
        clauses=Clauses} = FFI,
 
-    %% calling apply/3 with the compiled cons cell is simplest for now:
+    %% calling apply/3 with the compiled cons cell is simpler
+    %% than unpacking the cons cell into an actual list of args:
     Apply = cerl:c_call(
               cerl:c_atom('erlang'),
               cerl:c_atom('apply'),
               [compile_expr(Env, M), 
                compile_expr(Env, FN), 
                compile_expr(Env, Cons)]),
-    
-    cerl:c_case(Apply, [compile_expr(Env, X) || X <- Clauses]);
+
+   cerl:c_case(Apply, [compile_expr(Env, X) || X <- Clauses]);
 
 %% Pattern, expression
 compile_expr(Env, #mlfe_clause{pattern=P, result=E}) ->
