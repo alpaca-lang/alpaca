@@ -205,12 +205,12 @@ module_with_match_test() ->
         "module compile_module_with_match\n\n"
         "export test/1, first/1\n\n"
         "test x = match x with\n"
-        "| 0 -> 'zero\n"
+        "  0 -> 'zero\n"
         "| 1 -> 'one\n"
         "| _ -> 'more_than_one\n\n"
         "first t =\n"
         "  match t with\n"
-        "  | (f, _) -> f\n"
+        "    (f, _) -> f\n"
         "  | _ -> 'not_a_2_tuple\n",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
@@ -227,11 +227,11 @@ cons_test() ->
         "export make_list/2, map/2\n\n"
         "make_list h t =\n"
         "  match t with\n"
-        "  | a : b -> h : t\n"
+        "    a : b -> h : t\n"
         "  | term -> h : term : []\n\n"
         "map f x =\n"
         "  match x with\n"
-        "  | [] -> []\n"
+        "    [] -> []\n"
         "  | h : t -> (f h) : (map f t)",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),

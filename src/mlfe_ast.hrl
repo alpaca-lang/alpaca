@@ -61,6 +61,15 @@
                     }).
 -type mlfe_match() :: #mlfe_match{}.
 
+%%% A call to an Erlang function via the Foreign Function Interface.
+%%% Only the result of these calls is typed.
+-record(mlfe_ffi, {type=undefined :: atom(),
+                   module :: atom(),
+                   function_name :: atom(),
+                   args :: mlfe_expression(),
+                   clauses :: list(mlfe_clause())
+                  }).
+
 -type mlfe_expression() :: mlfe_const()
                          | mlfe_infix()
                          | mlfe_apply()

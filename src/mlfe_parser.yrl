@@ -9,6 +9,7 @@ defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern
+ffi_call
 expr simple_expr.
 
 Terminals 
@@ -19,6 +20,7 @@ symbol module_fun
 assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
+call_erlang
 let in '(' ')' '/' ','.
 
 Rootsymbol expr.
@@ -75,10 +77,10 @@ terms -> term terms : ['$1'|'$2'].
 
 match_pattern -> term : '$1'.
 match_pattern -> cons : '$1'.
-match_clause -> '|' match_pattern '->' simple_expr : 
-  #mlfe_clause{pattern='$2', result='$4'}.
+match_clause -> match_pattern '->' simple_expr : 
+  #mlfe_clause{pattern='$1', result='$3'}.
 match_clauses -> match_clause : ['$1'].
-match_clauses -> match_clause match_clauses : ['$1'|'$2'].
+match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
 
 match_with  -> match simple_expr with match_clauses : #mlfe_match{match_expr='$2', clauses='$4'}.
 

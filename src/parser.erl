@@ -271,7 +271,7 @@ match_test_() ->
                                                 result={symbol, 3, "non_zero"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
-                           "| 0 -> zero\n"
+                           " 0 -> zero\n"
                            "| _ -> non_zero\n"))),
      ?_assertEqual({ok, #mlfe_match{match_expr=#mlfe_apply{
                                                   name={symbol, 1, "add"}, 
@@ -287,7 +287,7 @@ match_test_() ->
                          ]}},
                    parse(scanner:scan(
                            "match add x y with\n"
-                           "| 0 -> 'zero\n"
+                           " 0 -> 'zero\n"
                            "| 1 -> 'one\n"
                            "| _ -> 'more_than_one\n"))),
      ?_assertEqual({ok, #mlfe_match{
@@ -306,7 +306,7 @@ match_test_() ->
                                        result={atom, 3, "one_first"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
-                           "| (_, x) -> 'anything_first\n"
+                           "  (_, x) -> 'anything_first\n"
                            "| (1, x) -> 'one_first\n"))),
      ?_assertEqual({ok, #mlfe_match{
                            match_expr=#mlfe_tuple{
@@ -324,7 +324,7 @@ match_test_() ->
                                        result={atom, 2, "nested_tuple"}}]}},
                    parse(scanner:scan(
                            "match (x, y) with\n"
-                           "| ((_, 1), a) -> 'nested_tuple")))
+                           " ((_, 1), a) -> 'nested_tuple")))
     ].
 
 tuple_test_() ->
@@ -367,7 +367,7 @@ list_test_() ->
                                                  result={symbol,3,"h"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
-                           "| [] -> []\n"
+                           "  [] -> []\n"
                            "| h : t -> h\n")))
     ].
                          

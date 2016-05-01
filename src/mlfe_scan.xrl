@@ -25,13 +25,14 @@ Rules.
 ()    : {token, {unit, TokenLine}}.
 
 %% Reserved words
-let    : {token, {'let', TokenLine}}.
-in     : {token, {in, TokenLine}}.
-match  : {token, {match, TokenLine}}.
-with   : {token, {with, TokenLine}}.
-module : {token, {module, TokenLine}}.
-export : {token, {export, TokenLine}}.
-type   : {token, {type_decl, TokenLine}}.
+let         : {token, {'let', TokenLine}}.
+in          : {token, {in, TokenLine}}.
+match       : {token, {match, TokenLine}}.
+with        : {token, {with, TokenLine}}.
+call_erlang : {token, {call_erlang, TokenLine}}.
+module      : {token, {module, TokenLine}}.
+export      : {token, {export, TokenLine}}.
+type        : {token, {type_decl, TokenLine}}.
 
 %% Integer
 [+-]?{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
