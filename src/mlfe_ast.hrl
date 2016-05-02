@@ -44,6 +44,7 @@
 
 -record(mlfe_clause, {type :: atom(),
                       pattern :: mlfe_expression(),
+                      guards=[] :: list(mlfe_expression()),
                       result :: mlfe_expression()
                      }).
 -type mlfe_clause() :: #mlfe_clause{}.

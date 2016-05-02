@@ -53,6 +53,234 @@ next_batch([], Memo) ->
 next_batch([Token|Tail], Memo) ->
     next_batch(Tail, [Token|Memo]).
 
+%%% Renaming bindings starts with a top-level function from a module and
+%%% renames every binding _except_ for the top-level function name itself.
+%%% This process is necessary in order to find duplicate definitions and
+%%% later to restrict the scope of bindings while type checking.  An example:
+%%% 
+%%%     f x = let y = 2 in g x y
+%%%     
+%%%     g a b = let y = 4 in a + b + y
+%%% 
+%%% When `g` is type checked due to the call from `f`, `y` is already in the
+%%% typing environment.  To eliminate potential confusion and to ensure 
+%%% bindings are properly scoped we want to guarantee that the set of bindings
+%%% for any two functions are disjoint.  The process of renaming bindings
+%%% substitutes synthetic names for the original bindings and links these 
+%%% names back to the originals via ETS.  We use a monotonic sequence of
+%%% integers to create these names.
+
+-spec rename_bindings(
+        NextVar::integer(),
+        TopLevel::mlfe_fun_def()) -> {integer(), map(), mlfe_fun_def()} | 
+                                     {error, term()}.
+rename_bindings(NextVar, #mlfe_fun_def{args=As}=TopLevel) ->
+    case rebind_args(NextVar, maps:new(), As) of
+        {NV, M, Args} ->
+            case rename_bindings(NV, M, TopLevel#mlfe_fun_def.body) of
+                {NV2, M2, E} -> {NV2, M2, TopLevel#mlfe_fun_def{
+                                            body=E,
+                                            args=lists:reverse(Args)}};
+                {error, _} = Err -> Err
+            end;
+        {error, _} = E -> E
+    end.
+
+rebind_args(NextVar, Map, Args) ->
+    F = fun
+            ({error, _} = E, _) -> E;
+            ({symbol, L, N}, {NV, AccMap, Syms}) -> 
+                case maps:get(N, AccMap, undefined) of
+                    undefined -> 
+                        Synth = next_var(NV),
+                        {NV+1, maps:put(N, Synth, AccMap), [{symbol, L, Synth}|Syms]};
+                    _ ->
+                        {error, {duplicate_definition, N, L}}
+                end
+        end,
+    {NV, M, Args2} = lists:foldl(F, {NextVar, Map, []}, Args),
+    {NV, M, lists:reverse(Args2)}.
+
+rename_bindings(NextVar, Map, #fun_binding{def=Def, expr=E}) ->
+    case rename_bindings(NextVar, Map, Def) of
+        {error, _} = Err ->
+            Err;
+        {NV, M2, Def2} -> case rename_bindings(NV, M2, E) of
+                              {error, _} = Err -> Err;
+                              {NV2, M3, E2} -> {NV2, 
+                                                M3, 
+                                                #fun_binding{def=Def2, expr=E2}}
+                          end
+    end;
+rename_bindings(NextVar, Map, #var_binding{}=VB) ->
+    #var_binding{name={symbol, L, N},
+                 to_bind=TB,
+                 expr=E} = VB,
+    case maps:get(N, Map, undefined) of
+        undefined ->
+            Synth = next_var(NextVar),
+            M2 = maps:put(N, Synth, Map),
+            case rename_bindings(NextVar+1, M2, TB) of
+                {error, _} = Err -> Err;
+                {NV, M3, TB2} -> case rename_bindings(NV, M3, E) of
+                                     {error, _} = Err -> Err;
+                                     {NV2, M4, E2} -> {NV2,
+                                                       M4,
+                                                       #var_binding{
+                                                          name={symbol, L, Synth},
+                                                          to_bind=TB2,
+                                                          expr=E2}}
+                                 end
+            end;
+        _ ->
+            {error, {duplicate_definition, N, L}}
+    end;
+
+rename_bindings(NextVar, Map, #mlfe_apply{name=N, args=Args}=App) ->
+    Name = case N of
+               {symbol, _, _} = S -> rename_bindings(NextVar, Map, S);
+               _ -> N
+           end,
+    {_, _, Name} = rename_bindings(NextVar, Map, N),
+    case rename_binding_list(NextVar, Map, Args) of
+        {error, _} = Err -> Err;
+        {NV2, M2, Args2} ->
+            {NV2, M2, App#mlfe_apply{name=Name, args=Args2}}
+    end;
+
+rename_bindings(NextVar, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
+    case rename_bindings(NextVar, Map, H) of
+        {error, _} = Err -> Err;
+        {NV, M, H2} -> case rename_bindings(NV, M, T) of
+                           {error, _} = Err -> Err;
+                           {NV2, M2, T2} -> {NV2, M2, Cons#mlfe_cons{
+                                                        head=H2,
+                                                        tail=T2}}
+                       end
+    end;
+rename_bindings(NextVar, Map, #mlfe_tuple{values=Vs}=T) ->
+    case rename_binding_list(NextVar, Map, Vs) of
+        {error, _} = Err -> Err;
+        {NV, M, Vals2} -> {NV, M, T#mlfe_tuple{values=Vals2}}
+    end;
+rename_bindings(NextVar, Map, {symbol, L, N}=S) ->
+    case maps:get(N, Map, undefined) of
+        undefined -> {NextVar, Map, S};
+        Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
+    end;
+rename_bindings(NV, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
+    case rename_binding_list(NV, M, Args) of
+        {error, _} = Err -> Err;
+        {NV2, M2, Args2} -> case rename_clause_list(NV2, M2, Cs) of
+                                {error, _} = Err -> 
+                                    Err;
+                                {NV3, M3, Cs2} ->
+                                    {NV3, M3, FFI#mlfe_ffi{args=Args2, clauses=Cs2}}
+                            end
+    end;
+rename_bindings(NV, M, #mlfe_match{}=Match) ->
+    #mlfe_match{match_expr=ME, clauses=Cs} = Match,
+    case rename_bindings(NV, M, ME) of
+        {error, _} = Err -> Err;
+        {NV2, M2, ME2} -> 
+            case rename_clause_list(NV2, M2, Cs) of
+                {error, _} = Err -> 
+                    Err;
+                {NV3, M3, Cs2} -> 
+                    {NV3, M3, Match#mlfe_match{match_expr=ME2, clauses=Cs2}}
+            end
+    end;
+
+%% TODO:  guards!
+rename_bindings(NV, M, #mlfe_clause{pattern=P, result=R}=Clause) ->
+    %% pattern matches create new bindings and as such we don't
+    %% just want to use existing substitutions but rather error
+    %% on duplicates and create entirely new ones:
+    case make_bindings(NV, M, P) of
+        {error, _} = Err -> Err;
+        {NV2, M2, P2} -> case rename_bindings(NV2, M2, R) of
+                             {error, _} = Err -> Err;
+                             {NV3, _M3, R2} -> 
+                                 %% we actually throw away the modified map here
+                                 %% because other patterns should be able to 
+                                 %% reuse variable names:
+                                 {NV3, M, Clause#mlfe_clause{
+                                             pattern=P2,
+                                             result=R2}}
+                         end
+    end;
+rename_bindings(NextVar, Map, Expr) ->
+    {NextVar, Map, Expr}.
+
+rename_binding_list(NextVar, Map, Bindings) ->
+    F = fun
+            (_, {error, _} = Err) -> Err;
+            (A, {NV, M, Memo})    -> case rename_bindings(NV, M, A) of
+                                         {error, _} = Err -> Err;
+                                         {NV2, M2, A2} -> {NV2, M2, [A2|Memo]}
+                                     end
+        end,
+    case lists:foldl(F, {NextVar, Map, []}, Bindings) of
+        {error, _} = Err -> Err;
+        {NV, M, Bindings2} -> {NV, M, lists:reverse(Bindings2)}
+    end.
+
+%% For renaming bindings in a list of clauses.  Broken out from pattern
+%% matching because it will be reused for FFI and receive.
+rename_clause_list(NV, M, Cs) ->
+    F = fun
+            (_, {error, _}=Err) -> Err;
+            (C, {X, Y, Memo}) ->
+                case rename_bindings(X, Y, C) of
+                    {error, _} = Err -> Err;
+                    {A, B, C2} -> {A, B, [C2|Memo]}
+                end
+        end,
+    case lists:foldl(F, {NV, M, []}, Cs) of
+        {error, _} = Err -> Err;
+        {NV2, M2, Cs2} -> {NV2, M2, lists:reverse(Cs2)}
+    end.    
+
+%%% Used for pattern matches so that we're sure that the patterns in each
+%%% clause contain unique bindings.
+make_bindings(NV, M, #mlfe_tuple{values=Vs}=Tup) ->
+    F = fun
+            (_, {error, _}=E) -> E;
+            (V, {NextVar, Map, Memo}) ->
+                case make_bindings(NextVar, Map, V) of
+                    {error, _} = Err -> Err;
+                    {NV2, M2, V2} -> {NV2, M2, [V2|Memo]}
+                end
+        end,
+    case lists:foldl(F, {NV, M, []}, Vs) of
+        {error, _} = Err -> Err;
+        {NV2, M2, Vs2}   -> {NV2, M2, Tup#mlfe_tuple{values=lists:reverse(Vs2)}}
+    end;
+make_bindings(NV, M, #mlfe_cons{head=H, tail=T}=Cons) ->
+    case make_bindings(NV, M, H) of
+        {error, _} = Err -> Err;
+        {NV2, M2, H2} -> case make_bindings(NV2, M2, T) of
+                             {error, _} = Err -> 
+                                 Err;
+                             {NV3, M3, T2} -> 
+                                 {NV3, M3, Cons#mlfe_cons{head=H2, tail=T2}}
+                         end
+    end;
+make_bindings(NV, M, {symbol, L, Name}) ->
+    case maps:get(Name, M, undefined) of
+        undefined ->
+            Synth = next_var(NV),
+            {NV+1, maps:put(Name, Synth, M), {symbol, L, Synth}};
+        _ ->
+            {error, {duplicate_definition, Name, L}}
+    end;
+make_bindings(NV, M, Expression) ->
+    {NV, M, Expression}.
+                                
+-define(base_var_name, "svar_").
+next_var(X) ->
+    ?base_var_name ++ integer_to_list(X).
+
 -ifdef(TEST).
 
 test_parse(S) ->
@@ -443,5 +671,76 @@ simple_module_test() ->
                                                               {symbol,11,"y"}]}}]}},
                  parse_module(Code)).
 
+rebinding_test_() ->
+    %% Simple rebinding:
+    {ok, A} = test_parse("f x = let y = 2 in x + y"),
+    %% Check for duplicate definition error:
+    {ok, B} = test_parse("f x = \nlet x = 1 in x + x"),
+    %% Check for good pattern match variable names:
+    {ok, C} = test_parse("f x = match x with\n"
+                         "  (a, 0) -> a\n"
+                         "| (a, b) -> b"),
+    %% Check for duplication in pattern match variable names:
+    {ok, D} = test_parse("f x = match x with\n"
+                         " x -> 0"),
+    %% Check for good pattern match variable names in lists:
+    {ok, E} = test_parse("f x = match x with\n"
+                         "  [_, b, 0] -> b\n"
+                         "| h : t -> h"),
+    %% Check for dupe variable names in lists:
+    {ok, F} = test_parse("f x y = match x with\n"
+                         " h : y -> h"),
+
+    [?_assertMatch({_, _, #mlfe_fun_def{
+                            name={symbol, 1, "f"},
+                            args=[{symbol, 1, "svar_0"}],
+                            body=#var_binding{
+                                    name={symbol, 1, "svar_1"},
+                                    to_bind={int, 1, 2},
+                                    expr=#mlfe_apply{
+                                            name={bif, '+', 1, 'erlang', '+'},
+                                            args=[{symbol, 1, "svar_0"}, 
+                                                  {symbol, 1, "svar_1"}]}}}},
+                   rename_bindings(0, A)),
+     ?_assertMatch({error, {duplicate_definition, "x", 2}},
+                   rename_bindings(0, B)),
+     ?_assertMatch({_, _, #mlfe_fun_def{
+                             name={symbol, 1, "f"},
+                             args=[{symbol, 1, "svar_0"}],
+                             body=#mlfe_match{
+                                     match_expr={symbol, 1, "svar_0"},
+                                     clauses=[#mlfe_clause{
+                                                 pattern=#mlfe_tuple{
+                                                            values=[{symbol, 2, "svar_1"},
+                                                                    {int, 2, 0}]},
+                                                 result={symbol, 2, "svar_1"}},
+                                              #mlfe_clause{
+                                                 pattern=#mlfe_tuple{
+                                                            values=[{symbol, 3, "svar_2"},
+                                                                    {symbol, 3, "svar_3"}]},
+                                                 result={symbol, 3, "svar_3"}}]}}},
+                   rename_bindings(0, C)),
+     ?_assertMatch({error, {duplicate_definition, "x", 2}}, rename_bindings(0, D)),
+     ?_assertMatch({_, _, 
+                    #mlfe_fun_def{
+                       body=#mlfe_match{
+                               match_expr={symbol, 1, "svar_0"},
+                               clauses=[#mlfe_clause{
+                                           pattern=#mlfe_cons{
+                                                      head={'_', 2},
+                                                      tail=#mlfe_cons{
+                                                              head={symbol, 2, "svar_1"},
+                                                              tail=#mlfe_cons{
+                                                                      head={int, 2, 0},
+                                                                      tail={nil, 0}}}},
+                                           result={symbol, 2, "svar_1"}},
+                                       #mlfe_clause{
+                                          pattern=#mlfe_cons{
+                                                     head={symbol, 3, "svar_2"},
+                                                     tail={symbol, 3, "svar_3"}},
+                                          result={symbol, 3, "svar_2"}}]}}}, 
+                   rename_bindings(0, E)),
+     ?_assertMatch({error, {duplicate_definition, "y", 2}}, rename_bindings(0, F))
+    ].
 
 -endif.
