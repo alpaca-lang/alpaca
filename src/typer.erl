@@ -1014,7 +1014,7 @@ module_typing_test() ->
         "add x y = x + y\n\n"
         "head l = match l with\n"
         "  h : t -> h",
-    {ok, M} = parser:parse_module(Code),
+    {ok, _, _, M} = parser:parse_module(0, Code),
     ?assertMatch(#mlfe_module{
                              functions=[
                                        #mlfe_fun_def{
@@ -1036,7 +1036,7 @@ module_with_forward_reference_test() ->
         "export add/2\n\n"
         "add x y = adder x y\n\n"
         "adder x y = x + y",
-    {ok, M} = parser:parse_module(Code),
+    {ok, _, _, M} = parser:parse_module(0, Code),
     Env = new_env(),
     ?assertMatch(#mlfe_module{
                     functions=[
@@ -1056,8 +1056,8 @@ simple_inter_module_test() ->
         "module inter_module_two\n\n"
         "export adder/2\n\n"
         "adder x y = x + y",
-    {ok, M1} = parser:parse_module(Mod1),
-    {ok, M2} = parser:parse_module(Mod2),
+    {ok, NV, _, M1} = parser:parse_module(0, Mod1),
+    {ok, _, _, M2} = parser:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch(#mlfe_module{
@@ -1078,8 +1078,8 @@ bidirectional_module_fail_test() ->
         "export adder/2, failing_fun/1\n\n"
         "adder x y = x + y\n\n"
         "failing_fun x = inter_module_one.add x x",
-    {ok, M1} = parser:parse_module(Mod1),
-    {ok, M2} = parser:parse_module(Mod2),
+    {ok, NV, _, M1} = parser:parse_module(0, Mod1),
+    {ok, _, _, M2} = parser:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch({error, {bidirectional_module_ref, 
@@ -1119,7 +1119,7 @@ infinite_mutual_recursion_test() ->
         "module mutual_rec_test\n\n"
         "a x = b x\n\n"
         "b x = let y = x + 1 in a y",
-    {ok, M} = parser:parse_module(Code),
+    {ok, _, _, M} = parser:parse_module(0, Code),
     E = new_env(),
     ?assertMatch(#mlfe_module{
                     name=mutual_rec_test,
@@ -1139,7 +1139,7 @@ terminating_mutual_recursion_test() ->
         "b x = match x with\n"
         "  10 -> 'ten\n"
         "| y -> a y",
-    {ok, M} = parser:parse_module(Code),
+    {ok, _, _, M} = parser:parse_module(0, Code),
     E = new_env(),
     ?assertMatch(#mlfe_module{
                     name=terminating_mutual_rec_test,

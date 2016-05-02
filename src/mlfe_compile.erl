@@ -8,7 +8,7 @@
 -endif.
 
 compile(Code) when is_list(Code) ->
-    AST = parser:parse_module(Code),
+    AST = parser:parse_module(0, Code),
     io:format("AST is ~w~n", [AST]),
     {ok, Forms} = compile(AST),
     io:format("Forms for ~s~n ARE ~n~w~n", [Code, Forms]),
