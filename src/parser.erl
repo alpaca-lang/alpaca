@@ -124,7 +124,9 @@ rebind_args(NextVar, Map, Args) ->
                         {NV+1, maps:put(N, Synth, AccMap), [{symbol, L, Synth}|Syms]};
                     _ ->
                         {error, {duplicate_definition, N, L}}
-                end
+                end;
+            ({unit, _}=U, {NV, AccMap, Syms}) ->
+                {NV, AccMap, [U|Syms]}
         end,
     {NV, M, Args2} = lists:foldl(F, {NextVar, Map, []}, Args),
     {NV, M, lists:reverse(Args2)}.
@@ -219,7 +221,7 @@ rename_bindings(NextVar, Map, {symbol, L, N}=S) ->
         Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
     end;
 rename_bindings(NV, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
-    case rename_binding_list(NV, M, Args) of
+    case rename_bindings(NV, M, Args) of
         {error, _} = Err -> Err;
         {NV2, M2, Args2} -> case rename_clause_list(NV2, M2, Cs) of
                                 {error, _} = Err -> 

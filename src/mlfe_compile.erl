@@ -8,7 +8,7 @@
 -endif.
 
 compile(Code) when is_list(Code) ->
-    AST = parser:parse_module(0, Code),
+    {ok, _, _, AST} = parser:parse_module(0, Code),
     io:format("AST is ~w~n", [AST]),
     {ok, Forms} = compile(AST),
     io:format("Forms for ~s~n ARE ~n~w~n", [Code, Forms]),
@@ -16,7 +16,7 @@ compile(Code) when is_list(Code) ->
 compile({error, _} = E) ->
     io:format("Error was ~w~n", [E]),
     E;
-compile({ok, Mod}) ->
+compile(#mlfe_module{}=Mod) ->
     #mlfe_module{
        name=ModuleName, 
        function_exports=Exports, 
@@ -211,6 +211,7 @@ parser_nested_letrec_test() ->
         "  adder2 x y",
     {ok, _, Bin} = compile(Code).
 
+%% This test will fail until I have implemented equality guards:
 module_with_match_test() ->
     Name = compile_module_with_match,
     FN = atom_to_list(Name) ++ ".beam",
@@ -226,8 +227,9 @@ module_with_match_test() ->
         "  match t with\n"
         "    (f, _) -> f\n"
         "  | _ -> 'not_a_2_tuple\n\n"
+    %% This is the failing section in particular:
         "compare x y = match x with\n"
-        "  y -> 'matched\n"
+        "  a -> 'matched\n"
         "| _ -> 'not_matched",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
