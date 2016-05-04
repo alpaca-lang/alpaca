@@ -40,6 +40,13 @@ There's clearly room to provide a version that skips the pattern match and
 succeeds if dialyzer supplies a return type for the function that matches a type
 in scope (union or otherwise).
 
+## Current Form
+The FFI is quite limited at present and operates as follows:
+
+    call_erlang 'a_module 'a_function [3, "different", "arguments"] with
+       {ok, _} -> ok
+     | {error, _} -> error
+
 # Using It
 It's not usable yet but the tests should give a relatively clear picture as to
 where I'm going.
@@ -126,6 +133,12 @@ that crosses module boundaries), we check to see if the referenced module is
 already in the list of entered modules.  If so, type checking fails with an
 error.
 
+## No "Any" Type
+There is currently no "any" root type.  This is going to be a problem for
+something like a simple `println`/`printf` function as a simple to use version
+of this would best take a List of Any.  The FFI to Erlang code gets around this
+by not type checking the arguments passed to it and only checking the result
+portion of the pattern matches.
 
 # Current TODO
 A somewhat structured (but unordered) set of what it will take to get to
@@ -137,7 +150,6 @@ management, etc.
 - binary
 - boolean
 - pid
-- string
 - map
 - iolist
 - structs
@@ -145,9 +157,6 @@ management, etc.
 
 ## Basic Items
 
-- if-then-else
-- inter-module calls
-- basic erlang FFI
 - pattern matching guards
 
 ## Receive
@@ -155,16 +164,4 @@ I think this will look like basic clauses as in matches but also requires an
 optional timeout and associated action.  I'm as yet unsure of how I'm going to
 handle guards on types but likely in the same way I do for the Erlang FFI.  I'm
 thinking a form of predicate at the moment.
-
-## Type Checker
-Currently working for basic polymorphism and integers.  Only tested at the
-per-function level.  Next key things:
-
-- check full modules
-- check inter-module calls
-
-Longer term:
-
-- work with the eventual Erlang FFI
-- check receives
 
