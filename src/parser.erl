@@ -244,22 +244,29 @@ rename_bindings(NV, M, #mlfe_match{}=Match) ->
     end;
 
 %% TODO:  guards!
-rename_bindings(NV, M, #mlfe_clause{pattern=P, result=R}=Clause) ->
+rename_bindings(NV, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
     case make_bindings(NV, M, P) of
         {error, _} = Err -> Err;
-        {NV2, M2, P2} -> case rename_bindings(NV2, M2, R) of
-                             {error, _} = Err -> Err;
-                             {NV3, _M3, R2} -> 
-                                 %% we actually throw away the modified map here
-                                 %% because other patterns should be able to 
-                                 %% reuse variable names:
-                                 {NV3, M, Clause#mlfe_clause{
-                                             pattern=P2,
-                                             result=R2}}
-                         end
+        {NV2, M2, P2} -> 
+            case rename_bindings(NV2, M2, R) of
+                {error, _} = Err -> Err;
+                {NV3, M3, R2} -> 
+                    case rename_binding_list(NV3, M3, Gs) of
+                        {error, _}=Err -> Err;
+                        {NV4, _M4, Gs2} ->
+                    
+                            %% we actually throw away the modified map here
+                            %% because other patterns should be able to 
+                            %% reuse variable names:
+                            {NV4, M, Clause#mlfe_clause{
+                                       pattern=P2,
+                                       guards=Gs2,
+                                       result=R2}}
+                    end
+            end
     end;
 rename_bindings(NextVar, Map, Expr) ->
     {NextVar, Map, Expr}.

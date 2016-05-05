@@ -130,8 +130,12 @@ compile_expr(Env, #mlfe_ffi{}=FFI) ->
    cerl:c_case(Apply, [compile_expr(Env, X) || X <- Clauses]);
 
 %% Pattern, expression
-compile_expr(Env, #mlfe_clause{pattern=P, result=E}) ->
+compile_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
+compile_expr(Env, #mlfe_clause{pattern=P, guards=[G], result=E}) ->
+    cerl:c_clause([compile_expr(Env, P)], 
+                  compile_expr(Env, G), 
+                  compile_expr(Env, E));
 compile_expr(Env, #mlfe_tuple{values=Vs}) ->
     cerl:c_tuple([compile_expr(Env, E) || E <- Vs]);
 %% Expressions, Clauses
@@ -168,7 +172,8 @@ module_with_internal_apply_test() ->
         "module test_mod\n\n"
         "export add/2\n\n"
         "adder x y = x + y\n\n"
-        "add x y = adder x y",
+        "add x y = adder x y\n\n"
+        "eq x y = x == y",
     {ok, _, Bin} = compile(Code).
 
 fun_and_var_binding_test() ->
@@ -229,7 +234,7 @@ module_with_match_test() ->
         "  | _ -> 'not_a_2_tuple\n\n"
     %% This is the failing section in particular:
         "compare x y = match x with\n"
-        "  a -> 'matched\n"
+        "  a, a == y -> 'matched\n"
         "| _ -> 'not_matched",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),

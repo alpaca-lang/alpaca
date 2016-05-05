@@ -37,6 +37,8 @@
 
 %% pattern, optional guard, result.  Currently I'm doing nothing with 
 %% present guards.
+%% TODO:  the guards don't need to be part of the type here.  Their
+%%        only role in typing is to constrain the pattern's typing.
 -type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
 
 %%% `t_rec` is a special type that denotes an infinitely recursive function.
@@ -626,12 +628,34 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
             end
     end;
 
-typ_of(Env, Lvl, #mlfe_clause{pattern=P, result=R}) ->
+typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
     {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
-    case typ_of(NewEnv, Lvl, R) of
-        {error, _} = E   -> E;
-        {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
-    end;
+    F = fun
+            (_, {error, _}=Err) -> Err;
+            (G, {Typs, AccEnv}) -> 
+                case typ_of(AccEnv, Lvl, G) of
+                    {error, _}=Err -> Err;
+                    {GTyp, NV} -> {[GTyp|Typs], update_counter(NV, AccEnv)}
+                end
+        end,
+    {GTyps, Env2} = lists:foldl(F, {[], NewEnv}, Gs),
+    UnifyFolder = fun
+                      (_, {error, _}=Err) -> Err;
+                      (N, Acc) ->
+                          case unify(N, Acc) of
+                              {error, _}=Err -> Err;
+                              ok -> Acc
+                          end
+                  end,
+
+    case lists:foldl(UnifyFolder, new_cell(t_bool), GTyps) of
+        {error, _}=Err -> Err;
+        _ ->
+            case typ_of(Env2, Lvl, R) of
+                {error, _} = E   -> E;
+                {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
+            end
+        end;
 
 %%% Calls to Erlang code are only have their return value typed.
 typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs}) ->
@@ -1169,5 +1193,24 @@ ffi_test_() ->
                      "| _ -> 'not_one"))
      
     ].
+
+equality_test_() ->
+    [?_assertMatch({t_bool, _}, top_typ_of("1 == 2")),
+     ?_assertMatch({{t_arrow, [t_int], t_bool}, _}, 
+                   top_typ_of("f x = 1 == x")),
+     ?_assertMatch({error, {cannot_unify, _, _}}, top_typ_of("1.0 == 1")),
+     ?_assertMatch({{t_arrow, [t_int], t_atom}, _}, 
+                   top_typ_of(
+                     "f x = match x with\n"
+                     " a, a == 0 -> 'zero\n"
+                     "|b -> 'not_zero")),
+     ?_assertMatch({error, {cannot_unify, t_float, t_int}},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "  a -> a + 1\n"
+                     "| a, a == 1.0 -> 1"))
+                     
+    ].
+
     
 -endif.

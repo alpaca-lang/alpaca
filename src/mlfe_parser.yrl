@@ -8,7 +8,7 @@ unit tuple tuple_list
 defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
-match_clause match_clauses match_with match_pattern
+match_clause match_clauses match_with match_pattern guard guards
 ffi_call
 expr simple_expr.
 
@@ -21,7 +21,9 @@ assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
 call_erlang
-let in '(' ')' '/' ','.
+let in '(' ')' '/' ','
+
+'eq'.
 
 Rootsymbol expr.
 
@@ -80,9 +82,16 @@ term -> '(' simple_expr ')' : '$2'.
 terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
 
+guard -> term eq term : make_infix('$2', '$1', '$3').
+
+guards -> guard : ['$1'].
+guards -> guard ',' guards : ['$1'|'$3'].
+
 match_pattern -> term : '$1'.
 match_clause -> match_pattern '->' simple_expr :
   #mlfe_clause{pattern='$1', result='$3'}.
+match_clause -> match_pattern ',' guards '->' simple_expr :
+  #mlfe_clause{pattern='$1', guards='$3', result='$5'}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
 
@@ -132,6 +141,7 @@ end.
 simple_expr -> binding : '$1'.
 simple_expr -> match_with : '$1'.
 simple_expr -> ffi_call : '$1'.
+simple_expr -> guard : '$1'.
 
 expr -> simple_expr : '$1'.
 expr -> module_def : '$1'.
@@ -150,7 +160,9 @@ make_infix(Op, A, B) ->
       {float_math, L, OpString} ->
                    [OpChar|_] = OpString,
                    OpAtom = list_to_atom([OpChar]),
-                   {bif, list_to_atom(OpString), L, erlang, OpAtom}
+                   {bif, list_to_atom(OpString), L, erlang, OpAtom};
+      {eq, L} ->
+                   {bif, '==', L, erlang, '=='}
     end,
     #mlfe_apply{type=undefined,
                 name=Name,
