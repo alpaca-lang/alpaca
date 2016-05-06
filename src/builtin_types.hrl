@@ -3,7 +3,8 @@
                    ?t_float_add, ?t_float_sub,
                    ?t_float_mul, ?t_float_div,
 
-                   ?t_equality
+                   ?t_equality, ?t_neq,
+                   ?t_gt, ?t_lt, ?t_gte, ?t_lte
                   ]).
 
 -define(t_int_math, {t_arrow, [t_int, t_int], t_int}).
@@ -21,5 +22,10 @@
 -define(t_float_mul, {'*.', ?t_float_math}).
 -define(t_float_div, {'/.', ?t_float_math}).
 
--define(t_equality, {'==',
-                     {t_arrow, [{unbound, eq_a, 1}, {unbound, eq_a, 1}], t_bool}}).
+-define(compare, {t_arrow, [{unbound, eq_a, 1}, {unbound, eq_a, 1}], t_bool}).
+-define(t_equality, {'=:=', ?compare}).
+-define(t_neq, {'!=', ?compare}).
+-define(t_gt, {'>', ?compare}).
+-define(t_lt, {'<', ?compare}).
+-define(t_gte, {'>=', ?compare}).
+-define(t_lte, {'=<', ?compare}).

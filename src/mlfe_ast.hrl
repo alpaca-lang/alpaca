@@ -42,6 +42,11 @@
 
 -type mlfe_struct_def() :: list(struct_member()).
 
+-record(mlfe_type_check, {type :: int|float|atom|bool|list|chars,
+                          line :: integer(),
+                          expr :: mlfe_symbol()}).
+-type mlfe_type_check() :: #mlfe_type_check{}.
+
 -record(mlfe_clause, {type :: atom(),
                       pattern :: mlfe_expression(),
                       guards=[] :: list(mlfe_expression()),
@@ -70,6 +75,7 @@
                          | mlfe_tuple()
                          | mlfe_match()
                          | mlfe_binding()
+                         | mlfe_type_check()
                            .
 
 -record(fun_binding, {def :: mlfe_fun_def(),

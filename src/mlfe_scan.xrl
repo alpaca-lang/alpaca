@@ -3,11 +3,12 @@ D   = [0-9]
 L   = [a-z]
 U   = [A-Z]
 SYM = {L}[a-zA-Z0-9_]*
-ATOM = \'{SYM}
+ATOM = \'[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n\n
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
+TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_chars
 
 Rules.
 %% Separators
@@ -34,6 +35,10 @@ module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type        : {token, {type_decl, TokenLine}}.
 
+%% Type assertions/checks for guards
+
+{TYPE_CHECK} : {token, {type_check_tok, list_to_atom(TokenChars), TokenLine}}.
+
 %% Integer
 [+-]?{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
 
@@ -59,7 +64,14 @@ type        : {token, {type_decl, TokenLine}}.
 
 %% Operators
 =    : {token, {assign, TokenLine}}.
+
 ==   : {token, {eq, TokenLine}}.
+!=   : {token, {neq, TokenLine}}.
+>    : {token, {gt, TokenLine}}.
+<    : {token, {lt, TokenLine}}.
+>=   : {token, {gte, TokenLine}}.
+=<   : {token, {lte, TokenLine}}.
+
 [\+\-\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->   : {token, {'->', TokenLine}}.

@@ -8,7 +8,8 @@ unit tuple tuple_list
 defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
-match_clause match_clauses match_with match_pattern guard guards
+match_clause match_clauses match_with match_pattern 
+compare type_check guard guards
 ffi_call
 expr simple_expr.
 
@@ -21,9 +22,12 @@ assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
 call_erlang
+
+type_check_tok
+
 let in '(' ')' '/' ','
 
-'eq'.
+eq neq gt lt gte lte.
 
 Rootsymbol expr.
 
@@ -82,7 +86,19 @@ term -> '(' simple_expr ')' : '$2'.
 terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
 
-guard -> term eq term : make_infix('$2', '$1', '$3').
+type_check -> type_check_tok symbol : 
+  {_, Check, L} = '$1',
+  #mlfe_type_check{type=Check, line=L, expr='$2'}.
+
+compare -> eq : '$1'.
+compare -> neq : '$1'.
+compare -> gt : '$1'.
+compare -> lt : '$1'.
+compare -> gte : '$1'.
+compare -> lte : '$1'.
+
+guard -> term compare term : make_infix('$2', '$1', '$3').
+guard -> type_check : '$1'.
 
 guards -> guard : ['$1'].
 guards -> guard ',' guards : ['$1'|'$3'].
@@ -161,8 +177,12 @@ make_infix(Op, A, B) ->
                    [OpChar|_] = OpString,
                    OpAtom = list_to_atom([OpChar]),
                    {bif, list_to_atom(OpString), L, erlang, OpAtom};
-      {eq, L} ->
-                   {bif, '==', L, erlang, '=='}
+      {eq, L} ->   {bif, '=:=', L, erlang, '=:='};
+      {gt, L} ->   {bif, '>', L, erlang, '>'};
+      {lt, L} ->   {bif, '<', L, erlang, '<'};
+      {gte, L} ->  {bif, '>=', L, erlang, '>='};
+      {lte, L} ->  {bif, '=<', L, erlang, '=<'};
+      {neq, L} ->  {bif, '/=', L, erlang, '/='}
     end,
     #mlfe_apply{type=undefined,
                 name=Name,
@@ -177,7 +197,7 @@ make_define([{symbol, _, N} = Name|A], Expr) ->
         {error, _} = E ->
             E
     end;
-make_define([BadName|Args], Expr) ->
+make_define([BadName|Args], _Expr) ->
     {error, {invalid_function_name, BadName, Args}}.
 
 %% Unit is only valid for single argument functions as a way around

@@ -78,6 +78,11 @@ compile_expr(_, {nil, _}) ->
     cerl:c_nil();
 compile_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(compile_expr(Env, H), compile_expr(Env, T));
+compile_expr(Env, #mlfe_type_check{type=is_integer, expr={symbol, _, _}=S}) ->
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom('is_integer'),
+      [compile_expr(Env, S)]);
 compile_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
     cerl:c_call(
       cerl:c_atom(Module),
@@ -132,10 +137,27 @@ compile_expr(Env, #mlfe_ffi{}=FFI) ->
 %% Pattern, expression
 compile_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
     cerl:c_clause([compile_expr(Env, P)], compile_expr(Env, E));
-compile_expr(Env, #mlfe_clause{pattern=P, guards=[G], result=E}) ->
+compile_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
+    Var = fun(C) -> list_to_atom("clause_guard_v_" ++ integer_to_list(C)) end,
+    NestG = fun(G, Acc) ->
+                    cerl:c_call(
+                      cerl:c_atom('erlang'),
+                      cerl:c_atom('and'),
+                      [compile_expr(Env, G), Acc])
+            end,
+    F = fun
+            ([], G) -> G;
+            (G, Acc) -> NestG(G, Acc)
+        end,
+    [H|T] = lists:reverse(Gs),
+    G = lists:foldl(F, compile_expr(Env, H), T),
     cerl:c_clause([compile_expr(Env, P)], 
-                  compile_expr(Env, G), 
+                  G,
                   compile_expr(Env, E));
+                
+%    cerl:c_clause([compile_expr(Env, P)], 
+%                  compile_expr(Env, G), 
+%                  compile_expr(Env, E));
 compile_expr(Env, #mlfe_tuple{values=Vs}) ->
     cerl:c_tuple([compile_expr(Env, E) || E <- Vs]);
 %% Expressions, Clauses
@@ -303,4 +325,44 @@ ffi_test() ->
     ?assertEqual('not_one', Mod:a("2")),
     true = code:delete(ffi_test).
 
+%% TODO:  with union types, test/1 should return integers and floats
+%% just tagged with different type constructors.
+type_guard_test() ->
+    Code = 
+        "module type_guard_test\n\n"
+        "export test/1\n\n"
+        "test x = \n"
+        "call_erlang 'erlang '* [x, x] with\n"
+        "   i, is_integer i -> i\n"
+        " | f -> 0",
+    {ok, _, Bin} = compile(Code),
+    Mod = type_guard_test,
+    {module, Mod} = code:load_binary(Mod, "type_guard_test.beam", Bin),
+    
+    %% Checking that when the result is NOT an integer we're falling back
+    %% to integer 0 as expected in the code above:
+    ?assertEqual(4, Mod:test(2)),
+    ?assertEqual(0, Mod:test(1.3)),
+    true = code:delete(Mod).
+
+multi_type_guard_test() ->
+    Code = 
+        "module multi_type_guard_test\n\n"
+        "export test/1\n\n"
+        "test x = \n"
+        "call_erlang 'erlang '* [x, x] with\n"
+        "   i, is_integer i, i == 4 -> 'got_four\n"
+        " | i, is_integer i, i > 5, i < 20 -> 'middle\n"
+        " | i, is_integer i -> 'just_int\n"
+        " | f -> 'not_int",
+    {ok, _, Bin} = compile(Code),
+    Mod = multi_type_guard_test,
+    {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),
+    
+    ?assertEqual('got_four', Mod:test(2)),
+    ?assertEqual('middle', Mod:test(4)),
+    ?assertEqual('just_int', Mod:test(5)),
+    ?assertEqual('not_int', Mod:test(1.3)),
+    true = code:delete(Mod).
+    
 -endif.

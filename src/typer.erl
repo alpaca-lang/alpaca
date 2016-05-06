@@ -657,6 +657,18 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
             end
         end;
 
+%%% Pattern match guards that both check the type of an argument and cause
+%%% it's type to be fixed.
+typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E}) ->
+    case T of
+        is_integer -> 
+            {ETyp, NV} = typ_of(Env, Lvl, E),
+            case unify(new_cell(t_int), ETyp) of
+                {error, _}=Err -> Err;
+                ok -> {t_bool, NV}
+            end
+    end;
+
 %%% Calls to Erlang code are only have their return value typed.
 typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs}) ->
     ClauseFolder = fun(C, {Typs, EnvAcc}) ->
@@ -1210,6 +1222,39 @@ equality_test_() ->
                      "  a -> a + 1\n"
                      "| a, a == 1.0 -> 1"))
                      
+    ].
+
+type_guard_test_() ->
+    [
+     %% In a normal match without union types the is_integer guard should
+     %% coerce all of the patterns to t_int:
+     ?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "   i, is_integer i -> i\n"
+                     " | _ -> 0")),
+     %% Calls to Erlang should use a type checking guard to coerce the
+     %% type in the pattern for use in the resulting expression:
+     ?_assertMatch({t_int, _},
+                   top_typ_of(
+                     "call_erlang 'a 'b [5] with\n"
+                     "   'one -> 1\n"
+                     " | i, i == 2.0 -> 2\n"
+                     " | i, is_integer i -> i\n")),
+     %% Two results with different types as determined by their guards
+     %% should result in a type error:
+     ?_assertMatch({error, {cannot_unify, t_int, t_float}},
+                   top_typ_of(
+                     "call_erlang 'a 'b [2] with\n"
+                     "   i, i == 1.0 -> i\n"
+                     " | i, is_integer i -> i")),
+     %% Guards should work with items from inside tuples:
+     ?_assertMatch({{t_arrow, [{t_tuple, [t_atom, {unbound, _, _}]}], t_atom}, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "   (msg, _), msg == 'error -> 'error\n"
+                     " | (msg, _) -> 'ok"))
+
     ].
 
     
