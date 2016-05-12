@@ -582,9 +582,9 @@ match_test_() ->
                          ]}},
                    parse(scanner:scan(
                            "match add x y with\n"
-                           " 0 -> 'zero\n"
-                           "| 1 -> 'one\n"
-                           "| _ -> 'more_than_one\n"))),
+                           " 0 -> :zero\n"
+                           "| 1 -> :one\n"
+                           "| _ -> :more_than_one\n"))),
      ?_assertEqual({ok, #mlfe_match{
                            match_expr={symbol, 1, "x"},
                            clauses=[#mlfe_clause{
@@ -601,8 +601,8 @@ match_test_() ->
                                        result={atom, 3, "one_first"}}]}},
                    parse(scanner:scan(
                            "match x with\n"
-                           "  (_, x) -> 'anything_first\n"
-                           "| (1, x) -> 'one_first\n"))),
+                           "  (_, x) -> :anything_first\n"
+                           "| (1, x) -> :one_first\n"))),
      ?_assertEqual({ok, #mlfe_match{
                            match_expr=#mlfe_tuple{
                                          arity=2, 
@@ -619,7 +619,7 @@ match_test_() ->
                                        result={atom, 2, "nested_tuple"}}]}},
                    parse(scanner:scan(
                            "match (x, y) with\n"
-                           " ((_, 1), a) -> 'nested_tuple")))
+                           " ((_, 1), a) -> :nested_tuple")))
     ].
 
 tuple_test_() ->
@@ -655,10 +655,10 @@ list_test_() ->
                            head={symbol, 1, "x"},
                            tail=#mlfe_cons{head={int, 1, 1}, 
                                            tail={nil, 1}}}},
-                   parse(scanner:scan("x : [1]"))),
+                   parse(scanner:scan("x :: [1]"))),
      ?_assertEqual({ok, #mlfe_cons{head={int, 1, 1},
                                    tail={symbol, 1, "y"}}},
-                   parse(scanner:scan("1 : y"))),
+                   parse(scanner:scan("1 :: y"))),
      ?_assertEqual({ok, #mlfe_match{
                            match_expr={symbol,1,"x"},
                            clauses=[#mlfe_clause{pattern={nil,2},
@@ -670,7 +670,7 @@ list_test_() ->
                    parse(scanner:scan(
                            "match x with\n"
                            "  [] -> []\n"
-                           "| h : t -> h\n")))
+                           "| h :: t -> h\n")))
     ].
 
 string_test_() ->
@@ -691,7 +691,7 @@ ffi_test_() ->
                                                    tail={nil, 1}},
                                           tail={nil, 0}}}}},
                    test_parse(
-                     "call_erlang 'io 'format [\"One is ~s~n\", [1]] with\n"
+                     "call_erlang :io :format [\"One is ~s~n\", [1]] with\n"
                      " _ -> 0"))
     ].
 
@@ -751,10 +751,10 @@ rebinding_test_() ->
     %% Check for good pattern match variable names in lists:
     {ok, E} = test_parse("f x = match x with\n"
                          "  [_, b, 0] -> b\n"
-                         "| h : t -> h"),
+                         "| h :: t -> h"),
     %% Check for dupe variable names in lists:
     {ok, F} = test_parse("f x y = match x with\n"
-                         " h : y -> h"),
+                         " h :: y -> h"),
 
     [?_assertMatch({_, _, #mlfe_fun_def{
                             name={symbol, 1, "f"},

@@ -247,17 +247,17 @@ module_with_match_test() ->
         "module compile_module_with_match\n\n"
         "export test/1, first/1, compare/2\n\n"
         "test x = match x with\n"
-        "  0 -> 'zero\n"
-        "| 1 -> 'one\n"
-        "| _ -> 'more_than_one\n\n"
+        "  0 -> :zero\n"
+        "| 1 -> :one\n"
+        "| _ -> :more_than_one\n\n"
         "first t =\n"
         "  match t with\n"
         "    (f, _) -> f\n"
-        "  | _ -> 'not_a_2_tuple\n\n"
+        "  | _ -> :not_a_2_tuple\n\n"
     %% This is the failing section in particular:
         "compare x y = match x with\n"
-        "  a, a == y -> 'matched\n"
-        "| _ -> 'not_matched",
+        "  a, a == y -> :matched\n"
+        "| _ -> :not_matched",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(one, Name:test(1)),
@@ -275,12 +275,12 @@ cons_test() ->
         "export make_list/2, map/2\n\n"
         "make_list h t =\n"
         "  match t with\n"
-        "    a : b -> h : t\n"
-        "  | term -> h : term : []\n\n"
+        "    a :: b -> h :: t\n"
+        "  | term -> h :: term :: []\n\n"
         "map f x =\n"
         "  match x with\n"
         "    [] -> []\n"
-        "  | h : t -> (f h) : (map f t)",
+        "  | h :: t -> (f h) :: (map f t)",
     {ok, _, Bin} = compile(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual([1, 2], Name:make_list(1, 2)),
@@ -314,9 +314,9 @@ ffi_test() ->
     Code =
         "module ffi_test\n\n"
         "export a/1\n\n"
-        "a x = call_erlang 'erlang 'list_to_integer [x] with\n"
-        "  1 -> 'one\n"
-        "| _ -> 'not_one\n",
+        "a x = call_erlang :erlang :list_to_integer [x] with\n"
+        "  1 -> :one\n"
+        "| _ -> :not_one\n",
     {ok, _, Bin} = compile(Code),
     {module, ffi_test} = code:load_binary(ffi_test, "ffi_test.beam", Bin),
     
@@ -332,7 +332,7 @@ type_guard_test() ->
         "module type_guard_test\n\n"
         "export test/1\n\n"
         "test x = \n"
-        "call_erlang 'erlang '* [x, x] with\n"
+        "call_erlang :erlang :* [x, x] with\n"
         "   i, is_integer i -> i\n"
         " | f -> 0",
     {ok, _, Bin} = compile(Code),
@@ -350,11 +350,11 @@ multi_type_guard_test() ->
         "module multi_type_guard_test\n\n"
         "export test/1\n\n"
         "test x = \n"
-        "call_erlang 'erlang '* [x, x] with\n"
-        "   i, is_integer i, i == 4 -> 'got_four\n"
-        " | i, is_integer i, i > 5, i < 20 -> 'middle\n"
-        " | i, is_integer i -> 'just_int\n"
-        " | f -> 'not_int",
+        "call_erlang :erlang :* [x, x] with\n"
+        "   i, is_integer i, i == 4 -> :got_four\n"
+        " | i, is_integer i, i > 5, i < 20 -> :middle\n"
+        " | i, is_integer i -> :just_int\n"
+        " | f -> :not_int",
     {ok, _, Bin} = compile(Code),
     Mod = multi_type_guard_test,
     {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),

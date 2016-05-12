@@ -44,7 +44,7 @@ symbol_test_() ->
      ?_assertEqual({ok, [{symbol, 1, "mysym"}], 1}, scan("mysym"))].
 
 atom_test_() ->
-    [?_assertEqual({ok, [{atom, 1, "myAtom"}], 1}, scan("'myAtom"))].
+    [?_assertEqual({ok, [{atom, 1, "myAtom"}], 1}, scan(":myAtom"))].
 
 let_test() ->
     Code = "let symbol = 5",

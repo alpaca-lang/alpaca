@@ -976,13 +976,13 @@ match_test_() ->
                    top_typ_of(
                      "f x = match x with\n"
                      "  i -> i + 1\n"
-                     "| 'atom -> 2")),
+                     "| :atom -> 2")),
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
                      "f x = match x + 1 with\n"
-                     "  1 -> 'x_was_zero\n"
-                     "| 2 -> 'x_was_one\n"
-                     "| _ -> 'x_was_more_than_one"))
+                     "  1 -> :x_was_zero\n"
+                     "| 2 -> :x_was_one\n"
+                     "| _ -> :x_was_more_than_one"))
     ].
 
 tuple_test_() ->
@@ -993,7 +993,7 @@ tuple_test_() ->
                      "f tuple = match tuple with\n"
                      " (i, f) -> (f +. 1.0, i + 1)")),
      ?_assertMatch({{t_arrow, [t_int], {t_tuple, [t_int, t_atom]}}, _},
-                   top_typ_of("f i = (i + 2, 'plus_two)")),
+                   top_typ_of("f i = (i + 2, :plus_two)")),
      ?_assertMatch({error, _},
                    top_typ_of(
                      "f x = match x with\n"
@@ -1013,18 +1013,18 @@ tuple_test_() ->
 
 list_test_() ->
     [?_assertMatch({{t_list, t_float}, _},
-                   top_typ_of("1.0 : []")),
+                   top_typ_of("1.0 :: []")),
      ?_assertMatch({{t_list, t_int}, _},
-                   top_typ_of("1 : 2 : []")),
-     ?_assertMatch({error, _}, top_typ_of("1 : 2.0 : []")),
+                   top_typ_of("1 :: 2 :: []")),
+     ?_assertMatch({error, _}, top_typ_of("1 :: 2.0 :: []")),
      ?_assertMatch({{t_arrow, 
                      [{unbound, A, _}, {t_list, {unbound, A, _}}],
                      {t_list, {unbound, A, _}}}, _},
-                   top_typ_of("f x y = x : y")),
+                   top_typ_of("f x y = x :: y")),
      ?_assertMatch({{t_arrow, [{t_list, t_int}], t_int}, _},
                    top_typ_of(
                      "f list = match list with\n"
-                     " h : t -> h + 1")),
+                     " h :: t -> h + 1")),
      %% Ensure that a '_' in a list nested in a tuple is renamed properly
      %% so that one does NOT get unified with the other when they're 
      %% potentially different types:
@@ -1034,13 +1034,13 @@ list_test_() ->
                    top_typ_of(
                      "f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
-                     "   (h : 1 : _ : t, _, f) -> (h, f +. 3.0)")),
+                     "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
      ?_assertMatch({error, {cannot_unify, t_int, t_float}},
                    top_typ_of(
                      "f should_fail x =\n"
-                     "let l = 1 : 2 : 3 : [] in\n"
+                     "let l = 1 :: 2 :: 3 :: [] in\n"
                      "match l with\n"
-                     " a : b : _ -> a +. b"))
+                     " a :: b :: _ -> a +. b"))
     ].
 
 module_typing_test() ->
@@ -1049,7 +1049,7 @@ module_typing_test() ->
         "export add/2\n\n"
         "add x y = x + y\n\n"
         "head l = match l with\n"
-        "  h : t -> h",
+        "  h :: t -> h",
     {ok, _, _, M} = parser:parse_module(0, Code),
     ?assertMatch(#mlfe_module{
                              functions=[
@@ -1133,12 +1133,12 @@ recursive_fun_test_() ->
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
                      "f x = match x with\n"
-                     "  0 -> 'zero\n"
+                     "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
      ?_assertMatch({error, {cannot_unify, t_int, t_atom}},
                    top_typ_of(
                      "f x = match x with\n"
-                     "  0 -> 'zero\n"
+                     "  0 -> :zero\n"
                      "| 1 -> 1\n"
                      "| y -> y - 1\n")),
      ?_assertMatch({{t_arrow, [{t_list, {unbound, A, _}}, 
@@ -1147,7 +1147,7 @@ recursive_fun_test_() ->
                    top_typ_of(
                      "map list f = match list with\n"
                      "  [] -> []\n"
-                     "| h : t -> (f h) : (map t f)"))
+                     "| h :: t -> (f h) :: (map t f)"))
     ].
 
 infinite_mutual_recursion_test() ->
@@ -1173,7 +1173,7 @@ terminating_mutual_recursion_test() ->
         "module terminating_mutual_rec_test\n\n"
         "a x = let y = x + 1 in b y\n\n"
         "b x = match x with\n"
-        "  10 -> 'ten\n"
+        "  10 -> :ten\n"
         "| y -> a y",
     {ok, _, _, M} = parser:parse_module(0, Code),
     E = new_env(),
@@ -1191,18 +1191,18 @@ terminating_mutual_recursion_test() ->
 ffi_test_() ->
     [?_assertMatch({t_int, _},
                    top_typ_of(
-                     "call_erlang 'io 'format [\"One is ~w~n\", [1]] with\n"
+                     "call_erlang :io :format [\"One is ~w~n\", [1]] with\n"
                      " _ -> 1")),
      ?_assertMatch({error, {cannot_unify, t_atom, t_int}},
                    top_typ_of(
-                     "call_erlang 'a 'b [1] with\n"
-                     "  ('ok, x) -> 1\n"
-                     "| ('error, x) -> 'error")),
+                     "call_erlang :a :b [1] with\n"
+                     "  (:ok, x) -> 1\n"
+                     "| (:error, x) -> :error")),
      ?_assertMatch({{t_arrow, [{unbound, _, _}], t_atom}, _},
                    top_typ_of(
-                     "f x = call_erlang 'a 'b [x] with\n"
-                     "  1 -> 'one\n"
-                     "| _ -> 'not_one"))
+                     "f x = call_erlang :a :b [x] with\n"
+                     "  1 -> :one\n"
+                     "| _ -> :not_one"))
      
     ].
 
@@ -1214,8 +1214,8 @@ equality_test_() ->
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _}, 
                    top_typ_of(
                      "f x = match x with\n"
-                     " a, a == 0 -> 'zero\n"
-                     "|b -> 'not_zero")),
+                     " a, a == 0 -> :zero\n"
+                     "|b -> :not_zero")),
      ?_assertMatch({error, {cannot_unify, t_float, t_int}},
                    top_typ_of(
                      "f x = match x with\n"
@@ -1237,23 +1237,23 @@ type_guard_test_() ->
      %% type in the pattern for use in the resulting expression:
      ?_assertMatch({t_int, _},
                    top_typ_of(
-                     "call_erlang 'a 'b [5] with\n"
-                     "   'one -> 1\n"
+                     "call_erlang :a :b [5] with\n"
+                     "   :one -> 1\n"
                      " | i, i == 2.0 -> 2\n"
                      " | i, is_integer i -> i\n")),
      %% Two results with different types as determined by their guards
      %% should result in a type error:
      ?_assertMatch({error, {cannot_unify, t_int, t_float}},
                    top_typ_of(
-                     "call_erlang 'a 'b [2] with\n"
+                     "call_erlang :a :b [2] with\n"
                      "   i, i == 1.0 -> i\n"
                      " | i, is_integer i -> i")),
      %% Guards should work with items from inside tuples:
      ?_assertMatch({{t_arrow, [{t_tuple, [t_atom, {unbound, _, _}]}], t_atom}, _},
                    top_typ_of(
                      "f x = match x with\n"
-                     "   (msg, _), msg == 'error -> 'error\n"
-                     " | (msg, _) -> 'ok"))
+                     "   (msg, _), msg == :error -> :error\n"
+                     " | (msg, _) -> :ok"))
 
     ].
 

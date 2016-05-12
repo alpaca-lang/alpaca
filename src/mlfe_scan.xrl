@@ -3,7 +3,7 @@ D   = [0-9]
 L   = [a-z]
 U   = [A-Z]
 SYM = {L}[a-zA-Z0-9_]*
-ATOM = \'[a-zA-Z0-9_\*]*
+ATOM = :[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n\n
@@ -20,7 +20,7 @@ Rules.
 \(    : {token, {'(', TokenLine}}.
 \)    : {token, {')', TokenLine}}.
 \|    : {token, {'|', TokenLine}}.
-\:    : {token, {':', TokenLine}}.
+\:\:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
 ()    : {token, {unit, TokenLine}}.
@@ -56,6 +56,11 @@ type        : {token, {type_decl, TokenLine}}.
 
 %% Module-function reference
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
+
+%% Chars
+\'([^\']|\\.|\')*\' :   
+  S = string:substr(TokenChars, 2, TokenLen - 2),
+  {token, {chars, TokenLine, S}}.
 
 %% String
 "([^"]|\\.|\")*" :
