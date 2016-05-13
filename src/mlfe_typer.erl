@@ -1,11 +1,11 @@
-%%% #typer.erl
+%%% #mlfe_typer.erl
 %%% 
 %%% This is based off of the sound and eager type inferencer in 
 %%% http://okmij.org/ftp/ML/generalization.html with some influence
 %%% from https://github.com/tomprimozic/type-systems/blob/master/algorithm_w
 %%% where the arrow type and instantiation are concerned.
 
--module(typer).
+-module(mlfe_typer).
 
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
@@ -432,7 +432,7 @@ typ_module(#mlfe_module{functions=Fs, name=Name}=M, Env) ->
     Env2 = Env#env{current_module=M, entered_modules=[Name]},
     case typ_module_funs(Fs, Env2, []) of
         {error, _} = E -> E;
-        [_|_] = Funs   -> M#mlfe_module{functions=Funs}
+        [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
     end.
 
 typ_module_funs([], _Env, Memo) ->
@@ -1051,19 +1051,19 @@ module_typing_test() ->
         "head l = match l with\n"
         "  h :: t -> h",
     {ok, _, _, M} = parser:parse_module(0, Code),
-    ?assertMatch(#mlfe_module{
-                             functions=[
-                                       #mlfe_fun_def{
-                                          name={symbol, 5, "add"},
-                                          type={t_arrow, 
-                                                [t_int, t_int],
-                                                t_int}},
-                                        #mlfe_fun_def{
-                                           name={symbol, 7, "head"},
-                                           type={t_arrow,
-                                                 [{t_list, {unbound, A, _}}],
-                                                 {unbound, A, _}}}
-                                       ]},
+    ?assertMatch({ok, #mlfe_module{
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol, 5, "add"},
+                                       type={t_arrow, 
+                                             [t_int, t_int],
+                                             t_int}},
+                                    #mlfe_fun_def{
+                                       name={symbol, 7, "head"},
+                                       type={t_arrow,
+                                             [{t_list, {unbound, A, _}}],
+                                             {unbound, A, _}}}
+                                   ]}},
                  typ_module(M, new_env())).
 
 module_with_forward_reference_test() ->
@@ -1074,14 +1074,14 @@ module_with_forward_reference_test() ->
         "adder x y = x + y",
     {ok, _, _, M} = parser:parse_module(0, Code),
     Env = new_env(),
-    ?assertMatch(#mlfe_module{
-                    functions=[
-                               #mlfe_fun_def{
-                                  name={symbol, 5, "add"},
-                                  type={t_arrow, [t_int, t_int], t_int}},
-                               #mlfe_fun_def{
-                                  name={symbol, 7, "adder"},
-                                  type={t_arrow, [t_int, t_int], t_int}}]},
+    ?assertMatch({ok, #mlfe_module{
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol, 5, "add"},
+                                       type={t_arrow, [t_int, t_int], t_int}},
+                                    #mlfe_fun_def{
+                                       name={symbol, 7, "adder"},
+                                       type={t_arrow, [t_int, t_int], t_int}}]}},
                  typ_module(M, Env#env{current_module=M, modules=[M]})).
 
 simple_inter_module_test() ->
@@ -1096,12 +1096,12 @@ simple_inter_module_test() ->
     {ok, _, _, M2} = parser:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
-    ?assertMatch(#mlfe_module{
-                    function_exports=[],
-                    functions=[
-                               #mlfe_fun_def{
-                                  name={symbol, 3, "add"},
-                                  type={t_arrow, [t_int, t_int], t_int}}]},
+    ?assertMatch({ok, #mlfe_module{
+                         function_exports=[],
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol, 3, "add"},
+                                       type={t_arrow, [t_int, t_int], t_int}}]}},
                   typ_module(M1, Env)).
 
 bidirectional_module_fail_test() ->
@@ -1157,15 +1157,15 @@ infinite_mutual_recursion_test() ->
         "b x = let y = x + 1 in a y",
     {ok, _, _, M} = parser:parse_module(0, Code),
     E = new_env(),
-    ?assertMatch(#mlfe_module{
-                    name=mutual_rec_test,
-                    functions=[
-                               #mlfe_fun_def{
-                                  name={symbol, 3, "a"},
-                                  type={t_arrow, [t_int], t_rec}},
-                               #mlfe_fun_def{
-                                  name={symbol, 5, "b"},
-                                  type={t_arrow, [t_int], t_rec}}]},
+    ?assertMatch({ok, #mlfe_module{
+                         name=mutual_rec_test,
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol, 3, "a"},
+                                       type={t_arrow, [t_int], t_rec}},
+                                    #mlfe_fun_def{
+                                       name={symbol, 5, "b"},
+                                       type={t_arrow, [t_int], t_rec}}]}},
                  typ_module(M, E)).
 
 terminating_mutual_recursion_test() ->
@@ -1177,15 +1177,15 @@ terminating_mutual_recursion_test() ->
         "| y -> a y",
     {ok, _, _, M} = parser:parse_module(0, Code),
     E = new_env(),
-    ?assertMatch(#mlfe_module{
-                    name=terminating_mutual_rec_test,
-                    functions=[
-                               #mlfe_fun_def{
-                                  name={symbol, 3, "a"},
-                                  type={t_arrow, [t_int], t_atom}},
-                               #mlfe_fun_def{
-                                  name={symbol, 5, "b"},
-                                  type={t_arrow, [t_int], t_atom}}]},
+    ?assertMatch({ok, #mlfe_module{
+                         name=terminating_mutual_rec_test,
+                         functions=[
+                                    #mlfe_fun_def{
+                                       name={symbol, 3, "a"},
+                                       type={t_arrow, [t_int], t_atom}},
+                                    #mlfe_fun_def{
+                                       name={symbol, 5, "b"},
+                                       type={t_arrow, [t_int], t_atom}}]}},
                  typ_module(M, E)).
 
 ffi_test_() ->
