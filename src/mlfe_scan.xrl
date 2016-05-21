@@ -33,7 +33,10 @@ with        : {token, {with, TokenLine}}.
 call_erlang : {token, {call_erlang, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
-type        : {token, {type_decl, TokenLine}}.
+type : {token, {type_declare, TokenLine}}.
+
+%% User-defined Types
+{TYPE} : {token, {type_name, TokenLine, TokenChars}}.
 
 %% Type assertions/checks for guards
 
@@ -50,9 +53,6 @@ type        : {token, {type_decl, TokenLine}}.
 
 %% Atom
 {ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
-
-%% Type
-{TYPE} : {token, {type_name, TokenLine, TokenChars}}.
 
 %% Module-function reference
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.

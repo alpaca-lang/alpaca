@@ -355,6 +355,34 @@ symbols_test_() ->
                    parse(scanner:scan("oneSymbol")))
     ].
 
+user_types_test_() ->
+    [?_assertMatch({ok, #mlfe_type{name={type_name, 1, "T"}, 
+                                   vars=[],
+                                   members=[#mlfe_constructor{
+                                               name={type_name, 1, "Int"},
+                                               arg=none},
+                                            #mlfe_constructor{
+                                               name={type_name, 1, "A"},
+                                               arg={type_name, 1, "Int"}}]}},
+                   test_parse("type T = Int | A Int")),
+     ?_assertMatch({ok, #mlfe_type{
+                          name={type_name, 1, "List"},
+                          vars=[{symbol, 1, "x"}],
+                          members=[#mlfe_constructor{
+                                     name={type_name, 1, "Nil"},
+                                     arg=none},
+                                  #mlfe_constructor{
+                                    name={type_name, 1, "Cons"},
+                                    arg=#mlfe_type_tuple{
+                                            members=[{symbol, 1, "x"},
+                                                     #mlfe_constructor{
+                                                        name={type_name, 1, "List"},
+                                                        arg={symbol, 1, "x"}}]}
+                                                    }]}},
+                   test_parse("type List x = Nil | Cons (x, List x)"))
+     
+    ].
+
 defn_test_() ->
     [
      %% TODO:  I'm not sure if I want to allow nullary functions
