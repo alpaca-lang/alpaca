@@ -59,6 +59,10 @@ gen_expr(_, {float, _, F}) ->
     cerl:c_float(F);
 gen_expr(_, {atom, _, A}) ->
     cerl:c_atom(list_to_atom(A));
+gen_expr(_, {chars, _, Cs}) ->
+    cerl:c_string(Cs);
+gen_expr(_, {string, _, S}) ->
+    {error, not_implemented};
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
 gen_expr(_Env, [{symbol, _, V}]) ->

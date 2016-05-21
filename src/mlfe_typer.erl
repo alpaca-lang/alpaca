@@ -10,7 +10,8 @@
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
 
--export([cell/1, new_env/0, typ_of/2, typ_of/3]).
+-export([cell/1, new_env/0, new_env/1, replace_env_module/2,
+         typ_of/2, typ_of/3, typ_module/2]).
 -export_type([env/0, typ/0]).
 
 -ifdef(TEST).
@@ -168,6 +169,16 @@ copy_cell(Cell, RefMap) ->
 -spec new_env() -> env().
 new_env() ->
     #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs]}.
+
+new_env(Mods) ->
+    #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs],
+         modules=Mods}.
+
+%% Given a presumed newly-typed module, replace its untyped occurence within
+%% the supplied environment.  If the module does *not* exist in the environment,
+%% it will be added.
+replace_env_module(#env{modules=Ms}=E, #mlfe_module{name=N}=M) ->
+    E#env{modules = [M | [X || #mlfe_module{name=XN}=X <- Ms, XN /= N]]}.
 
 celled_binding({Name, {t_arrow, Args, Ret}}) ->
     {Name, {t_arrow, [new_cell(A) || A <- Args], new_cell(Ret)}}.
@@ -427,7 +438,8 @@ unwrap({t_list, T}) ->
 unwrap(X) ->
     X.
 
--spec typ_module(M::mlfe_module(), Env::env()) -> mlfe_module().
+-spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
+                                                  {error, term()}.
 typ_module(#mlfe_module{functions=Fs, name=Name}=M, Env) ->
     Env2 = Env#env{current_module=M, entered_modules=[Name]},
     case typ_module_funs(Fs, Env2, []) of

@@ -19,6 +19,28 @@
                     | mlfe_string()
                       .
 
+-type mlfe_type_name() :: {type_name, integer(), string()}.
+
+-record(mlfe_type_tuple, {
+                         members :: mlfe_symbol() | mlfe_constructor()
+                        }).
+-type mlfe_type_tuple() :: #mlfe_type_tuple{}.
+
+-record(mlfe_constructor, {type=undefined,
+                           name :: mlfe_type_name(),
+                           arg :: none
+                                | mlfe_symbol() 
+                                | mlfe_type_name() 
+                                | mlfe_type_tuple()
+                          }).
+-type mlfe_constructor() :: #mlfe_constructor{}.
+
+-record(mlfe_type, {type=undefined,
+                    name :: mlfe_type_name(),
+                    vars :: list(mlfe_symbol()),
+                    members :: list(#mlfe_constructor{})
+                   }).
+
 -record(mlfe_cons, {type=undefined :: atom(),
                     head :: mlfe_expression(),
                     tail :: mlfe_cons()
