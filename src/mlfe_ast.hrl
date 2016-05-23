@@ -40,6 +40,12 @@
                     vars :: list(mlfe_symbol()),
                     members :: list(#mlfe_constructor{})
                    }).
+-type mlfe_type() :: #mlfe_type{}.
+
+-record(mlfe_type_apply, {type=undefined :: atom(),
+                          name :: mlfe_type_name(),
+                          arg :: none | mlfe_expression()}).
+-type mlfe_type_apply() :: #mlfe_type_apply{}.
 
 -record(mlfe_cons, {type=undefined :: atom(),
                     head :: mlfe_expression(),
@@ -157,6 +163,8 @@
 -record(mlfe_module, {
           name=no_module :: atom(),
           function_exports=[] :: list({atom(), integer()}),
+          types=[] :: list(mlfe_type()),
+          type_exports=[] :: list(string()),
           functions=[] :: list(mlfe_fun_def())
          }).
 -type mlfe_module() :: #mlfe_module{}.

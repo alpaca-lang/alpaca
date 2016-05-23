@@ -35,7 +35,10 @@ parse_module(Tokens, Mod) ->
 
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
-rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{functions=Funs}=Mod}) ->
+rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{}=Mod}) ->
+    validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
+
+rebind_and_validate_functions(NextVarNum, #mlfe_module{functions=Funs}=Mod) ->
     F = fun
             (_, {error, _}=Err) ->
                 Err;
@@ -59,6 +62,54 @@ rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{functions=Funs}=Mod}) -
             {ok, NV2, M, Mod#mlfe_module{functions=lists:reverse(Funs2)}}
     end.
 
+validate_user_types({error, _}=Err) ->
+    Err;
+validate_user_types({ok, _, _, #mlfe_module{types=Ts}}=Res) ->
+    %% all type names unique
+
+    NameCheck = unique_type_names(Ts),
+    %% all type constructors unique
+    ConstructorCheck = unique_type_constructors(NameCheck, Ts),
+
+    %% I'm considering checking type variables here but might just leave
+    %% it to the type checker itself.
+    case ConstructorCheck of
+        ok               -> Res;
+        {error, _} = Err -> Err
+    end.
+
+%% check a list of things for duplicates with a comparison function and
+%% a function for creating an error from one element.  The list must be sorted.
+check_dupes([A|[B|_]=T], Compare, ErrorF) ->
+    case Compare(A, B) of
+        true -> ErrorF(A);
+        false -> check_dupes(T, Compare, ErrorF)
+    end;
+check_dupes([_], _, _) ->
+    ok;
+check_dupes([], _, _) ->
+    ok.
+
+unique_type_names(Types) ->
+    Names = lists:sort([N || #mlfe_type{name={type_name, _, N}} <- Types]),
+    check_dupes(Names, 
+                fun(A, B) -> A =:= B end, 
+                fun(A) -> {error, {duplicate_type, A}} end).
+
+unique_type_constructors({error, _}=Err, _) ->
+    Err;
+unique_type_constructors(_, Types) ->
+    %% Get the sorted names of only the constructors:
+    F = fun (#mlfe_constructor{name={_, _, N}}, Acc) -> [N|Acc];
+            (_, Acc) -> Acc
+        end,
+    ToFlatten = [lists:foldl(F, [], Ms) || #mlfe_type{members=Ms} <- Types],
+    %% can't lists:flatten here because strings are lists and we only want
+    %% it flattened one level:
+    Cs = lists:sort(lists:foldl(fun(A, B) -> A ++ B end, [], ToFlatten)),
+    check_dupes(Cs,
+                fun(A, B) -> A =:= B end, 
+                fun(A) -> {error, {duplicate_constructor, A}} end).                
 
 update_memo(#mlfe_module{name=no_module}=Mod, {module, Name}) ->
     {ok, Mod#mlfe_module{name=Name}};
@@ -70,6 +121,8 @@ update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
 update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
     io:format("Adding function ~w~n", [N]),
     {ok, M#mlfe_module{functions=[Def|Funs]}};
+update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
+    {ok, M#mlfe_module{types=[T|Ts]}};
 update_memo(_, Bad) ->
     {error, {"Top level requires defs, module, and export declarations", Bad}}.
 
@@ -379,8 +432,17 @@ user_types_test_() ->
                                                         name={type_name, 1, "List"},
                                                         arg={symbol, 1, "x"}}]}
                                                     }]}},
-                   test_parse("type List x = Nil | Cons (x, List x)"))
-     
+                   test_parse("type List x = Nil | Cons (x, List x)")),
+     ?_assertMatch({error, {duplicate_type, "T"}},
+                   parse_module(0, 
+                                "module dupe_types_1\n\n"
+                                "type T = A | B\n\n"
+                                "type T = C | Int")),
+     ?_assertMatch({error, {duplicate_constructor, "A"}},
+                   parse_module(0,
+                                "module dupe_type_constructor\n\n"
+                                "type T = A Int | B\n\n"
+                                "type U = X Float | A\n\n"))     
     ].
 
 defn_test_() ->

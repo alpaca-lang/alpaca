@@ -4,6 +4,7 @@ op infix
 const
 type mono_type poly_type type_member type_members 
 type_tuple type_tuple_member type_tuple_list
+type_apply
 
 cons nil literal_cons_items
 term terms nested_terms
@@ -75,6 +76,9 @@ type_members -> type_member '|' type_members : ['$1'|'$3'].
 type -> poly_type assign type_members : '$1'#mlfe_type{members='$3'}.
 type -> mono_type assign type_members : '$1'#mlfe_type{members='$3'}.
 
+type_apply -> type_name term : #mlfe_type_apply{name='$1', arg='$2'}.
+type_apply -> type_name : #mlfe_type_apply{name='$1'}.
+
 op -> int_math : '$1'.
 op -> float_math : '$1'.
 
@@ -119,6 +123,7 @@ term -> symbol : '$1'.
 term -> cons : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
+term -> type_apply : '$1'.
 
 terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
