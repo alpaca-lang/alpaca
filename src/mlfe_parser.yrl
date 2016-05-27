@@ -2,8 +2,8 @@ Nonterminals
 
 op infix
 const
-type mono_type poly_type type_member type_members 
-type_tuple type_tuple_member type_tuple_list
+type mono_type poly_type type_member type_members type_expr type_vars
+type_tuple type_tuple_member type_tuple_list 
 type_apply
 
 cons nil literal_cons_items
@@ -20,7 +20,7 @@ expr simple_expr.
 Terminals 
 
 module export 
-type_declare type_name
+type_declare type_constructor type_var 
 boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
@@ -44,40 +44,50 @@ module_part -> export_def : '$1'.
 module_parts -> module_part : ['$1'].
 module_parts -> module_part module_parts : ['$1'|'$2'].
 
-%%% I'm distinguishing between polymorphic and not-polymorphic here just to
-%%% make parsing simpler.
-poly_type -> type_declare type_name symbol : 
-  #mlfe_type{name='$2',
-             vars=['$3']}.
-poly_type -> poly_type symbol :
-  Vars = '$2'#mlfe_type.vars,
-  '$2'#mlfe_type{vars=Vars ++ ['$2']}.
-mono_type -> type_declare type_name : #mlfe_type{name='$2', vars=[]}.
+type_vars -> type_var : ['$1'].
+type_vars -> type_var type_vars : ['$1'|'$2'].
 
-type_tuple_member -> symbol : '$1'.
-type_tuple_member -> type_member : '$1'.
+poly_type -> symbol type_vars : #mlfe_type{name='$1', vars='$2'}.
+poly_type -> poly_type type_vars : 
+  '$1'#mlfe_type{vars='$1'#mlfe_type.vars ++ ['$2']}.
 
-type_tuple_list -> type_tuple_member ',' type_tuple_member: ['$1', '$3'].
-type_tuple_list -> type_tuple_member ',' type_tuple_list: ['$1' | '$3'].
+type_expr -> type_var : '$1'.
+type_expr -> poly_type : '$1'.
+type_expr -> symbol : #mlfe_type{name='$1', vars=[]}. % not polymorphic
+type_expr -> type_tuple : '$1'.
+type_expr -> '(' type_expr ')': '$2'.
+
+type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
+type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].
 
 type_tuple -> '(' type_tuple_list ')': #mlfe_type_tuple{members='$2'}.
 
-type_member -> type_name : #mlfe_constructor{name='$1', arg=none}.
-type_member -> type_member symbol :
-  '$1'#mlfe_constructor{arg='$2'}.
-type_member -> type_member type_name :
-  '$1'#mlfe_constructor{arg='$2'}.
-type_member -> type_member type_tuple :
-  '$1'#mlfe_constructor{arg='$2'}.
+%%% A type_member is one of three things:
+%%% 
+%%% - a type name (symbol) followed by one or more type variables
+%%% - a type constructor followed by one or more type variables
+%%% - a tuple built from any combination of the above with the same
+%%%   kind of tuples nested.
+%%% 
+%%% Valid type examples:
+%%%     type T = int | A
+%%%     type U x = B | C x
+%%%     type V x y = D x | E (x, (int, x))
+%%% 
+type_member -> type_constructor : #mlfe_constructor{name='$1', arg=none}.
+type_member -> type_constructor type_expr : #mlfe_constructor{name='$1', arg='$2'}.
+type_member -> type_expr : '$1'.
 
 type_members -> type_member : ['$1'].
 type_members -> type_member '|' type_members : ['$1'|'$3'].
 
-type -> poly_type assign type_members : '$1'#mlfe_type{members='$3'}.
-type -> mono_type assign type_members : '$1'#mlfe_type{members='$3'}.
+type -> type_declare poly_type assign type_members :
+  '$2'#mlfe_type{members='$4'}.
+type -> type_declare symbol assign type_members : 
+  #mlfe_type{name='$2', vars=[], members='$4'}.
 
-type_apply -> type_name term : #mlfe_type_apply{name='$1', arg='$2'}.
-type_apply -> type_name : #mlfe_type_apply{name='$1'}.
+type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
+type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.

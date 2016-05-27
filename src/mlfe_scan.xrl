@@ -35,8 +35,11 @@ module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type : {token, {type_declare, TokenLine}}.
 
-%% User-defined Types
-{TYPE} : {token, {type_name, TokenLine, TokenChars}}.
+%% Type variables (nicked from OCaml):
+'{SYM} : {token, {type_var, TokenLine, string:substr(TokenChars, 2)}}.
+
+%% User-defined type constructors
+{TYPE} : {token, {type_constructor, TokenLine, TokenChars}}.
 
 %% Type assertions/checks for guards
 
@@ -56,11 +59,6 @@ type : {token, {type_declare, TokenLine}}.
 
 %% Module-function reference
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
-
-%% Chars
-\'([^\']|\\.|\')*\' :   
-  S = string:substr(TokenChars, 2, TokenLen - 2),
-  {token, {chars, TokenLine, S}}.
 
 %% String
 "([^"]|\\.|\")*" :

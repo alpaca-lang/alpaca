@@ -91,7 +91,7 @@ check_dupes([], _, _) ->
     ok.
 
 unique_type_names(Types) ->
-    Names = lists:sort([N || #mlfe_type{name={type_name, _, N}} <- Types]),
+    Names = lists:sort([N || #mlfe_type{name={symbol, _, N}} <- Types]),
     check_dupes(Names, 
                 fun(A, B) -> A =:= B end, 
                 fun(A) -> {error, {duplicate_type, A}} end).
@@ -409,40 +409,56 @@ symbols_test_() ->
     ].
 
 user_types_test_() ->
-    [?_assertMatch({ok, #mlfe_type{name={type_name, 1, "T"}, 
+    [?_assertMatch({ok, #mlfe_type{name={symbol, 1, "t"}, 
                                    vars=[],
-                                   members=[#mlfe_constructor{
-                                               name={type_name, 1, "Int"},
-                                               arg=none},
+                                   members=[#mlfe_type{
+                                               name={symbol, 1, "int"},
+                                               vars=[]},
                                             #mlfe_constructor{
-                                               name={type_name, 1, "A"},
-                                               arg={type_name, 1, "Int"}}]}},
-                   test_parse("type T = Int | A Int")),
+                                               name={type_constructor, 1, "A"},
+                                               arg=#mlfe_type{
+                                                      name={symbol, 1, "int"},
+                                                      vars=[]}}]}},
+                   test_parse("type t = int | A int")),
      ?_assertMatch({ok, #mlfe_type{
-                          name={type_name, 1, "List"},
-                          vars=[{symbol, 1, "x"}],
+                          name={symbol, 1, "list"},
+                          vars=[{type_var, 1, "x"}],
                           members=[#mlfe_constructor{
-                                     name={type_name, 1, "Nil"},
+                                     name={type_constructor, 1, "Nil"},
                                      arg=none},
-                                  #mlfe_constructor{
-                                    name={type_name, 1, "Cons"},
-                                    arg=#mlfe_type_tuple{
-                                            members=[{symbol, 1, "x"},
-                                                     #mlfe_constructor{
-                                                        name={type_name, 1, "List"},
-                                                        arg={symbol, 1, "x"}}]}
-                                                    }]}},
-                   test_parse("type List x = Nil | Cons (x, List x)")),
-     ?_assertMatch({error, {duplicate_type, "T"}},
+                                   #mlfe_constructor{
+                                      name={type_constructor, 1, "Cons"},
+                                      arg=#mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      #mlfe_type{
+                                                         name={symbol, 1, "list"},
+                                                         vars=[{type_var, 1, "x"}]}]}
+                                     }]}},
+                   test_parse("type list 'x = Nil | Cons ('x, list 'x)")),
+     ?_assertMatch({error, {duplicate_type, "t"}},
                    parse_module(0, 
                                 "module dupe_types_1\n\n"
-                                "type T = A | B\n\n"
-                                "type T = C | Int")),
+                                "type t = A | B\n\n"
+                                "type t = C | int")),
      ?_assertMatch({error, {duplicate_constructor, "A"}},
                    parse_module(0,
                                 "module dupe_type_constructor\n\n"
-                                "type T = A Int | B\n\n"
-                                "type U = X Float | A\n\n"))     
+                                "type t = A int | B\n\n"
+                                "type u = X float | A\n\n")),
+     %% Making sure multiple type variables work here:
+     ?_assertMatch({ok, #mlfe_type{
+                           name={symbol, 1, "either"},
+                           vars=[{type_var, 1, "a"}, {type_var, 1, "b"}],
+                           members=[#mlfe_constructor{
+                                       name={type_constructor, 1, "Left"},
+                                       arg={type_var, 1, "a"}
+                                      },
+                                    #mlfe_constructor{
+                                       name={type_constructor, 1, "Right"},
+                                       arg={type_var, 1, "b"}
+                                      }]
+                          }},
+                   test_parse("type either 'a 'b = Left 'a | Right 'b"))
     ].
 
 defn_test_() ->
