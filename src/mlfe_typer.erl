@@ -373,10 +373,8 @@ find_covering_type(T1, T2, #env{current_types=Ts}=Env) ->
     F = fun(_, {ok, _}=Res) ->
                 Res;
            (#mlfe_type{name={symbol, _, TN}, vars=Vs, members=Ms}, Acc) ->
-                io:format("Trying ~w~n", [Ms]),
                 case try_types(T1, T2, Ms, Env, {none, none}) of
                     {ok, ok} -> 
-                        io:format("MATCH!~n", []),
                         ADT = #adt{name=TN, 
                                    vars = [],  % TODO:  real vars
                                    var_names=[VN||{symbol, _, VN} <- Vs]}, 
@@ -401,10 +399,7 @@ try_types(T1, T2, [Candidate|Tail], Env, {M1, none}=Memo) ->
         _  -> try_types(T1, T2, Tail, Env, Memo)
     end;
 try_types(_, _, [], _, _) ->
-    io:format("NO MATCH~n", []),
     no_match.
-
-
 
 %% Unify two parameter lists, e.g. from a function arrow.
 unify_list(As, Bs, Env) ->
