@@ -38,7 +38,7 @@
 -record(mlfe_type, {type=undefined,
                     name :: mlfe_type_name(),
                     vars :: list(mlfe_symbol()),
-                    members :: list(#mlfe_constructor{})
+                    members :: list(mlfe_constructor() | mlfe_type())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 

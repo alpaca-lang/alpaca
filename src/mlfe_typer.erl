@@ -30,6 +30,11 @@
 %% list of parameter types, return type:
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
+-record(adt, {name :: string(),
+              vars :: list(typ()),
+              var_names :: list(string())}).
+-type t_adt() :: #adt{}.
+
 -type t_cons() :: {t_cons, typ(), t_list()}.
 -type t_nil() :: t_nil.
 -type t_list() :: t_cons() | t_nil().
@@ -56,6 +61,7 @@
 -type typ() :: qvar()
              | tvar()
              | t_arrow()
+             | t_adt()
              | t_const()
              | t_list()
              | t_tuple()
@@ -137,12 +143,16 @@ copy_cell(Cell, RefMap) ->
 
 %%% ###Environments
 %%% 
-%%% Environments track three things:
+%%% Environments track the following:
 %%% 
 %%% 1. A counter for naming new type variables
-%%% 2. A proplist of {expression name, expression type} for the types
+%%% 2. The modules entered so far while checking the types of functions called
+%%%    in other modules that have not yet been typed.  This is used in a crude
+%%%    form of detecting mutual recursion between/across modules.
+%%% 3. The current module being checked.
+%%% 4. A proplist of {expression name, expression type} for the types
 %%%    of values and functions so far inferred/checked.
-%%% 3. The set of modules included in type checking.
+%%% 5. The set of modules included in type checking.
 %%% 
 %%% I'm including the modules in the typing environment so that when a call
 %%% crosses a module boundary into a module not yet checked, we can add the
@@ -154,12 +164,12 @@ copy_cell(Cell, RefMap) ->
 %%% type.  In order to check `B.g`, `B.h` must be in the enviroment to also be
 %%% checked.  
 %%% 
-%%% Currently missing:  cycle detection and termination.
 
 -record(env, {
           next_var=0          :: integer(),
           entered_modules=[]  :: list(atom()),
           current_module=none :: none | mlfe_module(),
+          current_types=[]    :: list(mlfe_type()),
           bindings=[]         :: list({term(), typer:typ()|t_cell()}),
           modules=[]          :: list(mlfe_module())
 }).
@@ -260,17 +270,24 @@ unwrap_cell(C) when is_pid(C) ->
 unwrap_cell(Typ) ->
     Typ.
 
--spec unify(typ(), typ()) -> ok | {error, atom()}.
-unify(T1, T2) ->
+-spec unify_no_adt(typ(), typ()) -> ok | {error, term()}.
+unify_no_adt(T1, T2) ->
+    unify(T1, T2, []).
+
+%%% Unify now requires the environment not in order to make changes to it but
+%%% so that it can look up potential type unions when faced with unification
+%%% errors.  
+-spec unify(typ(), typ(), env()) -> ok | {error, term()}.
+unify(T1, T2, Env) ->
     case {unwrap_cell(T1), unwrap_cell(T2)} of
         {T, T} ->
             ok;
         %% only one instance of a type variable is permitted:
         {{unbound, N, _}, {unbound, N, _}}  -> {error, {cannot_unify, T1, T2}};
         {{link, Ty}, _} ->
-            unify(Ty, T2);
+            unify(Ty, T2, Env);
         {_, {link, Ty}} ->
-            unify(T1, Ty);
+            unify(T1, Ty, Env);
         {t_rec, _} ->
             set_cell(T1, {link, T2}),
             ok;
@@ -294,29 +311,27 @@ unify(T1, T2) ->
                 {unbound, _, _} = T -> 
                     set_cell(T1, T),            % level adjustment
                     set_cell(T2, {link, T1});
-                {error, _} = E ->
+                {error, _} = E -> 
                     E;
-                _Other ->
+                _Other -> 
                     set_cell(T2, {link, T1})
             end,
             set_cell(T2, {link, T1}),
             ok;
         {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
-            case unify_list(A1, B1) of
+            case unify_list(A1, B1, Env) of
                 {error, _} = E ->
                     E;
                 {_ResA1, _ResB1} ->
-                    case unify(A2, B2) of
-                        {error, _} = E ->
-                            E;
-                        ok ->
-                            ok
+                    case unify(A2, B2, Env) of
+                        {error, _} = E -> E;
+                        ok             -> ok
                     end
             end;
         {{t_tuple, A}, {t_tuple, B}} ->
-            case unify_list(A, B) of
+            case unify_list(A, B, Env) of
                 {error, _} = Err -> Err;
-                _ -> ok
+                _                -> ok
             end;
         {{t_list, _}, t_nil} ->
             set_cell(T2, {link, T1}),
@@ -325,29 +340,86 @@ unify(T1, T2) ->
             set_cell(T1, {link, T2}),
             ok;
         {{t_list, A}, {t_list, B}} ->
-            unify(A, B);
+            unify(A, B, Env);
         {{t_list, A}, B} ->
-            unify(A, B);
+            unify(A, B, Env);
         {A, {t_list, B}} ->
-            unify(A, B);
+            unify(A, B, Env);
         {_T1, _T2} ->
-            io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
-            {error, {cannot_unify, _T1, _T2}}
+            case find_covering_type(_T1, _T2, Env) of
+                {error, _}=Err -> 
+                    io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
+                    Err;
+                {ok, Union} ->
+                    io:format("UNIFIED on ~w~n", [Union]),
+                    set_cell(T1, Union),
+                    set_cell(T2, Union),
+                    ok
+            end
+            %{error, {cannot_unify, _T1, _T2}}
     end.
 
+%%% Given two different types, find a type in the set of currently available
+%%% types that can unify them or fail.
+-spec find_covering_type(
+        T1::typ(), 
+        T2::typ(), 
+        env()) -> {ok, typ()} | 
+                  {error, {cannot_unify, typ(), typ()}}.
+find_covering_type(T1, T2, #env{current_types=Ts}=Env) ->
+    io:format("Types length ~w~n", [length(Ts)]),
+    %% each type, filter to types that are T1 or T2, if the list
+    %% contains both, it's a match.
+    F = fun(_, {ok, _}=Res) ->
+                Res;
+           (#mlfe_type{name={symbol, _, TN}, vars=Vs, members=Ms}, Acc) ->
+                io:format("Trying ~w~n", [Ms]),
+                case try_types(T1, T2, Ms, Env, {none, none}) of
+                    {ok, ok} -> 
+                        io:format("MATCH!~n", []),
+                        ADT = #adt{name=TN, 
+                                   vars = [],  % TODO:  real vars
+                                   var_names=[VN||{symbol, _, VN} <- Vs]}, 
+                        {ok, ADT};
+                    _ -> 
+                        Acc
+                end
+        end,
+    Default = {error, {cannot_unify, T1, T2}},
+    lists:foldl(F, Default, Ts).
+
+try_types(_, _, _, _, {ok, ok}=Res) ->
+    Res;
+try_types(T1, T2, [Candidate|Tail], Env, {none, M2}=Memo) ->
+    case unify(T1, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {ok, M2});
+        _  -> try_types(T1, T2, Tail, Env, Memo)
+    end;
+try_types(T1, T2, [Candidate|Tail], Env, {M1, none}=Memo) ->
+    case unify(T2, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {M1, ok});
+        _  -> try_types(T1, T2, Tail, Env, Memo)
+    end;
+try_types(_, _, [], _, _) ->
+    io:format("NO MATCH~n", []),
+    no_match.
+
+
+
 %% Unify two parameter lists, e.g. from a function arrow.
-unify_list(As, Bs) ->
-    unify_list(As, Bs, {[], []}).
-unify_list([], [], {MemoA, MemoB}) ->
+unify_list(As, Bs, Env) ->
+    unify_list(As, Bs, {[], []}, Env).
+
+unify_list([], [], {MemoA, MemoB}, _) ->
     {lists:reverse(MemoA), lists:reverse(MemoB)};
-unify_list([], _, _) ->
+unify_list([], _, _, _) ->
     {error, mismatched_arity};
-unify_list(_, [], _) ->
+unify_list(_, [], _, _) ->
     {error, mismatched_arity};
-unify_list([A|TA], [B|TB], {MA, MB}) ->
-    case unify(A, B) of
+unify_list([A|TA], [B|TB], {MA, MB}, Env) ->
+    case unify(A, B, Env) of
         {error, _} = E -> E;
-        _ -> unify_list(TA, TB, {[A|MA], [B|MB]})
+        _ -> unify_list(TA, TB, {[A|MA], [B|MB]}, Env)
     end.
 
 
@@ -440,8 +512,11 @@ unwrap(X) ->
 
 -spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
                                                   {error, term()}.
-typ_module(#mlfe_module{functions=Fs, name=Name}=M, Env) ->
-    Env2 = Env#env{current_module=M, entered_modules=[Name]},
+typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
+    %% TODO:  add type constructor bindings
+    Env2 = Env#env{current_module=M,
+                   current_types=Ts,
+                   entered_modules=[Name]},
     case typ_module_funs(Fs, Env2, []) of
         {error, _} = E -> E;
         [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
@@ -476,12 +551,14 @@ typ_of(Env, Exp) ->
         Lvl::integer(),
         Exp::mlfe_expression()) -> {typ(), integer()} | {error, term()}.
 
+%% Base types now need to be in reference cells because when they are part
+%% of unions they may need to be reset.
 typ_of(#env{next_var=VarNum}, _Lvl, {int, _, _}) ->
-    {t_int, VarNum};
+    {new_cell(t_int), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
-    {t_float, VarNum};
+    {new_cell(t_float), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
-    {t_atom, VarNum};
+    {new_cell(t_atom), VarNum};
 typ_of(Env, Lvl, {symbol, _, N}) ->
     case inst(N, Lvl, Env) of
         {error, _} = E -> E;
@@ -515,13 +592,13 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
                           {TL, #env{next_var=Next2}} = new_var(
                                                Lvl, 
                                                update_counter(Next, Env)),
-                          case unify({t_list, TL}, STyp) of
+                          case unify({t_list, TL}, STyp, Env) of
                               {error, _} = E -> E;
                               ok -> {STyp, Next2}
                           end;
                       #mlfe_apply{}=Apply ->
                           {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
-                          case unify({t_list, HTyp}, TApp) of
+                          case unify({t_list, HTyp}, TApp, Env) of
                               {error, _} = E -> E;
                               ok -> {TApp, Next}
                           end;
@@ -537,7 +614,7 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
                    {t_list, LT} ->
                        LT
                end,
-    case unify(HTyp, ListType) of
+    case unify(HTyp, ListType, Env) of
         {error, _} = Err ->
             Err;
         ok ->
@@ -612,8 +689,8 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     UnifyFolder = fun({t_clause, PA, _, RA}, Acc) ->
                           case Acc of
                               {t_clause, PB, _, RB} = TypC ->
-                                  case unify(PA, PB) of
-                                      ok -> case unify(RA, RB) of
+                                  case unify(PA, PB, Env) of
+                                      ok -> case unify(RA, RB, Env) of
                                                 ok -> TypC;
                                                 {error, _} = Err -> Err
                                             end;
@@ -631,7 +708,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
         _ ->
             %% unify the expression with the unified pattern:
             {t_clause, PTyp, _, RTyp} = FC,
-            case unify(ETyp, PTyp) of
+            case unify(ETyp, PTyp, Env) of
                 {error, _} = Err ->
                     Err;
                 %% only need to return the result type of the unified clause types:
@@ -654,7 +731,7 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
     UnifyFolder = fun
                       (_, {error, _}=Err) -> Err;
                       (N, Acc) ->
-                          case unify(N, Acc) of
+                          case unify(N, Acc, Env) of
                               {error, _}=Err -> Err;
                               ok -> Acc
                           end
@@ -675,7 +752,7 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E}) ->
     case T of
         is_integer -> 
             {ETyp, NV} = typ_of(Env, Lvl, E),
-            case unify(new_cell(t_int), ETyp) of
+            case unify(new_cell(t_int), ETyp, Env) of
                 {error, _}=Err -> Err;
                 ok -> {t_bool, NV}
             end
@@ -691,7 +768,7 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs}) ->
                                            ClauseFolder, 
                                            {[], update_counter(NV, Env)}, Cs),
     UnifyFolder = fun(A, Acc) ->
-                             case unify(A, Acc) of
+                             case unify(A, Acc, Env) of
                                  ok -> Acc;
                                  {error, _} = Err -> Err
                              end
@@ -704,10 +781,7 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs}) ->
         _ ->
             {FC, NV2}
     end;
-    
 
-%% This can't handle recursive functions since the function name
-%% is not bound in the environment:
 typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     %% I'm leaving the environment mutation here because the body
     %% needs the bindings:
@@ -761,7 +835,7 @@ typ_apply(Env, Lvl, TypF, NextVar, Args) ->
     Env2 = update_counter(NextVar2, Env),
     
     Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-    case unify(CopiedTypF, Arrow) of
+    case unify(CopiedTypF, Arrow, Env2) of
         {error, _} = E ->
             E;
         ok ->
@@ -928,6 +1002,13 @@ from_code(C) ->
 top_typ_of(Code) ->
     {ok, E} = parser:parse(scanner:scan(Code)),
     typ_of(new_env(), E).
+
+%% Check the type of the expression in code from the "top-level" with a
+%% new environment that contains the provided ADTs.
+top_typ_with_types(Code, ADTs) ->
+    {ok, E} = parser:parse(scanner:scan(Code)),
+    Env = new_env(),
+    typ_of(Env#env{current_types=ADTs}, E).
 
 %% There are a number of expected "unbound" variables here.  I think this
 %% is due to the deallocation problem as described in the first post
@@ -1269,5 +1350,36 @@ type_guard_test_() ->
 
     ].
 
-    
+%%% ## ADT Tests
+%%% 
+%%% My implementation plan:
+%%% 
+%%% - unification failure looks at type unions to make progress
+%%% - typing of ADTs
+%%% - unification of ADTs
+%%% - binding and generalization of type constructors
+%%% - typing of type constructors
+%%% 
+%%% Tests for ADTs that are simply unions of existing types:
+union_adt_test_() ->
+    [?_assertMatch({error, {cannot_unify, t_int, t_atom}},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "  0 -> :zero"
+                     "| i, is_integer i -> i",
+                     [])),
+     %% Adding a type that unions integers and atoms should make the
+     %% previously failing code pass.
+     ?_assertMatch({{t_arrow, 
+                         [t_int], 
+                         #adt{name="t", vars=[], var_names=[]}}, 
+                    _},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "  0 -> :zero"
+                     "| i, is_integer i -> i",
+                     [#mlfe_type{name={symbol, 1, "t"},
+                                 vars=[],
+                                 members=[t_int, t_atom]}]))
+    ].
 -endif.
