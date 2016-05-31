@@ -61,7 +61,7 @@ gen_expr(_, {atom, _, A}) ->
     cerl:c_atom(list_to_atom(A));
 gen_expr(_, {chars, _, Cs}) ->
     cerl:c_string(Cs);
-gen_expr(_, {string, _, S}) ->
+gen_expr(_, {string, _, _S}) ->
     {error, not_implemented};
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
@@ -123,7 +123,7 @@ gen_expr(Env, #mlfe_ffi{}=FFI) ->
     Apply = cerl:c_call(
               cerl:c_atom('erlang'),
               cerl:c_atom('apply'),
-              [gen_expr(Env, M), 
+              [gen_expr(Env, M),
                gen_expr(Env, FN), 
                gen_expr(Env, Cons)]),
 
@@ -133,7 +133,6 @@ gen_expr(Env, #mlfe_ffi{}=FFI) ->
 gen_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
     cerl:c_clause([gen_expr(Env, P)], gen_expr(Env, E));
 gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
-    Var = fun(C) -> list_to_atom("clause_guard_v_" ++ integer_to_list(C)) end,
     NestG = fun(G, Acc) ->
                     cerl:c_call(
                       cerl:c_atom('erlang'),
@@ -150,9 +149,6 @@ gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
                   G,
                   gen_expr(Env, E));
                 
-%    cerl:c_clause([gen_expr(Env, P)], 
-%                  gen_expr(Env, G), 
-%                  gen_expr(Env, E));
 gen_expr(Env, #mlfe_tuple{values=Vs}) ->
     cerl:c_tuple([gen_expr(Env, E) || E <- Vs]);
 %% Expressions, Clauses

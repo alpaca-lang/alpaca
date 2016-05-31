@@ -110,7 +110,7 @@
 
 -record(mlfe_tuple, {type=undefined :: typ(),
                      arity :: integer(),
-                     values :: list(mlfe_expression)
+                     values :: list(mlfe_expression())
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
@@ -142,8 +142,8 @@
 %%% A call to an Erlang function via the Foreign Function Interface.
 %%% Only the result of these calls is typed.
 -record(mlfe_ffi, {type=undefined :: typ(),
-                   module :: atom(),
-                   function_name :: atom(),
+                   module={atom, 0, ""} :: mlfe_atom(),
+                   function_name :: mlfe_atom(),
                    args :: mlfe_list(),
                    clauses :: list(mlfe_clause())
                   }).
