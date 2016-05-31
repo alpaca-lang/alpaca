@@ -367,7 +367,7 @@ unify_list([A|TA], [B|TB], {MA, MB}, Env) ->
 
 
 -spec inst(
-        VarName :: atom(), 
+        VarName :: atom()|string(), 
         Lvl :: integer(), 
         Env :: env()) -> {typ(), env(), map()} | {error, term()}.
 
@@ -696,10 +696,13 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E}) ->
         %% TODO:  this should just be a proplist of types in 
         %% builtin_types.hrl or something like that.
         is_integer -> 
-            {ETyp, NV} = typ_of(Env, Lvl, E),
-            case unify(new_cell(t_int), ETyp, Env) of
+            case typ_of(Env, Lvl, E) of
                 {error, _}=Err -> Err;
-                ok -> {t_bool, NV}
+                {ETyp, NV} ->
+                    case unify(new_cell(t_int), ETyp, Env) of
+                        {error, _}=Err -> Err;
+                        ok -> {t_bool, NV}
+                    end
             end
     end;
 
@@ -793,8 +796,10 @@ typ_apply(Env, Lvl, TypF, NextVar, Args) ->
         ModuleName::atom(), 
         FunName::string(), 
         Arity::integer()) -> {ok, mlfe_module(), mlfe_fun_def()} |
-                             {error, {no_module, atom()}} |
-                             {error, {not_exported, string(), integer()}} .
+                             {error, 
+                              {no_module, atom()} |
+                              {not_exported, string(), integer()} |
+                              {not_found, atom(), string, integer()}} .
 extract_fun(Env, ModuleName, FunName, Arity) ->
     case [M || M <- Env#env.modules, M#mlfe_module.name =:= ModuleName] of
         [] -> {error, {no_module, ModuleName}};
@@ -809,7 +814,7 @@ extract_fun(Env, ModuleName, FunName, Arity) ->
 -spec get_fun(
         Module::mlfe_module(), 
         FunName::string(), 
-        Arity::integer()) -> {ok, mlfe_fun_def()} |
+        Arity::integer()) -> {ok, mlfe_module(), mlfe_fun_def()} |
                              {error, {not_found, atom(), string, integer()}}.
 get_fun(Module, FunName, Arity) ->
     case filter_to_fun(Module#mlfe_module.functions, FunName, Arity) of

@@ -149,6 +149,7 @@
                   }).
 
 -type mlfe_expression() :: mlfe_const()
+                         | mlfe_symbol()
                          | mlfe_apply()
                          | mlfe_list()
                          | mlfe_tuple()
@@ -206,8 +207,7 @@
 -record (mlfe_fun_def, {
            type=undefined :: typ(),
            name :: mlfe_symbol(),
-           args :: list(mlfe_symbol())
-                 | mlfe_unit(),
+           args=[] :: list(mlfe_symbol() | mlfe_unit()),
            body :: mlfe_expression()
           }).
 
