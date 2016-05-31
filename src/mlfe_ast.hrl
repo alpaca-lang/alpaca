@@ -46,7 +46,8 @@
              | t_const()
              | t_list()
              | t_tuple()
-             | t_clause().
+             | t_clause()
+             | typer:t_cell().  % a reference cell for a type.
 
 -type mlfe_symbol() :: {symbol, integer(), string()}.
 
@@ -149,6 +150,7 @@
                          | mlfe_binding()
                          | mlfe_type_check()
                          | mlfe_binding()
+                         | mlfe_fun_def()
                            .
 
 -record(fun_binding, {def :: mlfe_fun_def(),
@@ -207,7 +209,7 @@
 
 -record(mlfe_module, {
           name=no_module :: atom(),
-          function_exports=[] :: list({atom(), integer()}),
+          function_exports=[] :: list({string(), integer()}),
           types=[] :: list(mlfe_type()),
           type_exports=[] :: list(string()),
           functions=[] :: list(mlfe_fun_def())

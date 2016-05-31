@@ -12,7 +12,7 @@
 
 -export([cell/1, new_env/0, new_env/1, replace_env_module/2,
          typ_of/2, typ_of/3, typ_module/2]).
--export_type([env/0, typ/0]).
+-export_type([env/0, typ/0, t_cell/0]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
