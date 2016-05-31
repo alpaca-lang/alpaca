@@ -116,8 +116,7 @@ unique_type_constructors(_, Types) ->
 update_memo(#mlfe_module{name=no_module}=Mod, {module, Name}) ->
     {ok, Mod#mlfe_module{name=Name}};
 update_memo(#mlfe_module{name=Name}, {module, DupeName}) ->
-    {error, "You are trying to rename the module " ++
-         Name ++ " to " ++ DupeName ++ " which is not allowed."};
+    {error, {module_rename, Name, DupeName}};
 update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#mlfe_module{function_exports=Es ++ Exports}};
 update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
@@ -183,8 +182,10 @@ rebind_args(NextVar, Map, Args) ->
             ({unit, _}=U, {NV, AccMap, Syms}) ->
                 {NV, AccMap, [U|Syms]}
         end,
-    {NV, M, Args2} = lists:foldl(F, {NextVar, Map, []}, Args),
-    {NV, M, lists:reverse(Args2)}.
+    case lists:foldl(F, {NextVar, Map, []}, Args) of
+        {NV, M, Args2} -> {NV, M, lists:reverse(Args2)};
+        {error, _}=Err -> Err
+    end.
 
 rename_bindings(NextVar, Map, #fun_binding{def=Def, expr=E}) ->
     case rename_bindings(NextVar, Map, Def) of
