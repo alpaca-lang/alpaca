@@ -222,10 +222,6 @@ unwrap_cell(C) when is_pid(C) ->
 unwrap_cell(Typ) ->
     Typ.
 
--spec unify_no_adt(typ(), typ()) -> ok | {error, term()}.
-unify_no_adt(T1, T2) ->
-    unify(T1, T2, []).
-
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
 %%% errors.  
@@ -324,12 +320,12 @@ find_covering_type(T1, T2, #env{current_types=Ts}=Env) ->
     %% contains both, it's a match.
     F = fun(_, {ok, _}=Res) ->
                 Res;
-           (#mlfe_type{name={symbol, _, TN}, vars=Vs, members=Ms}, Acc) ->
+           (#mlfe_type{name={type_name, _, TN}, vars=Vs, members=Ms}, Acc) ->
                 case try_types(T1, T2, Ms, Env, {none, none}) of
                     {ok, ok} -> 
                         ADT = #adt{name=TN, 
                                    vars = [],  % TODO:  real vars
-                                   var_names=[VN||{symbol, _, VN} <- Vs]}, 
+                                   var_names=[VN||{type_var, _, VN} <- Vs]}, 
                         {ok, ADT};
                     _ -> 
                         Acc
@@ -373,7 +369,7 @@ unify_list([A|TA], [B|TB], {MA, MB}, Env) ->
 -spec inst(
         VarName :: atom(), 
         Lvl :: integer(), 
-        Env :: env()) -> {typ(), env()} | {error, term()}.
+        Env :: env()) -> {typ(), env(), map()} | {error, term()}.
 
 inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
     Default = {error, {bad_variable_name, VarName}},
@@ -1262,8 +1258,7 @@ equality_test_() ->
                    top_typ_of(
                      "f x = match x with\n"
                      "  a -> a + 1\n"
-                     "| a, a == 1.0 -> 1"))
-                     
+                     "| a, a == 1.0 -> 1"))                     
     ].
 
 type_guard_test_() ->
@@ -1327,7 +1322,7 @@ union_adt_test_() ->
                      "f x = match x with "
                      "  0 -> :zero"
                      "| i, is_integer i -> i",
-                     [#mlfe_type{name={symbol, 1, "t"},
+                     [#mlfe_type{name={type_name, 1, "t"},
                                  vars=[],
                                  members=[t_int, t_atom]}]))
     ].

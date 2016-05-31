@@ -87,9 +87,9 @@
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
--record(mlfe_type, {name :: mlfe_type_name(),
-                    vars :: list(mlfe_type_var()),
-                    members :: list(mlfe_constructor() | mlfe_type())
+-record(mlfe_type, {name={type_name, -1, ""} :: mlfe_type_name(),
+                    vars=[]                  :: list(mlfe_type_var()),
+                    members=[]               :: list(mlfe_constructor() | mlfe_type())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 
@@ -114,10 +114,16 @@
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
+-type type_check() :: is_integer
+                    | is_float
+                    | is_atom
+                    | is_bool
+                    | is_list.
+
 %% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
--record(mlfe_type_check, {type :: int|float|atom|bool|list|chars,
+-record(mlfe_type_check, {type :: type_check(),
                           line :: integer(),
-                          expr :: mlfe_symbol()}).
+                          expr={symbol, -1, ""} :: mlfe_symbol()}).
 -type mlfe_type_check() :: #mlfe_type_check{}.
 
 -record(mlfe_clause, {type=undefined :: typ(),
