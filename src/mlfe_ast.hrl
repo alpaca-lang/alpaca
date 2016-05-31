@@ -1,3 +1,53 @@
+%%% ## Type-Tracking Data Types 
+%%% 
+%%% These are all of the specs the typer uses to track MLFE types.
+
+-type typ_name() :: atom().
+
+-type qvar()   :: {qvar, typ_name()}.
+-type tvar()   :: {unbound, typ_name(), integer()}
+                | {link, typ()}.
+%% list of parameter types, return type:
+-type t_arrow() :: {t_arrow, list(typ()), typ()}.
+
+-record(adt, {name :: string(),
+              vars :: list(typ()),
+              var_names :: list(string())}).
+-type t_adt() :: #adt{}.
+
+-type t_cons() :: {t_cons, typ(), t_list()}.
+-type t_nil() :: t_nil.
+-type t_list() :: t_cons() | t_nil().
+
+-type t_tuple() :: {t_tuple, list(typ())}.
+
+%% pattern, optional guard, result.  Currently I'm doing nothing with 
+%% present guards.
+%% TODO:  the guards don't need to be part of the type here.  Their
+%%        only role in typing is to constrain the pattern's typing.
+-type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
+
+%%% `t_rec` is a special type that denotes an infinitely recursive function.
+%%% Since all functions here are considered recursive, the return type for 
+%%% any function must begin as `t_rec`.  `t_rec` unifies with anything else by 
+%%% becoming that other thing and as such should be in its own reference cell. 
+-type t_const() :: t_rec
+                 | t_int
+                 | t_float
+                 | t_atom
+                 | t_bool
+                 | t_string.
+
+-type typ() :: undefined
+             | qvar()
+             | tvar()
+             | t_arrow()
+             | t_adt()
+             | t_const()
+             | t_list()
+             | t_tuple()
+             | t_clause().
+
 -type mlfe_symbol() :: {symbol, integer(), string()}.
 
 -type mlfe_unit() :: {unit, integer()}.
@@ -27,7 +77,7 @@
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
--record(mlfe_constructor, {type=undefined,
+-record(mlfe_constructor, {type=undefined :: typ(),
                            name :: mlfe_type_name(),
                            arg :: none
                                 | mlfe_symbol() 
@@ -36,19 +86,18 @@
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
--record(mlfe_type, {type=undefined,
-                    name :: mlfe_type_name(),
+-record(mlfe_type, {name :: mlfe_type_name(),
                     vars :: list(mlfe_type_var()),
                     members :: list(mlfe_constructor() | mlfe_type())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 
--record(mlfe_type_apply, {type=undefined :: atom(),
+-record(mlfe_type_apply, {type=undefined :: typ(),
                           name :: mlfe_type_name(),
                           arg :: none | mlfe_expression()}).
 -type mlfe_type_apply() :: #mlfe_type_apply{}.
 
--record(mlfe_cons, {type=undefined :: atom(),
+-record(mlfe_cons, {type=undefined :: typ(),
                     head :: mlfe_expression(),
                     tail :: mlfe_cons()
                           | mlfe_nil()
@@ -58,32 +107,26 @@
 -type mlfe_nil() :: {nil, integer()}.
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
--record(mlfe_tuple, {type=undefined :: atom(),
+-record(mlfe_tuple, {type=undefined :: typ(),
                      arity :: integer(),
                      values :: list(mlfe_expression)
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
--record(struct_member, {type :: atom(),
-                        name :: atom()
-                       }).
--type struct_member() :: #struct_member{}.
-
--type mlfe_struct_def() :: list(struct_member()).
-
+%% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
 -record(mlfe_type_check, {type :: int|float|atom|bool|list|chars,
                           line :: integer(),
                           expr :: mlfe_symbol()}).
 -type mlfe_type_check() :: #mlfe_type_check{}.
 
--record(mlfe_clause, {type :: atom(),
+-record(mlfe_clause, {type=undefined :: typ(),
                       pattern :: mlfe_expression(),
                       guards=[] :: list(mlfe_expression()),
                       result :: mlfe_expression()
                      }).
 -type mlfe_clause() :: #mlfe_clause{}.
 
--record(mlfe_match, {type :: atom(),
+-record(mlfe_match, {type=undefined :: typ(),
                      match_expr :: mlfe_expression(),
                      clauses :: list(mlfe_clause())
                     }).
@@ -91,7 +134,7 @@
 
 %%% A call to an Erlang function via the Foreign Function Interface.
 %%% Only the result of these calls is typed.
--record(mlfe_ffi, {type=undefined :: atom(),
+-record(mlfe_ffi, {type=undefined :: typ(),
                    module :: atom(),
                    function_name :: atom(),
                    args :: mlfe_list(),
@@ -105,13 +148,14 @@
                          | mlfe_match()
                          | mlfe_binding()
                          | mlfe_type_check()
+                         | mlfe_binding()
                            .
 
 -record(fun_binding, {def :: mlfe_fun_def(),
                       expr :: mlfe_expression()
                      }).
                       
--record(var_binding, {type=undefined :: atom(),
+-record(var_binding, {type=undefined :: typ(),
                       name :: mlfe_symbol(),
                       to_bind :: mlfe_expression(),
                       expr :: mlfe_expression()
@@ -142,7 +186,7 @@
 %%% since core erlang wants the arity specified in the first case but _not_
 %%% in the third.
 
--record(mlfe_apply, {type=undefined :: undefined | typer:typ(),
+-record(mlfe_apply, {type=undefined :: typ(),
                      name :: {mlfe_symbol(), integer()}
                            | {atom(), mlfe_symbol(), integer()}
                            | mlfe_symbol()
@@ -152,7 +196,7 @@
 -type mlfe_apply() :: #mlfe_apply{}.
 
 -record (mlfe_fun_def, {
-           type=undefined :: typer:typ()|undefined,
+           type=undefined :: typ(),
            name :: mlfe_symbol(),
            args :: list(mlfe_symbol())
                  | mlfe_unit(),
