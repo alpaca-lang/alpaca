@@ -13,13 +13,18 @@
           filename :: string(),
           bytes :: binary()}).
 
--spec compile({text, list(binary())}) -> {ok, list(#compiled_module{})} | 
+-spec compile({text, list(binary())}
+              |{files, list(string())}) -> {ok, list(#compiled_module{})} | 
                                          {error, term()}.
 compile({text, Code}) ->
     {ok, _, _, Mods} = parse_modules([Code]),
-    {ok, [TypedMod]} = type_modules(Mods),
-    {ok, Forms} = mlfe_codegen:gen(TypedMod),
-    compile:forms(Forms, [report, verbose, from_core]);
+     case type_modules(Mods) of
+         {error, _}=Err -> Err;
+         {ok, _, [TypedMod]} ->
+             {ok, Forms} = mlfe_codegen:gen(TypedMod),
+             compile:forms(Forms, [report, verbose, from_core])
+     end;
+
 compile({files, Filenames}) ->
     Code = lists:foldl(fun(FN, Acc) ->
                                {ok, Bin} = file:read_file(FN),
