@@ -91,7 +91,9 @@ check_dupes([], _, _) ->
     ok.
 
 unique_type_names(Types) ->
-    Names = lists:sort([N || #mlfe_type{name={symbol, _, N}} <- Types]),
+    Names = lists:sort([N || #mlfe_type{name={type_name, _, N}} <- Types]),
+    io:format("Types:  ~w~n", [Types]),
+    io:format("Names:  ~w~n", [Names]),
     check_dupes(Names, 
                 fun(A, B) -> A =:= B end, 
                 fun(A) -> {error, {duplicate_type, A}} end).
@@ -409,19 +411,19 @@ symbols_test_() ->
     ].
 
 user_types_test_() ->
-    [?_assertMatch({ok, #mlfe_type{name={symbol, 1, "t"}, 
+    [?_assertMatch({ok, #mlfe_type{name={type_name, 1, "t"}, 
                                    vars=[],
                                    members=[#mlfe_type{
-                                               name={symbol, 1, "int"},
+                                               name={type_name, 1, "int"},
                                                vars=[]},
                                             #mlfe_constructor{
                                                name={type_constructor, 1, "A"},
                                                arg=#mlfe_type{
-                                                      name={symbol, 1, "int"},
+                                                      name={type_name, 1, "int"},
                                                       vars=[]}}]}},
                    test_parse("type t = int | A int")),
      ?_assertMatch({ok, #mlfe_type{
-                          name={symbol, 1, "list"},
+                          name={type_name, 1, "list"},
                           vars=[{type_var, 1, "x"}],
                           members=[#mlfe_constructor{
                                      name={type_constructor, 1, "Nil"},
@@ -431,7 +433,7 @@ user_types_test_() ->
                                       arg=#mlfe_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       #mlfe_type{
-                                                         name={symbol, 1, "list"},
+                                                         name={type_name, 1, "list"},
                                                          vars=[{type_var, 1, "x"}]}]}
                                      }]}},
                    test_parse("type list 'x = Nil | Cons ('x, list 'x)")),
@@ -447,7 +449,7 @@ user_types_test_() ->
                                 "type u = X float | A\n\n")),
      %% Making sure multiple type variables work here:
      ?_assertMatch({ok, #mlfe_type{
-                           name={symbol, 1, "either"},
+                           name={type_name, 1, "either"},
                            vars=[{type_var, 1, "a"}, {type_var, 1, "b"}],
                            members=[#mlfe_constructor{
                                        name={type_constructor, 1, "Left"},

@@ -745,6 +745,8 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
 %%% it's type to be fixed.
 typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E}) ->
     case T of
+        %% TODO:  this should just be a proplist of types in 
+        %% builtin_types.hrl or something like that.
         is_integer -> 
             {ETyp, NV} = typ_of(Env, Lvl, E),
             case unify(new_cell(t_int), ETyp, Env) of

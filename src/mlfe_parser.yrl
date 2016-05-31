@@ -47,13 +47,17 @@ module_parts -> module_part module_parts : ['$1'|'$2'].
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
 
-poly_type -> symbol type_vars : #mlfe_type{name='$1', vars='$2'}.
+poly_type -> symbol type_vars : 
+  {symbol, L, N} = '$1',
+  #mlfe_type{name={type_name, L, N}, vars='$2'}.
 poly_type -> poly_type type_vars : 
   '$1'#mlfe_type{vars='$1'#mlfe_type.vars ++ ['$2']}.
 
 type_expr -> type_var : '$1'.
 type_expr -> poly_type : '$1'.
-type_expr -> symbol : #mlfe_type{name='$1', vars=[]}. % not polymorphic
+type_expr -> symbol : 
+  {symbol, L, N} = '$1',
+  #mlfe_type{name={type_name, L, N}, vars=[]}. % not polymorphic
 type_expr -> type_tuple : '$1'.
 type_expr -> '(' type_expr ')': '$2'.
 
@@ -83,8 +87,9 @@ type_members -> type_member '|' type_members : ['$1'|'$3'].
 
 type -> type_declare poly_type assign type_members :
   '$2'#mlfe_type{members='$4'}.
-type -> type_declare symbol assign type_members : 
-  #mlfe_type{name='$2', vars=[], members='$4'}.
+type -> type_declare symbol assign type_members :
+  {symbol, L, N} = '$2',
+  #mlfe_type{name={type_name, L, N}, vars=[], members='$4'}.
 
 type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
 type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
