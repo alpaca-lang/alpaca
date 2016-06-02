@@ -11,8 +11,7 @@
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
 -record(adt, {name :: string(),
-              vars :: list(typ()),
-              var_names :: list(string())}).
+              vars :: list({string(), typ()})}).
 -type t_adt() :: #adt{}.
 
 -type t_cons() :: {t_cons, typ(), t_list()}.
@@ -89,7 +88,8 @@
 
 -record(mlfe_type, {name={type_name, -1, ""} :: mlfe_type_name(),
                     vars=[]                  :: list(mlfe_type_var()),
-                    members=[]               :: list(mlfe_constructor() | mlfe_type())
+                    members=[]               :: list(mlfe_constructor() 
+                                                     | mlfe_type())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 

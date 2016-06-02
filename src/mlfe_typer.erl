@@ -298,10 +298,11 @@ unify(T1, T2, Env) ->
                 {error, _}=Err -> 
                     io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
                     Err;
-                {ok, Union} ->
+                {ok, EnvOut, Union} ->
                     io:format("UNIFIED on ~w~n", [Union]),
                     set_cell(T1, Union),
                     set_cell(T2, Union),
+                    %% TODO:  output environment.
                     ok
             end
             %{error, {cannot_unify, _T1, _T2}}
@@ -312,28 +313,77 @@ unify(T1, T2, Env) ->
 -spec find_covering_type(
         T1::typ(), 
         T2::typ(), 
-        env()) -> {ok, typ()} | 
-                  {error, {cannot_unify, typ(), typ()}}.
-find_covering_type(T1, T2, #env{current_types=Ts}=Env) ->
-    io:format("Types length ~w~n", [length(Ts)]),
-    %% each type, filter to types that are T1 or T2, if the list
-    %% contains both, it's a match.
-    F = fun(_, {ok, _}=Res) ->
-                Res;
-           (#mlfe_type{name={type_name, _, TN}, vars=Vs, members=Ms}, Acc) ->
-                case try_types(T1, T2, Ms, Env, {none, none}) of
-                    {ok, ok} -> 
-                        ADT = #adt{name=TN, 
-                                   vars = [],  % TODO:  real vars
-                                   var_names=[VN||{type_var, _, VN} <- Vs]}, 
-                        {ok, ADT};
-                    _ -> 
-                        Acc
-                end
-        end,
-    Default = {error, {cannot_unify, T1, T2}},
-    lists:foldl(F, Default, Ts).
+        env()) -> {ok, typ(), env()} | 
+                  {error, 
+                   {cannot_unify, typ(), typ()} |
+                   {bad_variable, integer(), mlfe_type_var()}}.
+find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn) ->
+    %% Convert all the available types to actual ADT types with
+    %% which to attempt unions:
+    TypeFolder = fun(_ ,{error, _}=Err) ->
+                         Err;
+                    (Typ, {ADTs, E}) ->
+                         case inst_type(Typ, E) of
+                             {error, _}=Err    -> Err;
+                             {ok, E2, ADT, Ms} -> {[{ADT, Ms}|ADTs], E2}
+                         end
+                 end,
 
+    case lists:foldl(TypeFolder, {[], EnvIn}, Ts) of
+        {error, _}=Err -> Err;
+        {ADTs, EnvOut} ->
+            %% each type, filter to types that are T1 or T2, if the list
+            %% contains both, it's a match.
+            F = fun(_, {ok, _}=Res) ->
+                        Res;
+                   ({ADT, Ms}, Acc) ->
+                        case try_types(T1, T2, Ms, EnvOut, {none, none}) of
+                            {ok, ok} -> {ok, EnvOut, ADT};
+                            _ -> Acc
+                        end
+                end,
+            Default = {error, {cannot_unify, T1, T2}},
+            lists:foldl(F, Default, lists:reverse(ADTs))
+    end.
+
+%%% To search for a potential union, a type's variables all need to be
+%%% instantiated and its members that are other types need to use the
+%%% same variables wherever referenced.  The successful returned elements
+%%% (not including `'ok'`) include:
+%%% 
+%%% - the instantiated type as an `#adt{}` record, with real type variable
+%%%   cells.
+%%% - a list of all members that are _types_, so type variables, tuples, and
+%%%   other types but _not_ ADT constructors.  
+%%% 
+%%% Any members that are polymorphic types (AKA "generics") must reference 
+%%% only the containing type's variables or an error will result.
+%%% 
+%%% In the `VarFolder` function you'll see that I always use a level of `0`
+%%% for type variables.  My thinking here is that since types are only 
+%%% defined at the top level, their variables are always created at the 
+%%% highest level.  I might be wrong here and need to include the typing
+%%% level as passed to inst/3 as well.
+-spec inst_type(mlfe_type(), EnvIn::env()) -> 
+                       {ok, env(), typ(), list(typ())} | 
+                       {error, {bad_variable, integer(), mlfe_type_var()}}.
+inst_type(Typ, EnvIn) ->
+    #mlfe_type{name={type_name, _, N}, vars=Vs, members=Ms} = Typ,
+    VarFolder = fun({type_var, _, VN}, {Vars, E}) ->
+                        {TVar, E2} = new_var(0, E),
+                        {[{VN, TVar}|Vars], E2}
+                end,    
+    {Vars, Env} = lists:foldl(VarFolder, {[], EnvIn}, Vs),
+    ParentADT = #adt{name=N, vars=lists:reverse(Vars)},
+    inst_type_members(ParentADT, Ms, Env, []).
+
+inst_type_members(ParentADT, [], Env, FinishedMembers) ->
+    {ok, Env, ParentADT, lists:reverse(FinishedMembers)};
+%% single atom types are passed unchanged (built-in types):
+inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
+    inst_type_members(ParentADT, T, Env, [H|Memo]).
+
+    
 try_types(_, _, _, _, {ok, ok}=Res) ->
     Res;
 try_types(T1, T2, [Candidate|Tail], Env, {none, M2}=Memo) ->
@@ -1321,7 +1371,7 @@ union_adt_test_() ->
      %% previously failing code pass.
      ?_assertMatch({{t_arrow, 
                          [t_int], 
-                         #adt{name="t", vars=[], var_names=[]}}, 
+                         #adt{name="t", vars=[]}}, 
                     _},
                    top_typ_with_types(
                      "f x = match x with "
