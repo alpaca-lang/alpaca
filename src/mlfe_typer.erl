@@ -300,6 +300,7 @@ unify(T1, T2, Env) ->
                     Err;
                 {ok, EnvOut, Union} ->
                     io:format("UNIFIED on ~w~n", [Union]),
+                    io:format("T1 T2 ~w ~w~n", [T1, T2]),
                     set_cell(T1, Union),
                     set_cell(T2, Union),
                     %% TODO:  output environment.
@@ -378,14 +379,45 @@ inst_type(Typ, EnvIn) ->
     inst_type_members(ParentADT, Ms, Env, []).
 
 inst_type_members(ParentADT, [], Env, FinishedMembers) ->
+    io:format("Members ~w~n", [lists:reverse(FinishedMembers)]),
     {ok, Env, ParentADT, lists:reverse(FinishedMembers)};
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
-    inst_type_members(ParentADT, T, Env, [H|Memo]).
+    inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
+inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
+    Default = {error, {bad_variable, L, N}},
+    case proplists:get_value(N, Vs, Default) of
+        {error, _}=Err -> Err;
+        Typ -> inst_type_members(ADT, T, Env, [Typ|Memo])
+    end;
+inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
+    case inst_type_members(ADT, Ms, Env, []) of
+        {error, _}=Err ->
+            Err;
+        {ok, _, _, InstMembers} ->
+            inst_type_members(ADT, T, Env, [new_cell({t_tuple, InstMembers})|Memo])
+    end;
 
+%% inst_type_members(#adt{vars=Vars}=ADT
+%%                   [#mlfe_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
+%%                   Env,
+%%                   Memo) ->
     
-try_types(_, _, _, _, {ok, ok}=Res) ->
-    Res;
+%% Type constructors are not types in their own right and thus not eligible for
+%% unification so we just discard them here:
+inst_type_members(ADT, [#mlfe_constructor{}|T], Env, Memo) ->
+    inst_type_members(ADT, T, Env, Memo).
+    
+try_types(_, _, _, _, {ok, ok}=Memo) ->
+    Memo;
+try_types(T1, T2, [Candidate|Tail], Env, {none, none}) ->
+    case unify(T1, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {ok, none});
+        _ -> case unify(T2, Candidate, Env) of
+                 ok -> try_types(T1, T2, Tail, Env, {none, ok});
+                 _ -> try_types(T1, T2, Tail, Env, {none, none})
+             end
+    end;
 try_types(T1, T2, [Candidate|Tail], Env, {none, M2}=Memo) ->
     case unify(T1, Candidate, Env) of
         ok -> try_types(T1, T2, Tail, Env, {ok, M2});
@@ -500,6 +532,8 @@ unwrap({t_tuple, Vs}) ->
     {t_tuple, [unwrap(V)||V <- Vs]};
 unwrap({t_list, T}) ->
     {t_list, unwrap(T)};
+unwrap(#adt{vars=Vs}=ADT) ->
+    ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs]};
 unwrap(X) ->
     X.
 
@@ -563,7 +597,7 @@ typ_of(Env, Lvl, {'_', _}) ->
     {T, VarNum};
 typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
     {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
-    {{t_tuple, VTyps}, NextVar};
+    {new_cell({t_tuple, VTyps}), NextVar};
 typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     %% 20160403 a nil type isn't making much sense to
     %% me at the moment, it's just another list to be
@@ -1380,5 +1414,40 @@ union_adt_test_() ->
                      [#mlfe_type{name={type_name, 1, "t"},
                                  vars=[],
                                  members=[t_int, t_atom]}]))
+    ].
+
+type_tuple_test_() ->
+    %% This first test passes but the second does not due to a spawn limit.  
+    %% I believe an infinite loop is occuring when unification fails between 
+    %% t_int and t_tuple in try_types which causes unify to reinstantiate the
+    %% types and the cycle continues.  Both orderings of members need to work.
+    [?_assertMatch({{t_arrow, 
+                    [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
+                    t_atom},
+                   _},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "   0 -> :zero"
+                     "| (i, 0) -> :adt",
+                     [#mlfe_type{name={type_name, 1, "t"},
+                                 vars=[{type_var, 1, "x"}],
+                                 members=[#mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      t_int]},
+                                          t_int]}])),
+     ?_assertMatch({{t_arrow, 
+                    [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
+                    t_atom},
+                   _},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "   0 -> :zero"
+                     "| (i, 0) -> :adt",
+                     [#mlfe_type{name={type_name, 1, "t"},
+                                 vars=[{type_var, 1, "x"}],
+                                 members=[t_int,
+                                          #mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      t_int]}]}]))
     ].
 -endif.

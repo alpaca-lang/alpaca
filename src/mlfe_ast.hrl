@@ -73,7 +73,7 @@
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
 -record(mlfe_type_tuple, {
-                         members :: mlfe_symbol() | mlfe_constructor()
+                         members=[] :: list(mlfe_type_var() | mlfe_type())
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
@@ -89,7 +89,8 @@
 -record(mlfe_type, {name={type_name, -1, ""} :: mlfe_type_name(),
                     vars=[]                  :: list(mlfe_type_var()),
                     members=[]               :: list(mlfe_constructor() 
-                                                     | mlfe_type())
+                                                     | mlfe_type()
+                                                     | mlfe_type_tuple())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 
