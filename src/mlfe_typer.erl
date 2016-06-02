@@ -276,7 +276,7 @@ unify(T1, T2, Env) ->
                         ok             -> ok
                     end
             end;
-        {{t_tuple, A}, {t_tuple, B}} ->
+        {{t_tuple, A}, {t_tuple, B}} when length(A) =:= length(B) ->
             case unify_list(A, B, Env) of
                 {error, _} = Err -> Err;
                 _                -> ok
@@ -293,6 +293,15 @@ unify(T1, T2, Env) ->
             unify(A, B, Env);
         {A, {t_list, B}} ->
             unify(A, B, Env);
+        {#adt{name=N, vars=AVars}, #adt{name=N, vars=BVars}} ->
+            io:format("Unifying ADT ~s~n", [N]),
+            %% Don't unify the keys _and_ vars:
+            case unify_list([V||{_, V} <- AVars], [V||{_, V} <- BVars], Env) of
+                {error, _}=Err -> Err;
+                _ ->
+                    set_cell(T2, {link, T1}),
+                    ok
+            end;
         {_T1, _T2} ->
             case find_covering_type(_T1, _T2, Env) of
                 {error, _}=Err -> 
@@ -420,9 +429,9 @@ inst_type_members(ADT,
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
                         
-%% Type constructors are not types in their own right and thus not eligible for
-%% unification so we just discard them here:
-inst_type_members(ADT, [#mlfe_constructor{}|T], Env, Memo) ->
+%% Everything else gets discared.  Type constructors are not types in their 
+%% own right and thus not eligible for unification so we just discard them here:
+inst_type_members(ADT, [_|T], Env, Memo) ->
     inst_type_members(ADT, T, Env, Memo).
     
 try_types(_, _, _, _, {ok, ok}=Memo) ->
@@ -1487,5 +1496,31 @@ type_tuple_test_() ->
                                                         name={type_name, 1, "t"},
                                                         vars=[{type_var, 1, "y"}]}
                                                     ]}]}]))
+    ].
+
+same_polymorphic_adt_union_test_() ->
+    [?_assertMatch({{t_arrow,
+                     [#adt{name="t", vars=[{"x", t_float}]},
+                      #adt{name="t", vars=[{"x", t_int}]}],
+                     {t_tuple, [t_atom, t_atom]}},
+                    _},
+                   top_typ_with_types(
+                     "f x y ="
+                     "  let a = match x with"
+                     "  (0.0, 0) -> :zero "
+                     "| (0.0, 0, :atom) -> :zero_atom in "
+                     "  let b = match y with"
+                     "  (1, 1) -> :int_one"
+                     "| (1, 1, :atom) -> :one_atom in "
+                     "(a, b)",
+                     [#mlfe_type{name={type_name, 1, "t"},
+                                 vars=[{type_var, 1, "x"}],
+                                 members=[#mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      t_int]},
+                                          #mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      t_int,
+                                                      t_atom]}]}]))
     ].
 -endif.
