@@ -299,8 +299,7 @@ unify(T1, T2, Env) ->
                     io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
                     Err;
                 {ok, EnvOut, Union} ->
-                    io:format("UNIFIED on ~w~n", [Union]),
-                    io:format("T1 T2 ~w ~w~n", [T1, T2]),
+                    io:format("UNIFIED ~w AND ~w on ~w~n", [unwrap(_T1), unwrap(_T2), Union]),
                     set_cell(T1, Union),
                     set_cell(T2, Union),
                     %% TODO:  output environment.
@@ -391,7 +390,6 @@ inst_type(Typ, EnvIn) ->
     inst_type_members(ParentADT, Ms, Env, []).
 
 inst_type_members(ParentADT, [], Env, FinishedMembers) ->
-    io:format("Members ~w~n", [lists:reverse(FinishedMembers)]),
     {ok, Env, ParentADT, lists:reverse(FinishedMembers)};
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
@@ -410,11 +408,18 @@ inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
             inst_type_members(ADT, T, Env, [new_cell({t_tuple, InstMembers})|Memo])
     end;
 
-%% inst_type_members(#adt{vars=Vars}=ADT
-%%                   [#mlfe_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
-%%                   Env,
-%%                   Memo) ->
-    
+inst_type_members(ADT,
+                  [#mlfe_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
+                  Env,
+                  Memo) ->
+    case inst_type_members(ADT, Vs, Env, []) of
+        {error, _}=Err -> Err;
+        {ok, Env2, _, Members} -> 
+            Names = [VN || {type_var, _, VN} <- Vs],
+            NewMember = #adt{name=N, vars=lists:zip(Names, Members)},
+            inst_type_members(ADT, T, Env2, [NewMember|Memo])
+    end;
+                        
 %% Type constructors are not types in their own right and thus not eligible for
 %% unification so we just discard them here:
 inst_type_members(ADT, [#mlfe_constructor{}|T], Env, Memo) ->
@@ -1029,6 +1034,8 @@ dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
 dump_term({t_clause, P, G, R}) ->
     io_lib:format(" | ~s ~s -> ~s", [dump_term(X)||X<-[P, G, R]]);
+dump_term({t_tuple, Ms}) ->
+    io_lib:format("(~s) ", [[dump_term(unwrap(M)) ++ " " || M <- Ms]]);
 dump_term(P) when is_pid(P) ->
     io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
 dump_term({link, P}) when is_pid(P) ->
@@ -1460,6 +1467,25 @@ type_tuple_test_() ->
                                  members=[t_int,
                                           #mlfe_type_tuple{
                                              members=[{type_var, 1, "x"},
-                                                      t_int]}]}]))
+                                                      t_int]}]}])),
+     %% A recursive type with a bad variable:
+     ?_assertMatch({error, {bad_variable, 1, "y"}},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     " 0 -> :zero"
+                     "| (i, 0) -> :adt"
+                     "| (0, (i, 0)) -> :nested",
+                     [#mlfe_type{name={type_name, 1, "t"},
+                                 vars=[{type_var, 1, "x"}],
+                                 members=[t_int,
+                                          #mlfe_type_tuple{
+                                             members=[{type_var, 1, "x"},
+                                                      t_int]},
+                                         #mlfe_type_tuple{
+                                            members=[t_int,
+                                                     #mlfe_type{
+                                                        name={type_name, 1, "t"},
+                                                        vars=[{type_var, 1, "y"}]}
+                                                    ]}]}]))
     ].
 -endif.
