@@ -330,16 +330,28 @@ find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn) ->
                          end
                  end,
 
-    case lists:foldl(TypeFolder, {[], EnvIn}, Ts) of
+    %%% We remove all of the types from the environment because we don't want
+    %%% to reinstantiate them again on unification failure when it's trying 
+    %%% to unify the two types with the instantiated member types.
+    %%% 
+    %%% For example, if `T1` is `t_int` and the first member of a type we're
+    %%% checking for valid union is anything _other_ that `t_int`, the call
+    %%% to `unify` in `try_types` will cause `unify` to call this method
+    %%% (`find_covering_type`) again, leading to instantiating all of the
+    %%% types all over again and eventually leading to a spawn limit error.
+    %%% By simply removing the types from the environment before proceeding,
+    %%% we avoid this cycle.
+    case lists:foldl(TypeFolder, {[], EnvIn#env{current_types=[]}}, Ts) of
         {error, _}=Err -> Err;
         {ADTs, EnvOut} ->
+            ReturnEnv = EnvOut#env{current_types=EnvIn#env.current_types},
             %% each type, filter to types that are T1 or T2, if the list
             %% contains both, it's a match.
             F = fun(_, {ok, _}=Res) ->
                         Res;
                    ({ADT, Ms}, Acc) ->
                         case try_types(T1, T2, Ms, EnvOut, {none, none}) of
-                            {ok, ok} -> {ok, EnvOut, ADT};
+                            {ok, ok} -> {ok, ReturnEnv, ADT};
                             _ -> Acc
                         end
                 end,
