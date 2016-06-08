@@ -11,7 +11,8 @@
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
 -record(adt, {name :: string(),
-              vars :: list({string(), typ()})}).
+              vars :: list({string(), typ()}),
+              members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
 
 -type t_cons() :: {t_cons, typ(), t_list()}.
@@ -77,11 +78,12 @@
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
+-type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ(),
-                           name :: mlfe_type_name(),
+                           name={type_constructor, 0, ""} :: mlfe_constructor_name(),
                            arg :: none
-                                | mlfe_symbol() 
-                                | mlfe_type_name() 
+                                | mlfe_type_var() 
+                                | mlfe_type() 
                                 | mlfe_type_tuple()
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
@@ -95,8 +97,8 @@
 -type mlfe_type() :: #mlfe_type{}.
 
 -record(mlfe_type_apply, {type=undefined :: typ(),
-                          name :: mlfe_type_name(),
-                          arg :: none | mlfe_expression()}).
+                          name=#mlfe_constructor{} :: mlfe_constructor(),
+                          arg=none :: none | mlfe_expression()}).
 -type mlfe_type_apply() :: #mlfe_type_apply{}.
 
 -record(mlfe_cons, {type=undefined :: typ(),
@@ -152,6 +154,7 @@
 -type mlfe_expression() :: mlfe_const()
                          | mlfe_symbol()
                          | mlfe_apply()
+                         | mlfe_type_apply()
                          | mlfe_list()
                          | mlfe_tuple()
                          | mlfe_match()

@@ -29,3 +29,9 @@
 -define(t_lt, {'<', ?compare}).
 -define(t_gte, {'>=', ?compare}).
 -define(t_lte, {'=<', ?compare}).
+
+-define(all_type_checks, [{is_integer, t_int},
+                          {is_float, t_float},
+                          {is_atom, t_atom},
+                          {is_bool, t_bool},
+                          {is_list, t_list}]).

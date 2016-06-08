@@ -4,6 +4,9 @@
 %%% http://okmij.org/ftp/ML/generalization.html with some influence
 %%% from https://github.com/tomprimozic/type-systems/blob/master/algorithm_w
 %%% where the arrow type and instantiation are concerned.
+%%% 
+%%% I still often use proplists in this module, mostly because dialyzer doesn't
+%%% yet type maps correctly (Erlang 18.1).
 
 -module(mlfe_typer).
 
@@ -102,9 +105,12 @@ copy_cell(Cell, RefMap) ->
 %%%    in other modules that have not yet been typed.  This is used in a crude
 %%%    form of detecting mutual recursion between/across modules.
 %%% 3. The current module being checked.
-%%% 4. A proplist of {expression name, expression type} for the types
+%%% 4. The types available to the current module, eventually including
+%%%    imported types.  This is used to find union types.
+%%% 5. A proplist from type constructor name to the constructor AST node.
+%%% 5. A proplist of {expression name, expression type} for the types
 %%%    of values and functions so far inferred/checked.
-%%% 5. The set of modules included in type checking.
+%%% 6. The set of modules included in type checking.
 %%% 
 %%% I'm including the modules in the typing environment so that when a call
 %%% crosses a module boundary into a module not yet checked, we can add the
@@ -118,12 +124,13 @@ copy_cell(Cell, RefMap) ->
 %%% 
 
 -record(env, {
-          next_var=0          :: integer(),
-          entered_modules=[]  :: list(atom()),
-          current_module=none :: none | mlfe_module(),
-          current_types=[]    :: list(mlfe_type()),
-          bindings=[]         :: list({term(), typer:typ()|t_cell()}),
-          modules=[]          :: list(mlfe_module())
+          next_var=0           :: integer(),
+          entered_modules=[]   :: list(atom()),
+          current_module=none  :: none | mlfe_module(),
+          current_types=[]     :: list(mlfe_type()),
+          type_constructors=[] :: list({string(), mlfe_constructor()}),
+          bindings=[]          :: list({term(), typer:typ()|t_cell()}),
+          modules=[]           :: list(mlfe_module())
 }).
 
 -type env() :: #env{}.
@@ -135,6 +142,22 @@ new_env() ->
 new_env(Mods) ->
     #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs],
          modules=Mods}.
+
+%%% We need to build a proplist of type constructor name to the actual type 
+%%% constructor's AST node and associated type.
+-spec constructors(list(mlfe_type())) -> list({string(), mlfe_constructor()}).
+constructors(Types) ->
+    MemberFolder = fun(#mlfe_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
+                           WithType = C#mlfe_constructor{type=Type},
+                           {Type, [{N, WithType}|Acc]};
+                      (_, Acc) ->
+                           Acc
+                   end,
+    TypesFolder = fun(#mlfe_type{members=Ms}=Typ, Acc) ->
+                          {_, Cs} = lists:foldl(MemberFolder, {Typ, []}, Ms),
+                          [Cs|Acc]
+                  end,
+    lists:flatten(lists:foldl(TypesFolder, [], Types)).
 
 %% Given a presumed newly-typed module, replace its untyped occurence within
 %% the supplied environment.  If the module does *not* exist in the environment,
@@ -293,22 +316,16 @@ unify(T1, T2, Env) ->
             unify(A, B, Env);
         {A, {t_list, B}} ->
             unify(A, B, Env);
-        {#adt{name=N, vars=AVars}, #adt{name=N, vars=BVars}} ->
-            io:format("Unifying ADT ~s~n", [N]),
-            %% Don't unify the keys _and_ vars:
-            case unify_list([V||{_, V} <- AVars], [V||{_, V} <- BVars], Env) of
-                {error, _}=Err -> Err;
-                _ ->
-                    set_cell(T2, {link, T1}),
-                    ok
-            end;
+        {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env);
+        {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env);
         {_T1, _T2} ->
             case find_covering_type(_T1, _T2, Env) of
                 {error, _}=Err -> 
                     io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
                     Err;
                 {ok, EnvOut, Union} ->
-                    io:format("UNIFIED ~w AND ~w on ~w~n", [unwrap(_T1), unwrap(_T2), Union]),
+                    io:format("UNIFIED ~w AND ~w on ~w~n", 
+                              [unwrap(_T1), unwrap(_T2), unwrap(Union)]),
                     set_cell(T1, Union),
                     set_cell(T2, Union),
                     %% TODO:  output environment.
@@ -316,6 +333,36 @@ unify(T1, T2, Env) ->
             end
             %{error, {cannot_unify, _T1, _T2}}
     end.
+
+%%% Here we're checking for membership of one party in another or for an
+%%% exact match.
+-spec unify_adt(t_cell(), t_cell(), t_adt(), typ(), env()) -> 
+                       ok | 
+                       {error, {cannot_unify, typ(), typ()}}.
+unify_adt(C1, C2, #adt{name=N, vars=AVars}=A, #adt{name=N, vars=BVars}, Env) ->
+    %% Don't unify the keys _and_ vars:
+    case unify_list([V||{_, V} <- AVars], [V||{_, V} <- BVars], Env) of
+        {error, _}=Err -> Err;
+        _ -> 
+            set_cell(C1, A),
+            set_cell(C2, {link, C1}),
+            ok
+    end;
+unify_adt(C1, C2, #adt{name=N, members=Ms}=A, AtomTyp, Env) when is_atom(AtomTyp) ->
+    case [M||M <- Ms, unwrap(M) =:= AtomTyp] of
+        [_] -> 
+            set_cell(C1, A),
+            set_cell(C2, {link, C1}),
+            ok;
+        []  -> {error, {cannot_unify, A, AtomTyp}}
+    end;
+unify_adt(C1, C2, #adt{name=NA, vars=VarsA}=A, #adt{name=NB, vars=VarsB}=B, Env) ->
+    {error, {cannot_unify, A, B}};
+unify_adt(_, _, A, B, _) ->
+    {error, {cannot_unify, A, B}}.
+
+
+
 
 %%% Given two different types, find a type in the set of currently available
 %%% types that can unify them or fail.
@@ -399,7 +446,10 @@ inst_type(Typ, EnvIn) ->
     inst_type_members(ParentADT, Ms, Env, []).
 
 inst_type_members(ParentADT, [], Env, FinishedMembers) ->
-    {ok, Env, ParentADT, lists:reverse(FinishedMembers)};
+    {ok, 
+     Env, 
+     new_cell(ParentADT#adt{members=FinishedMembers}), 
+     lists:reverse(FinishedMembers)};
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
     inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
@@ -456,6 +506,57 @@ try_types(T1, T2, [Candidate|Tail], Env, {M1, none}=Memo) ->
     end;
 try_types(_, _, [], _, _) ->
     no_match.
+
+%%% When the typer encounters the application of a type constructor, we can
+%%% treat it somewhat like a typ arrow vs a normal function arrow (see
+%%% `typ_apply/5`).  The difference is that the arity is always `1` and the 
+%%% result type may contain numerous type variables rather than the single 
+%%% type variable in a normal arrow.  Example:
+%%% 
+%%%     type t 'x 'y = A 'x | B 'y
+%%% 
+%%%     f z = A (z + 1)
+%%% 
+%%% We need a way to unify the constructor application with a type constructor
+%%% arrow that will yield something matching the following:
+%%% 
+%%%     #adt{name="t", vars=[t_int, {unbound, _, _}]
+%%%
+%%% To do this, `inst_type_arrow` builds a type arrow that uses the same type
+%%% variable cells in the argument as in the return type, which is of course
+%%% an instantiated instance of the ADT.  If the "type arrow" unifies with
+%%% the argument in the actual constructor application, the return of the type 
+%%% arrow will have the correct variables instantiated.
+-spec inst_type_arrow(Env::env(), Name::mlfe_constructor_name()) ->
+                             {ok, env(), {typ_arrow, typ(), t_adt()}} |
+                             {error, {bad_constructor, integer(), string()}}.
+inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
+    %% 20160603:  I have an awful lot of case ... of all over this
+    %% codebase, trying a lineup of functions specific to this 
+    %% task here instead.  Sort of want Scala's `Try`.
+    ADT_f = fun({error, _}=Err) -> Err;
+               (#mlfe_constructor{type=#mlfe_type{}=T}=C) -> {C, inst_type(T, EnvIn)}
+            end,
+    Cons_f = fun({_, {error, _}=Err}) ->Err;
+                ({C, {ok, Env, ADT, _}}) -> 
+                     #adt{vars=Vs} = get_cell(ADT),
+                     #mlfe_constructor{arg=Arg} = C,
+                     Arrow = {type_arrow, inst_constructor_arg(Arg, Vs), ADT},
+                     {Env, Arrow}
+             end,
+    Default = {error, {bad_constructor, Line, Name}},
+    C = proplists:get_value(Name, EnvIn#env.type_constructors, Default),
+    Cons_f(ADT_f(C)).
+
+inst_constructor_arg(none, _) ->
+    t_unit;
+inst_constructor_arg(AtomType, _) when is_atom(AtomType) ->
+    AtomType;
+inst_constructor_arg({type_var, _, N}, Vs) ->
+    proplists:get_value(N, Vs);
+inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
+    ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
+    #adt{name=N, vars=ADT_vars}.
 
 %% Unify two parameter lists, e.g. from a function arrow.
 unify_list(As, Bs, Env) ->
@@ -566,9 +667,9 @@ unwrap(X) ->
 -spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
                                                   {error, term()}.
 typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
-    %% TODO:  add type constructor bindings
     Env2 = Env#env{current_module=M,
                    current_types=Ts,
+                   type_constructors=constructors(Ts),
                    entered_modules=[Name]},
     case typ_module_funs(Fs, Env2, []) of
         {error, _} = E -> E;
@@ -577,7 +678,7 @@ typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
 
 typ_module_funs([], _Env, Memo) ->
     lists:reverse(Memo);
-typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}=N}=F|Rem], Env, Memo) ->
+typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
     case typ_of(Env, F) of
         {error, _} = E -> 
             E;
@@ -674,6 +775,20 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
+typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=A}) ->
+    case inst_type_arrow(Env, N) of
+        {error, _}=Err -> Err;
+        {Env2, {type_arrow, CTyp, RTyp}} ->
+            case typ_of(Env2, Lvl, A) of
+                {error, _}=Err -> Err;
+                {ATyp, NVNum} ->
+                    case unify(ATyp, CTyp, update_counter(NVNum, Env2)) of
+                        ok             -> {RTyp, NVNum};
+                        {error, _}=Err -> Err
+                    end
+            end
+    end;
+
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
     case inst(MlfeName, Lvl, Env) of
@@ -733,8 +848,11 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
 typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     {ETyp, NextVar1} = typ_of(Env, Lvl, E),
     ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
-                           {TypC, NV} = typ_of(EnvAcc, Lvl, C),
-                           {[TypC|Clauses], update_counter(NV, EnvAcc)}
+                           case typ_of(EnvAcc, Lvl, C) of
+                               {error, _}=Err -> Err;
+                               {TypC, NV} -> 
+                                   {[TypC|Clauses], update_counter(NV, EnvAcc)}
+                           end
                    end,
     {TypedCs, #env{next_var=NextVar2}} = lists:foldl(
                                            ClauseFolder, 
@@ -743,7 +861,8 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
                           case Acc of
                               {t_clause, PB, _, RB} = TypC ->
                                   case unify(PA, PB, Env) of
-                                      ok -> case unify(RA, RB, Env) of
+                                      ok -> 
+                                          case unify(RA, RB, Env) of
                                                 ok -> TypC;
                                                 {error, _} = Err -> Err
                                             end;
@@ -802,17 +921,13 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
 %%% Pattern match guards that both check the type of an argument and cause
 %%% it's type to be fixed.
 typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E}) ->
-    case T of
-        %% TODO:  this should just be a proplist of types in 
-        %% builtin_types.hrl or something like that.
-        is_integer -> 
-            case typ_of(Env, Lvl, E) of
+    Typ = proplists:get_value(T, ?all_type_checks),
+    case typ_of(Env, Lvl, E) of
+        {error, _}=Err -> Err;
+        {ETyp, NV} ->
+            case unify(new_cell(Typ), ETyp, Env) of
                 {error, _}=Err -> Err;
-                {ETyp, NV} ->
-                    case unify(new_cell(t_int), ETyp, Env) of
-                        {error, _}=Err -> Err;
-                        ok -> {t_bool, NV}
-                    end
+                ok -> {t_bool, NV}
             end
     end;
 
@@ -1007,6 +1122,16 @@ add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env3, Lvl, RenCons),
     {Typ, update_counter(NextVar, Env3), NN4};
 
+add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
+    {Typ, NextVar} = typ_of(T, Lvl, Env),
+    {Typ, update_counter(NextVar, Env), NameNum};
+add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
+    {_, Env2, NextNameNum} = add_bindings(Arg, Env, Lvl, NameNum),
+    case typ_of(Env2, Lvl, T) of
+        {error, _} = Err -> Err;
+        {Typ, NextVar} -> {Typ, update_counter(NextVar, Env2), NextNameNum}
+    end;
+
 add_bindings(Exp, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, Exp),
     {Typ, update_counter(NextVar, Env), NameNum}.
@@ -1070,7 +1195,9 @@ top_typ_of(Code) ->
 top_typ_with_types(Code, ADTs) ->
     {ok, E} = parser:parse(scanner:scan(Code)),
     Env = new_env(),
-    typ_of(Env#env{current_types=ADTs}, E).
+    typ_of(Env#env{current_types=ADTs,
+                   type_constructors=constructors(ADTs)}, 
+           E).
 
 %% There are a number of expected "unbound" variables here.  I think this
 %% is due to the deallocation problem as described in the first post
@@ -1522,5 +1649,58 @@ same_polymorphic_adt_union_test_() ->
                                              members=[{type_var, 1, "x"},
                                                       t_int,
                                                       t_atom]}]}]))
+    ].
+
+type_constructor_test_() ->
+    [?_assertMatch({{t_arrow, 
+                     [#adt{name="t", vars=[{"x", {unbound, _, _}}]}], 
+                     t_atom}, 
+                    _},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "i, is_integer i -> :is_int"
+                     "| A i -> :is_a",
+                     [#mlfe_type{name={type_name, 1, "t"},
+                                 vars=[{type_var, 1, "x"}],
+                                 members=[t_int,
+                                          #mlfe_constructor{
+                                             name={type_constructor, 1, "A"},
+                                             arg={type_var, 1, "x"}}]}])),
+     ?_assertMatch({{t_arrow, 
+                     [t_int],
+                     #adt{name="even_odd", vars=[]}},
+                    _},
+                   top_typ_with_types(
+                     "f x = match x % 2 with "
+                     "  0 -> Even x"
+                     "| 1 -> Odd x",
+                     [#mlfe_type{name={type_name, 1, "even_odd"},
+                                 vars=[],
+                                 members=[#mlfe_constructor{
+                                             name={type_constructor, 1, "Even"},
+                                             arg=t_int},
+                                          #mlfe_constructor{
+                                             name={type_constructor, 1, "Odd"},
+                                             arg=t_int}]}])),
+     ?_assertMatch({{t_arrow, 
+                     [#adt{name="json_subset", vars=[]}], 
+                     t_atom}, 
+                    _},
+                   top_typ_with_types(
+                     "f x = match x with "
+                     "  i, is_integer i -> :int"
+                     "| (k, v)          -> :keyed_value"
+                     "| f, is_float f   -> :float",
+                     [#mlfe_type{
+                         name={type_name, 1, "json_subset"},
+                         vars=[],
+                         members=[t_int,
+                                  t_float,
+                                  #mlfe_type_tuple{
+                                     members=[t_string, 
+                                              #mlfe_type{
+                                                 name={type_name, 1, "json_subset"}}]}
+                                 ]}]))
+                     
     ].
 -endif.
