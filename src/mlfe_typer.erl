@@ -1689,8 +1689,8 @@ type_constructor_test_() ->
                    top_typ_with_types(
                      "f x = match x with "
                      "  i, is_integer i -> :int"
-                     "| (k, v)          -> :keyed_value"
-                     "| f, is_float f   -> :float",
+                     "| f, is_float f   -> :float"
+                     "| (k, v)          -> :keyed_value",
                      [#mlfe_type{
                          name={type_name, 1, "json_subset"},
                          vars=[],
