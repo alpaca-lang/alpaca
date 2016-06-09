@@ -356,8 +356,23 @@ unify_adt(C1, C2, #adt{name=N, members=Ms}=A, AtomTyp, Env) when is_atom(AtomTyp
             ok;
         []  -> {error, {cannot_unify, A, AtomTyp}}
     end;
-unify_adt(C1, C2, #adt{name=NA, vars=VarsA}=A, #adt{name=NB, vars=VarsB}=B, Env) ->
-    {error, {cannot_unify, A, B}};
+unify_adt(C1, C2, 
+          #adt{name=NA, vars=VarsA, members=MA}=A, 
+          #adt{name=NB, vars=VarsB}=B, Env) ->
+    MemberFilter = fun(#adt{name=NB}) -> true;
+                      (_) -> false
+                   end,
+    case lists:filter(MemberFilter, MA) of 
+        [#adt{vars=ToCheck}] ->
+            UnifyFun = fun({{_, X}, {_, Y}}, ok) ->
+                               unify(X, Y, Env);
+                          (_, {error, _}=Err) ->
+                               Err
+                       end,
+            lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
+        _ -> unify_adt(C2, C1, B, A, Env)
+    end;
+
 unify_adt(_, _, A, B, _) ->
     {error, {cannot_unify, A, B}}.
 
@@ -554,9 +569,11 @@ inst_constructor_arg(AtomType, _) when is_atom(AtomType) ->
     AtomType;
 inst_constructor_arg({type_var, _, N}, Vs) ->
     proplists:get_value(N, Vs);
+inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs) ->
+    new_cell({t_tuple, [inst_constructor_arg(M, Vs) || M <- Ms]});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
-    #adt{name=N, vars=ADT_vars}.
+    new_cell(#adt{name=N, vars=ADT_vars}).
 
 %% Unify two parameter lists, e.g. from a function arrow.
 unify_list(As, Bs, Env) ->
@@ -775,6 +792,12 @@ typ_of(Env, Lvl, #mlfe_cons{head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
+typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=none}) ->
+    case inst_type_arrow(Env, N) of
+        {error, _}=Err -> Err;
+        {Env2, {type_arrow, CTyp, RTyp}} ->
+            {RTyp, Env2#env.next_var}
+    end;
 typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=A}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
@@ -1700,7 +1723,41 @@ type_constructor_test_() ->
                                      members=[t_string, 
                                               #mlfe_type{
                                                  name={type_name, 1, "json_subset"}}]}
-                                 ]}]))
-                     
+                                 ]}])),
+     ?_assertMatch({{t_arrow,
+                     [{unbound, V, _}],
+                     #adt{name="my_list", vars=[{"x", {unbound, V, _}}]}},
+                    _},
+                   top_typ_with_types(
+                     "f x = Cons (x, Cons (x, Nil))",
+                     [#mlfe_type{
+                         name={type_name, 1, "my_list"},
+                         vars=[{type_var, 1, "x"}],
+                         members=[#mlfe_constructor{
+                                     name={type_constructor, 1, "Cons"},
+                                     arg=#mlfe_type_tuple{
+                                            members=[{type_var, 1, "x"},
+                                                     #mlfe_type{
+                                                        name={type_name, 1, "my_list"},
+                                                        vars=[{type_var, 1, "x"}]}]}},
+                                  #mlfe_constructor{
+                                     name={type_constructor, 1, "Nil"},
+                                     arg=none}]}])),
+     ?_assertMatch({error, {cannot_unify, t_float, t_int}},
+                   top_typ_with_types(
+                     "f x = Cons (1, Cons (2.0, Nil))",
+                     [#mlfe_type{
+                         name={type_name, 1, "my_list"},
+                         vars=[{type_var, 1, "x"}],
+                         members=[#mlfe_constructor{
+                                     name={type_constructor, 1, "Cons"},
+                                     arg=#mlfe_type_tuple{
+                                            members=[{type_var, 1, "x"},
+                                                     #mlfe_type{
+                                                        name={type_name, 1, "my_list"},
+                                                        vars=[{type_var, 1, "x"}]}]}},
+                                  #mlfe_constructor{
+                                     name={type_constructor, 1, "Nil"},
+                                     arg=none}]}]))
     ].
 -endif.
