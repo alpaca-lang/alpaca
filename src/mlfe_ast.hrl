@@ -70,6 +70,13 @@
                     | mlfe_string()
                       .
 
+-type mlfe_base_type() :: t_atom
+                        | t_int
+                        | t_float
+                        | t_string
+                        | t_pid
+                        | t_bool.
+
 -type mlfe_type_name() :: {type_name, integer(), string()}.
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
@@ -90,9 +97,10 @@
 
 -record(mlfe_type, {name={type_name, -1, ""} :: mlfe_type_name(),
                     vars=[]                  :: list(mlfe_type_var()),
-                    members=[]               :: list(mlfe_constructor() 
+                    members=[]               :: list(mlfe_constructor()
                                                      | mlfe_type()
-                                                     | mlfe_type_tuple())
+                                                     | mlfe_type_tuple()
+                                                     | mlfe_base_type())
                    }).
 -type mlfe_type() :: #mlfe_type{}.
 

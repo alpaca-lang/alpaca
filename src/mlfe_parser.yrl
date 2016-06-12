@@ -20,7 +20,7 @@ expr simple_expr.
 Terminals 
 
 module export 
-type_declare type_constructor type_var 
+type_declare type_constructor type_var base_type
 boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
@@ -60,6 +60,10 @@ type_expr -> symbol :
   #mlfe_type{name={type_name, L, N}, vars=[]}. % not polymorphic
 type_expr -> type_tuple : '$1'.
 type_expr -> '(' type_expr ')': '$2'.
+type_expr -> base_type : 
+  {base_type, _, T} = '$1',
+  list_to_atom("t_" ++ T).
+
 
 type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
 type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].

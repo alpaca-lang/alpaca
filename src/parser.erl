@@ -414,14 +414,10 @@ symbols_test_() ->
 user_types_test_() ->
     [?_assertMatch({ok, #mlfe_type{name={type_name, 1, "t"}, 
                                    vars=[],
-                                   members=[#mlfe_type{
-                                               name={type_name, 1, "int"},
-                                               vars=[]},
+                                   members=[t_int,
                                             #mlfe_constructor{
                                                name={type_constructor, 1, "A"},
-                                               arg=#mlfe_type{
-                                                      name={type_name, 1, "int"},
-                                                      vars=[]}}]}},
+                                               arg=t_int}]}},
                    test_parse("type t = int | A int")),
      ?_assertMatch({ok, #mlfe_type{
                           name={type_name, 1, "list"},

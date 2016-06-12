@@ -216,14 +216,7 @@ copy_type(T, M) ->
 
 %%% ### Typer
 %%% 
-%%% 
-
-
-%%% Type check all functions in the module, returning a new module with
-%%% the function types set.
-%-spec type_module(Mod::mlfe_module()) -> mlfe_module().
-%type_module(Mod) ->
-    
+%%%
 
 occurs(Label, Level, P) when is_pid(P) ->
     occurs(Label, Level, get_cell(P));
@@ -241,7 +234,7 @@ occurs(_, _, T) ->
     T.
 
 unwrap_cell(C) when is_pid(C) ->
-    get_cell(C);
+    unwrap_cell(get_cell(C));
 unwrap_cell(Typ) ->
     Typ.
 
@@ -372,6 +365,23 @@ unify_adt(C1, C2,
             lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
         _ -> unify_adt(C2, C1, B, A, Env)
     end;
+unify_adt(C1, C2,
+          #adt{name=N, vars=Vs, members=Ms}=A,
+          {t_tuple, TupleMs}=ToCheck,
+          Env) ->
+    io:format("TUPLE UNIFY! ~w AND ~w~n", [unwrap(A), unwrap(ToCheck)]),
+    %% Try to find an ADT member that will unify with the passed in tuple:
+    F = fun(_, ok) -> ok;
+           (T, Res) -> 
+                case unify(ToCheck, T, Env) of
+                    ok -> 
+                        set_cell(C2, {link, C1}),
+                        ok;
+                    _ -> Res
+                end
+        end,
+    Seed = {error, {cannot_unify, A, ToCheck}},
+    lists:foldl(F, Seed, Ms);
 
 unify_adt(_, _, A, B, _) ->
     {error, {cannot_unify, A, B}}.
@@ -676,8 +686,9 @@ unwrap({t_tuple, Vs}) ->
     {t_tuple, [unwrap(V)||V <- Vs]};
 unwrap({t_list, T}) ->
     {t_list, unwrap(T)};
-unwrap(#adt{vars=Vs}=ADT) ->
-    ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs]};
+unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
+    ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs],
+            members=[unwrap(M) || M <- Ms]};
 unwrap(X) ->
     X.
 
@@ -1146,9 +1157,10 @@ add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
     {Typ, update_counter(NextVar, Env3), NN4};
 
 add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
-    {Typ, NextVar} = typ_of(T, Lvl, Env),
+    {Typ, NextVar} = typ_of(Env, Lvl, T),
     {Typ, update_counter(NextVar, Env), NameNum};
 add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
+    io:format("T is ~w~n", [T]),
     {_, Env2, NextNameNum} = add_bindings(Arg, Env, Lvl, NameNum),
     case typ_of(Env2, Lvl, T) of
         {error, _} = Err -> Err;
@@ -1236,20 +1248,20 @@ typ_of_test_() ->
 
 simple_polymorphic_let_test() ->
     Code =
-        "double_app int ="
+        "double_app my_int ="
         "let two_times f x = f (f x) in "
         "let int_double i = i + i in "
-        "two_times int_double int",
+        "two_times int_double my_int",
     ?assertMatch({{t_arrow, [t_int], t_int}, _}, top_typ_of(Code)).
 
 polymorphic_let_test() ->
     Code = 
-        "double_application int float = "
+        "double_application my_int my_float = "
         "let two_times f x = f (f x) in "
         "let int_double a = a + a in "
         "let float_double b = b +. b in "
-        "let doubled_2 = two_times int_double int in "
-        "two_times float_double float",
+        "let doubled_2 = two_times int_double my_int in "
+        "two_times float_double my_float",
     ?assertMatch({{t_arrow, [t_int, t_float], t_float}, _},
                  top_typ_of(Code)).
 
@@ -1760,4 +1772,46 @@ type_constructor_test_() ->
                                      name={type_constructor, 1, "Nil"},
                                      arg=none}]}]))
     ].
+
+%% Currently a broken test due to no type-name-to-type bindings, see
+%% http://noisycode.com/blog/2016/06/12/how-i-made-broken-adts/ for 
+%% an explanation.
+module_with_types_test() ->
+    Code =
+        "module module_with_types\n\n"
+        "type t = int | float | (string, t)\n\n"
+        "a x = match x with\n"
+        "i, is_integer i -> :int\n"
+        "| f, is_float f -> :float\n"
+        %% "| Pair (a, b) -> :tuple\n"
+        %% "| Pair (a, Pair (b, c)) -> :nested_t",
+        "| (_, _) -> :tuple"
+        "| (_, (_, _)) -> :nested",
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    {error, {cannot_unify, T1, T2}} = Res,
+    io:format("T1 T2 are ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
+    ?assertMatch({}, Res).
+
+module_matching_lists_test() ->
+    Code =
+        "module module_matching_lists\n\n"
+        "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
+        "a x = match x with "
+        "Nil -> :nil"
+        "| Cons (i, Nil), is_integer i -> :one_item"
+        "| Cons (i, x) -> :more_than_one",
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                     name={symbol, 5, "a"},
+                                     type={t_arrow,
+                                           [#adt{
+                                               name="my_list",
+                                               vars=[{"x", t_int}]}],
+                                           t_atom}}]}}, 
+                 Res).
 -endif.

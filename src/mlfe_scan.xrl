@@ -10,6 +10,8 @@ BRK = \n\n
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
 TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_chars
 
+BASE_TYPE = atom|int|float|string|pid|bool
+
 Rules.
 %% Separators
 ,     : {token, {',', TokenLine}}.
@@ -34,6 +36,9 @@ call_erlang : {token, {call_erlang, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type : {token, {type_declare, TokenLine}}.
+
+%% Base types are the fundamental types available on the Erlang VM.
+{BASE_TYPE} : {token, {base_type, TokenLine, TokenChars}}.
 
 %% Type variables (nicked from OCaml):
 '{SYM} : {token, {type_var, TokenLine, string:substr(TokenChars, 2)}}.
