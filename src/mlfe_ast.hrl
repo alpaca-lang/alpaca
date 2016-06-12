@@ -88,10 +88,11 @@
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ(),
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
-                           arg :: none
-                                | mlfe_type_var() 
-                                | mlfe_type() 
-                                | mlfe_type_tuple()
+                           arg=none :: none
+                                     | mlfe_base_type()
+                                     | mlfe_type_var() 
+                                     | mlfe_type() 
+                                     | mlfe_type_tuple()
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
@@ -105,7 +106,7 @@
 -type mlfe_type() :: #mlfe_type{}.
 
 -record(mlfe_type_apply, {type=undefined :: typ(),
-                          name=#mlfe_constructor{} :: mlfe_constructor(),
+                          name={type_constructor, 0, ""} :: mlfe_constructor_name(),
                           arg=none :: none | mlfe_expression()}).
 -type mlfe_type_apply() :: #mlfe_type_apply{}.
 

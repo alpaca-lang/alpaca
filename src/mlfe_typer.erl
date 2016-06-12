@@ -583,7 +583,9 @@ inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs) ->
     new_cell({t_tuple, [inst_constructor_arg(M, Vs) || M <- Ms]});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
-    new_cell(#adt{name=N, vars=ADT_vars}).
+    new_cell(#adt{name=N, vars=ADT_vars});
+inst_constructor_arg(Arg, _) ->
+    {error, {bad_constructor_arg, Arg}}.
 
 %% Unify two parameter lists, e.g. from a function arrow.
 unify_list(As, Bs, Env) ->
