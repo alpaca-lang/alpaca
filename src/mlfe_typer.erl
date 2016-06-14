@@ -108,9 +108,10 @@ copy_cell(Cell, RefMap) ->
 %%% 4. The types available to the current module, eventually including
 %%%    imported types.  This is used to find union types.
 %%% 5. A proplist from type constructor name to the constructor AST node.
-%%% 5. A proplist of {expression name, expression type} for the types
+%%% 6. A proplist from type name to its instantiated ADT record.
+%%% 7. A proplist of {expression name, expression type} for the types
 %%%    of values and functions so far inferred/checked.
-%%% 6. The set of modules included in type checking.
+%%% 8. The set of modules included in type checking.
 %%% 
 %%% I'm including the modules in the typing environment so that when a call
 %%% crosses a module boundary into a module not yet checked, we can add the
@@ -129,7 +130,8 @@ copy_cell(Cell, RefMap) ->
           current_module=none  :: none | mlfe_module(),
           current_types=[]     :: list(mlfe_type()),
           type_constructors=[] :: list({string(), mlfe_constructor()}),
-          bindings=[]          :: list({term(), typer:typ()|t_cell()}),
+          type_bindings=[]     :: list({string(), t_adt()}),
+          bindings=[]          :: list({term(), typ()|t_cell()}),
           modules=[]           :: list(mlfe_module())
 }).
 
@@ -172,14 +174,7 @@ update_binding(Name, Typ, #env{bindings=Bs} = Env) ->
     Env#env{bindings=[{Name, Typ}|[{N, T} || {N, T} <- Bs, N =/= Name]]}.
 
 update_counter(VarNum, Env) ->
-    Env#env{next_var=VarNum}.
- 
-%%% Make a copy of the named entity from the current environment, replacing
-%%% reference cells with copies of them.  Multiple references of the same
-%%% type variable must end up referencing a new _single_ copy of the type
-%%% variable's cell.
-%copy_from_env(Name, {_C, L}) ->
-%    deep_copy_type(proplists:get_value(Name, L), maps:new()).
+    Env#env{next_var=VarNum}. 
 
 %% Used by deep_copy_type for a set of function arguments or 
 %% list elements.
@@ -697,13 +692,29 @@ unwrap(X) ->
 -spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
                                                   {error, term()}.
 typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
-    Env2 = Env#env{current_module=M,
-                   current_types=Ts,
-                   type_constructors=constructors(Ts),
-                   entered_modules=[Name]},
-    case typ_module_funs(Fs, Env2, []) of
-        {error, _} = E -> E;
-        [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
+    TypFolder = fun(_, {error, _}=Err) -> 
+                        Err;
+                   (T, {Typs, E}) -> 
+                        case inst_type(T, E) of
+                            {ok, E2, ADT, _} -> {[ADT|Typs], E2};
+                            {error, _}=Err   -> Err
+                        end
+                end,
+    case lists:foldl(TypFolder, {[], Env}, Ts) of
+        {error, _}=Err ->
+            Err;
+        {ADTs, Env2} ->
+            TypBindings = [{N, A}||#adt{name=N}=A <- ADTs],
+            Env3 = Env#env{
+                     type_bindings=TypBindings,
+                     current_module=M,
+                     current_types=Ts,
+                     type_constructors=constructors(Ts),
+                     entered_modules=[Name]},
+            case typ_module_funs(Fs, Env3, []) of
+                {error, _} = E -> E;
+                [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
+            end
     end.
 
 typ_module_funs([], _Env, Memo) ->
