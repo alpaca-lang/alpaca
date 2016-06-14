@@ -344,6 +344,19 @@ unify_adt(C1, C2, #adt{name=N, members=Ms}=A, AtomTyp, Env) when is_atom(AtomTyp
             ok;
         []  -> {error, {cannot_unify, A, AtomTyp}}
     end;
+
+%% If an ADTs members are empty, it's a reference to an ADT that should
+%% be instantiated in the environment.  Replace it with the instantiated
+%% version before proceeding.  Having separate cases for A and B is
+%% bothering me.
+unify_adt(C1, C2,
+          #adt{name=NA, vars=VarsA, members=[]}=A, 
+          B, Env) ->
+    case proplists:get_value(NA, Env#env.type_bindings) of
+        undefined -> {error, {no_type_for_name, NA}};
+        ADT       -> unify_adt(C1, C2, ADT, B, Env)
+    end;
+
 unify_adt(C1, C2, 
           #adt{name=NA, vars=VarsA, members=MA}=A, 
           #adt{name=NB, vars=VarsB}=B, Env) ->
@@ -364,7 +377,6 @@ unify_adt(C1, C2,
           #adt{name=N, vars=Vs, members=Ms}=A,
           {t_tuple, TupleMs}=ToCheck,
           Env) ->
-    io:format("TUPLE UNIFY! ~w AND ~w~n", [unwrap(A), unwrap(ToCheck)]),
     %% Try to find an ADT member that will unify with the passed in tuple:
     F = fun(_, ok) -> ok;
            (T, Res) -> 
@@ -372,7 +384,8 @@ unify_adt(C1, C2,
                     ok -> 
                         set_cell(C2, {link, C1}),
                         ok;
-                    _ -> Res
+                    _ -> 
+                        Res
                 end
         end,
     Seed = {error, {cannot_unify, A, ToCheck}},
@@ -696,7 +709,7 @@ typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
                         Err;
                    (T, {Typs, E}) -> 
                         case inst_type(T, E) of
-                            {ok, E2, ADT, _} -> {[ADT|Typs], E2};
+                            {ok, E2, ADT, _} -> {[unwrap(ADT)|Typs], E2};
                             {error, _}=Err   -> Err
                         end
                 end,
@@ -1173,7 +1186,6 @@ add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, T),
     {Typ, update_counter(NextVar, Env), NameNum};
 add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
-    io:format("T is ~w~n", [T]),
     {_, Env2, NextNameNum} = add_bindings(Arg, Env, Lvl, NameNum),
     case typ_of(Env2, Lvl, T) of
         {error, _} = Err -> Err;
@@ -1803,9 +1815,23 @@ module_with_types_test() ->
     {ok, _, _, M} = parser:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    {error, {cannot_unify, T1, T2}} = Res,
-    io:format("T1 T2 are ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
-    ?assertMatch({}, Res).
+    ?assertMatch({ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, 5, "a"},
+                                       type={t_arrow,
+                                             [#adt{
+                                                 name="t",
+                                                 vars=[],
+                                                 members=[{t_tuple,
+                                                           [t_string,
+                                                            #adt{name="t",
+                                                                 vars=[],
+                                                                 members=[]}]},
+                                                          t_float,
+                                                          t_int
+                                                          ]}],
+                                             t_atom}}]}}, 
+                 Res).
 
 module_matching_lists_test() ->
     Code =
