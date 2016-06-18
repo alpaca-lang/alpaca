@@ -954,7 +954,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs}) ->
     end;
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R}) ->
-    {PTyp, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
+    {PTyp, _, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
     F = fun
             (_, {error, _}=Err) -> Err;
             (G, {Typs, AccEnv}) -> 
@@ -1149,18 +1149,18 @@ args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
         mlfe_expression(), 
         env(), 
         Lvl::integer(),
-        NameNum::integer()) -> {typ(), env(), integer()}.
-add_bindings({symbol, _, Name}, Env, Lvl, NameNum) ->
+        NameNum::integer()) -> {typ(), mlfe_expression(), env(), integer()}.
+add_bindings({symbol, _, Name}=S, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    {Typ, update_binding(Name, Typ, Env2), NameNum};
+    {Typ, S, update_binding(Name, Typ, Env2), NameNum};
 
 %%% A single occurrence of the wildcard doesn't matter here as the renaming
 %%% only occurs in structures where multiple instances can show up, e.g.
 %%% in tuples and lists.
 
-add_bindings({'_', _}, Env, Lvl, NameNum) ->
+add_bindings({'_', _}=X, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
-    {Typ, update_binding('_', Typ, Env2), NameNum};
+    {Typ, X, update_binding('_', Typ, Env2), NameNum};
 
 %%% Tuples are a slightly more involved case since we want a type for the
 %%% whole tuple as well as any explicit variables to be available in the
@@ -1169,35 +1169,37 @@ add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
     {#mlfe_tuple{values=Vs}=Tup2, NN2} = rename_wildcards(Tup1, NameNum),
     {Env2, NN3} = lists:foldl(
                     fun (V, {EnvAcc, NN}) -> 
-                            {_Typ, NewEnv, NewNN} = add_bindings(V, EnvAcc, Lvl, NN),
+                            {_, _, NewEnv, NewNN} = add_bindings(V, EnvAcc, Lvl, NN),
                             {NewEnv, NewNN}
                     end, 
                     {Env, NN2}, 
                     Vs),
     {Typ, NextVar} = typ_of(Env2, Lvl, Tup2),
     
-    {Typ, update_counter(NextVar, Env2), NN3};
+    {Typ, Tup2, update_counter(NextVar, Env2), NN3};
 
 add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
     {#mlfe_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
-    {_, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
-    {_, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
+    {_, _, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
+    {_, _, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
     {Typ, NextVar} = typ_of(Env3, Lvl, RenCons),
-    {Typ, update_counter(NextVar, Env3), NN4};
+    {Typ, RenCons, update_counter(NextVar, Env3), NN4};
 
 add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, T),
-    {Typ, update_counter(NextVar, Env), NameNum};
+    {Typ, T, update_counter(NextVar, Env), NameNum};
 add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
-    {_, Env2, NextNameNum} = add_bindings(Arg, Env, Lvl, NameNum),
-    case typ_of(Env2, Lvl, T) of
+    {RenamedArg, NN} = rename_wildcards(Arg, NameNum),
+    {_, _, Env2, NextNameNum} = add_bindings(RenamedArg, Env, Lvl, NN),
+    TA = T#mlfe_type_apply{arg=RenamedArg},
+    case typ_of(Env2, Lvl, TA) of
         {error, _} = Err -> Err;
-        {Typ, NextVar} -> {Typ, update_counter(NextVar, Env2), NextNameNum}
+        {Typ, NextVar} -> {Typ, TA, update_counter(NextVar, Env2), NextNameNum}
     end;
 
 add_bindings(Exp, Env, Lvl, NameNum) ->
     {Typ, NextVar} = typ_of(Env, Lvl, Exp),
-    {Typ, update_counter(NextVar, Env), NameNum}.
+    {Typ, Exp, update_counter(NextVar, Env), NameNum}.
 
 %%% Tuples may have multiple instances of the '_' wildcard/"don't care"
 %%% symbol.  Each instance needs a unique name for unification purposes
@@ -1206,11 +1208,15 @@ add_bindings(Exp, Env, Lvl, NameNum) ->
 rename_wildcards(#mlfe_tuple{values=Vs}=Tup, NameNum) ->
     {Renamed, NN} = rename_wildcards(Vs, NameNum),
     {Tup#mlfe_tuple{values=Renamed}, NN};
+rename_wildcards(#mlfe_type_apply{arg=none}=TA, NN) ->
+    {TA, NN};
+rename_wildcards(#mlfe_type_apply{arg=Arg}=TA, NN) ->
+    {Arg2, NN2} = rename_wildcards(Arg, NN),
+    {TA#mlfe_type_apply{arg=Arg2}, NN};
 rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
     {RenH, N1} = rename_wildcards(H, NameNum),
     {RenT, N2} = rename_wildcards(T, N1),
     {#mlfe_cons{head=RenH, tail=RenT}, N2};
-    
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
                      {NewOther, NewN} = rename_wildcards(V, N),
@@ -1801,9 +1807,32 @@ type_constructor_test_() ->
                                      arg=none}]}]))
     ].
 
-%% Currently a broken test due to no type-name-to-type bindings, see
-%% http://noisycode.com/blog/2016/06/12/how-i-made-broken-adts/ for 
-%% an explanation.
+%%% Type constructors that use underscores in pattern matches to discard actual
+%%% values should work, depends on correct recursive renaming.
+rename_constructor_wildcard_test() ->
+    Code =
+        "module module_with_wildcard_constructor_tuples\n\n"
+        "type t = int | float | Pair (string, t)\n\n"
+        "a x = match x with\n"
+        "i, is_integer i -> :int\n"
+        "| f, is_float f -> :float\n"
+        "| Pair (_, _) -> :tuple\n"
+        "| Pair (_, Pair (_, _)) -> :nested_t"
+        "| Pair (_, Pair (_, Pair(_, _))) -> :double_nested_t",
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, 5, "a"},
+                                       type={t_arrow,
+                                             [#adt{
+                                                 name="t",
+                                                 vars=[],
+                                                 members=[t_float, t_int]}],
+                                             t_atom}}]}}, 
+                 Res).    
+
 module_with_types_test() ->
     Code =
         "module module_with_types\n\n"
@@ -1811,8 +1840,6 @@ module_with_types_test() ->
         "a x = match x with\n"
         "i, is_integer i -> :int\n"
         "| f, is_float f -> :float\n"
-        %% "| Pair (a, b) -> :tuple\n"
-        %% "| Pair (a, Pair (b, c)) -> :nested_t",
         "| (_, _) -> :tuple"
         "| (_, (_, _)) -> :nested",
     {ok, _, _, M} = parser:parse_module(0, Code),
