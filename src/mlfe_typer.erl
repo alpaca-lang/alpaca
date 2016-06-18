@@ -320,7 +320,6 @@ unify(T1, T2, Env) ->
                     %% TODO:  output environment.
                     ok
             end
-            %{error, {cannot_unify, _T1, _T2}}
     end.
 
 %%% Here we're checking for membership of one party in another or for an
@@ -343,7 +342,7 @@ unify_adt(C1, C2, #adt{name=N, members=Ms}=A, AtomTyp, Env) when is_atom(AtomTyp
             set_cell(C1, A),
             set_cell(C2, {link, C1}),
             ok;
-        []  -> {error, {cannot_unify, A, AtomTyp}}
+        []  -> {error, {cannot_unify, unwrap(A), AtomTyp}}
     end;
 
 %% If an ADTs members are empty, it's a reference to an ADT that should
@@ -389,11 +388,11 @@ unify_adt(C1, C2,
                         Res
                 end
         end,
-    Seed = {error, {cannot_unify, A, ToCheck}},
+    Seed = {error, {cannot_unify, unwrap(A), ToCheck}},
     lists:foldl(F, Seed, Ms);
 
 unify_adt(_, _, A, B, _) ->
-    {error, {cannot_unify, A, B}}.
+    {error, {cannot_unify, unwrap(A), unwrap(B)}}.
 
 
 
@@ -408,7 +407,6 @@ unify_adt(_, _, A, B, _) ->
                    {cannot_unify, typ(), typ()} |
                    {bad_variable, integer(), mlfe_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn) ->
-    io:format("~n*** FIND COVERING~n~w~n~w~n~n", [T1, T2]),
     %% Convert all the available types to actual ADT types with
     %% which to attempt unions:
     TypeFolder = fun(_ ,{error, _}=Err) ->
@@ -1059,9 +1057,8 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
 
 typ_apply(Env, Lvl, TypF, NextVar, Args) ->
-    %typ_of(Env, Lvl, N),
     %% we make a deep copy of the function we're unifying 
-    %% eso that the types we apply to the function don't 
+    %% so that the types we apply to the function don't 
     %% force every other application to unify with them 
     %% where the other callers may be expecting a 
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
@@ -1875,7 +1872,8 @@ type_var_protection_test() ->
         "b x = match x with "
         "Nil -> :nil"
         "| Cons (f, Nil), is_float f -> :one_float"
-        "| Cons (f, x) -> :more_than_one_float\n\n",
+        "| Cons (f, x) -> :more_than_one_float\n\n"
+        "c () = (Cons (1.0, Nil), Cons(1, Nil))",
     {ok, _, _, M} = parser:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
@@ -1893,7 +1891,30 @@ type_var_protection_test() ->
                                             [#adt{
                                                 name="my_list",
                                                 vars=[{"x", t_float}]}],
-                                            t_atom}}]}}, 
+                                            t_atom}},
+                                   #mlfe_fun_def{
+                                      name={symbol, 9, "c"},
+                                      type={t_arrow,
+                                            [t_unit],
+                                            {t_tuple, 
+                                             [#adt{
+                                                 name="my_list",
+                                                 vars=[{"x", t_float}]},
+                                              #adt{
+                                                 name="my_list",
+                                                 vars=[{"x", t_int}]}]}}}]}}, 
                  Res).
+
+type_var_protection_fail_unify_test() ->
+    Code =
+        "module module_matching_lists\n\n"
+        "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
+        "c () = "
+        "let x = Cons (1.0, Nil) in "
+        "Cons (1, x)",
+    Env = new_env(),
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Res = typ_module(M, Env),
+    ?assertMatch({error, {cannot_unify, t_float, t_int}}, Res).
     
 -endif.

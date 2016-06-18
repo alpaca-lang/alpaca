@@ -251,8 +251,6 @@ make_infix(Op, A, B) ->
                 args=[A, B]}.
 
 make_define([{symbol, _, N} = Name|A], Expr) ->
-    io:format("~nDefining function ~w ~s~n", [Name, N]),
-    
     case validate_args(A) of
         {ok, Args} ->
             #mlfe_fun_def{name=Name, args=Args, body=Expr};

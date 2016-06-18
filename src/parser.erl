@@ -255,6 +255,13 @@ rename_bindings(NextVar, Map, #mlfe_apply{name=N, args=Args}=App) ->
         {NV2, M2, Args2} ->
             {NV2, M2, App#mlfe_apply{name=Name, args=Args2}}
     end;
+rename_bindings(NextVar, Map, #mlfe_type_apply{arg=none}=A) ->
+    {NextVar, Map, A};
+rename_bindings(NextVar, Map, #mlfe_type_apply{arg=Arg}=A) ->
+    case rename_bindings(NextVar, Map, Arg) of
+        {error, _}=Err -> Err;
+        {NV, M, Arg2} -> {NV, M, A#mlfe_type_apply{arg=Arg2}}
+    end;
 rename_bindings(NextVar, Map, #mlfe_type_check{expr=E}=TC) ->
     case rename_bindings(NextVar, Map, E) of
         {error, _}=Err -> Err;
