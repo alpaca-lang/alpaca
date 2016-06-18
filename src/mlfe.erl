@@ -85,4 +85,13 @@ basic_math_compile_test() ->
     ?assertEqual(5, N:add(2, 3)),
     true = code:delete(N).
 
+basic_adt_compile_test() ->
+    Res = compile({files, ["test_files/basic_adt.mlfe"]}),
+    [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
+    {module, N} = code:load_binary(N, FN, Bin),
+    ?assertEqual(0, N:len('Nil')),
+    ?assertEqual(1, N:len({'Cons', {1, 'Nil'}})),
+    ?assertEqual(2, N:len({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
+    true = code:delete(N).
+
 -endif.

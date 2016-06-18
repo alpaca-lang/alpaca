@@ -1855,6 +1855,9 @@ json_union_type_test() ->
     Res = typ_module(M, Env),
     ?assertMatch({ok, 
                   #mlfe_module{
+                     types=[#mlfe_type{
+                               module='json_union_type_test',
+                               name={type_name, 3, "json"}}],
                      functions=[#mlfe_fun_def{
                                    name={symbol, _, "json_to_atom"},
                                    type={t_arrow,

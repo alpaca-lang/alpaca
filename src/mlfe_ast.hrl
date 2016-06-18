@@ -96,13 +96,15 @@
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
--record(mlfe_type, {name={type_name, -1, ""} :: mlfe_type_name(),
-                    vars=[]                  :: list(mlfe_type_var()),
-                    members=[]               :: list(mlfe_constructor()
-                                                     | mlfe_type()
-                                                     | mlfe_type_tuple()
-                                                     | mlfe_base_type())
-                   }).
+-record(mlfe_type, {
+          module=undefined :: atom(),
+          name={type_name, -1, ""} :: mlfe_type_name(),
+          vars=[]                  :: list(mlfe_type_var()),
+          members=[]               :: list(mlfe_constructor()
+                                           | mlfe_type()
+                                           | mlfe_type_tuple()
+                                           | mlfe_base_type())
+         }).
 -type mlfe_type() :: #mlfe_type{}.
 
 -record(mlfe_type_apply, {type=undefined :: typ(),

@@ -1,0 +1,9 @@
+module basic_adt
+
+export len/1
+
+type my_list 'x = Cons ('x, my_list 'x) | Nil
+
+len l = match l with
+    Nil -> 0
+  | Cons (_, tail) -> 1 + (len tail)

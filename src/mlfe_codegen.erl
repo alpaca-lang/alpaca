@@ -151,6 +151,10 @@ gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
                 
 gen_expr(Env, #mlfe_tuple{values=Vs}) ->
     cerl:c_tuple([gen_expr(Env, E) || E <- Vs]);
+gen_expr(_Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
+    cerl:c_atom(N);
+gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
+    cerl:c_tuple([cerl:c_atom(N), gen_expr(Env, A)]);
 %% Expressions, Clauses
 gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(gen_expr(Env, E), [gen_expr(Env, X) || X <- Cs]);

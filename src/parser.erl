@@ -19,8 +19,11 @@ parse_module(NextVarNum, Text) when is_list(Text) ->
 
 parse_module([], #mlfe_module{name=no_module}) ->
     {error, no_module_defined};
-parse_module([], #mlfe_module{functions=Funs}=M) ->
-    {ok, M#mlfe_module{functions=lists:reverse(Funs)}};
+parse_module([], #mlfe_module{name=N, functions=Funs, types=Ts}=M) ->
+    OrderedFuns = lists:reverse(Funs),
+    TypesWithModule = [T#mlfe_type{module=N} || T <- Ts],
+    {ok, M#mlfe_module{functions=OrderedFuns,
+                       types = TypesWithModule}};
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
 parse_module(Tokens, Mod) ->
