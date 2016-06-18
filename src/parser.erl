@@ -427,7 +427,7 @@ user_types_test_() ->
                                                arg=t_int}]}},
                    test_parse("type t = int | A int")),
      ?_assertMatch({ok, #mlfe_type{
-                          name={type_name, 1, "list"},
+                          name={type_name, 1, "my_list"},
                           vars=[{type_var, 1, "x"}],
                           members=[#mlfe_constructor{
                                      name={type_constructor, 1, "Nil"},
@@ -437,10 +437,10 @@ user_types_test_() ->
                                       arg=#mlfe_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       #mlfe_type{
-                                                         name={type_name, 1, "list"},
+                                                         name={type_name, 1, "my_list"},
                                                          vars=[{type_var, 1, "x"}]}]}
                                      }]}},
-                   test_parse("type list 'x = Nil | Cons ('x, list 'x)")),
+                   test_parse("type my_list 'x = Nil | Cons ('x, my_list 'x)")),
      ?_assertMatch({error, {duplicate_type, "t"}},
                    parse_module(0, 
                                 "module dupe_types_1\n\n"

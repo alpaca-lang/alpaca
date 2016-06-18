@@ -513,6 +513,12 @@ inst_type_members(ParentADT, [], Env, FinishedMembers) ->
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
     inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
+inst_type_members(ADT, [{t_list, TExp}|Rem], Env, Memo) ->
+    case inst_type_members(ADT, [TExp], Env, []) of
+        {error, _}=Err -> Err;
+        {ok, Env2, _, [InstMem]} ->
+            inst_type_members(ADT, Rem, Env2, [{t_list, InstMem}|Memo])
+    end;
 inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
     Default = {error, {bad_variable, L, N}},
     case proplists:get_value(N, Vs, Default) of
@@ -1374,7 +1380,7 @@ list_test_() ->
                    top_typ_of("f x y = x :: y")),
      ?_assertMatch({{t_arrow, [{t_list, t_int}], t_int}, _},
                    top_typ_of(
-                     "f list = match list with\n"
+                     "f l = match l with\n"
                      " h :: t -> h + 1")),
      %% Ensure that a '_' in a list nested in a tuple is renamed properly
      %% so that one does NOT get unified with the other when they're 
@@ -1496,7 +1502,7 @@ recursive_fun_test_() ->
                               {t_arrow, [{unbound, A, _}], {unbound, B, _}}],
                     {t_list, {unbound, B, _}}}, _} when A =/= B,
                    top_typ_of(
-                     "map list f = match list with\n"
+                     "map l f = match l with\n"
                      "  [] -> []\n"
                      "| h :: t -> (f h) :: (map t f)"))
     ].
@@ -1832,6 +1838,39 @@ rename_constructor_wildcard_test() ->
                                                  members=[t_float, t_int]}],
                                              t_atom}}]}}, 
                  Res).    
+
+json_union_type_test() ->
+    Code =
+        "module json_union_type_test\n\n"
+        "type json = int | float | string | bool "
+        "          | list json "
+        "          | list (string, json)\n\n"
+        "json_to_atom j = match j with "
+        "    i, is_integer i -> :int"
+        "  | f, is_float f -> :float"
+        "  | (_, _) :: _ -> :json_object"
+        "  | _ :: _ -> :json_array",
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, 
+                  #mlfe_module{
+                     functions=[#mlfe_fun_def{
+                                   name={symbol, _, "json_to_atom"},
+                                   type={t_arrow,
+                                         [#adt{name="json",
+                                               members=[{t_list,
+                                                         {t_tuple,
+                                                          [t_string,
+                                                           #adt{name="json"}]}},
+                                                         {t_list,
+                                                          #adt{name="json"}},
+                                                          t_bool,
+                                                          t_string,
+                                                          t_float,
+                                                          t_int]}],
+                                               t_atom}}]}},
+                 Res).
 
 module_with_types_test() ->
     Code =
