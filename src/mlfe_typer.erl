@@ -200,6 +200,7 @@ deep_copy_type({t_arrow, A, B}, RefMap) ->
 deep_copy_type({t_list, A}, RefMap) ->
     {NewList, _} = copy_type_list(A, RefMap),
     {t_list, NewList};
+
 %% TODO:  individual cell copy.
 deep_copy_type(T, _) ->
     T.
@@ -407,6 +408,7 @@ unify_adt(_, _, A, B, _) ->
                    {cannot_unify, typ(), typ()} |
                    {bad_variable, integer(), mlfe_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn) ->
+    io:format("~n*** FIND COVERING~n~w~n~w~n~n", [T1, T2]),
     %% Convert all the available types to actual ADT types with
     %% which to attempt unions:
     TypeFolder = fun(_ ,{error, _}=Err) ->
@@ -446,6 +448,33 @@ find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn) ->
             Default = {error, {cannot_unify, T1, T2}},
             lists:foldl(F, Default, lists:reverse(ADTs))
     end.
+
+%%% try_types/5 attempts to unify the two given types with each ADT available
+%%% to the module until one is found that covers both types or we run out of
+%%% available types, yielding `'no_match'`.
+try_types(_, _, _, _, {ok, ok}=Memo) ->
+    Memo;
+try_types(T1, T2, [Candidate|Tail], Env, {none, none}) ->
+    case unify(T1, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {ok, none});
+        _ -> case unify(T2, Candidate, Env) of
+                 ok -> try_types(T1, T2, Tail, Env, {none, ok});
+                 _ -> try_types(T1, T2, Tail, Env, {none, none})
+             end
+    end;
+try_types(T1, T2, [Candidate|Tail], Env, {none, M2}=Memo) ->
+    case unify(T1, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {ok, M2});
+        _  -> try_types(T1, T2, Tail, Env, Memo)
+    end;
+try_types(T1, T2, [Candidate|Tail], Env, {M1, none}=Memo) ->
+    case unify(T2, Candidate, Env) of
+        ok -> try_types(T1, T2, Tail, Env, {M1, ok});
+        _  -> try_types(T1, T2, Tail, Env, Memo)
+    end;
+try_types(_, _, [], _, _) ->
+    no_match.
+
 
 %%% To search for a potential union, a type's variables all need to be
 %%% instantiated and its members that are other types need to use the
@@ -515,30 +544,7 @@ inst_type_members(ADT,
 %% Everything else gets discared.  Type constructors are not types in their 
 %% own right and thus not eligible for unification so we just discard them here:
 inst_type_members(ADT, [_|T], Env, Memo) ->
-    inst_type_members(ADT, T, Env, Memo).
-    
-try_types(_, _, _, _, {ok, ok}=Memo) ->
-    Memo;
-try_types(T1, T2, [Candidate|Tail], Env, {none, none}) ->
-    case unify(T1, Candidate, Env) of
-        ok -> try_types(T1, T2, Tail, Env, {ok, none});
-        _ -> case unify(T2, Candidate, Env) of
-                 ok -> try_types(T1, T2, Tail, Env, {none, ok});
-                 _ -> try_types(T1, T2, Tail, Env, {none, none})
-             end
-    end;
-try_types(T1, T2, [Candidate|Tail], Env, {none, M2}=Memo) ->
-    case unify(T1, Candidate, Env) of
-        ok -> try_types(T1, T2, Tail, Env, {ok, M2});
-        _  -> try_types(T1, T2, Tail, Env, Memo)
-    end;
-try_types(T1, T2, [Candidate|Tail], Env, {M1, none}=Memo) ->
-    case unify(T2, Candidate, Env) of
-        ok -> try_types(T1, T2, Tail, Env, {M1, ok});
-        _  -> try_types(T1, T2, Tail, Env, Memo)
-    end;
-try_types(_, _, [], _, _) ->
-    no_match.
+    inst_type_members(ADT, T, Env, Memo).    
 
 %%% When the typer encounters the application of a type constructor, we can
 %%% treat it somewhat like a typ arrow vs a normal function arrow (see
@@ -1853,4 +1859,41 @@ module_matching_lists_test() ->
                                                vars=[{"x", t_int}]}],
                                            t_atom}}]}}, 
                  Res).
+
+%%% When ADTs are instantiated their variables and references to those 
+%%% variables are put in reference cells.  Two functions that use the
+%%% ADT with different types should not permanently union the ADTs 
+%%% variables, one preventing the other from using the ADT.
+type_var_protection_test() ->
+    Code =
+        "module module_matching_lists\n\n"
+        "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
+        "a x = match x with "
+        "Nil -> :nil"
+        "| Cons (i, Nil), is_integer i -> :one_integer"
+        "| Cons (i, x) -> :more_than_one_integer\n\n"
+        "b x = match x with "
+        "Nil -> :nil"
+        "| Cons (f, Nil), is_float f -> :one_float"
+        "| Cons (f, x) -> :more_than_one_float\n\n",
+    {ok, _, _, M} = parser:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                     name={symbol, 5, "a"},
+                                     type={t_arrow,
+                                           [#adt{
+                                               name="my_list",
+                                               vars=[{"x", t_int}]}],
+                                           t_atom}},
+                                   #mlfe_fun_def{
+                                      name={symbol, 7, "b"},
+                                      type={t_arrow,
+                                            [#adt{
+                                                name="my_list",
+                                                vars=[{"x", t_float}]}],
+                                            t_atom}}]}}, 
+                 Res).
+    
 -endif.
