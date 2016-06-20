@@ -427,7 +427,7 @@ test_parse(S) ->
     parse(scanner:scan(S)).
 
 symbols_test_() ->
-    [?_assertEqual({ok, {symbol, 1, "oneSymbol"}}, 
+    [?_assertMatch({ok, {symbol, 1, "oneSymbol"}}, 
                    parse(scanner:scan("oneSymbol")))
     ].
 
@@ -485,11 +485,11 @@ defn_test_() ->
      %% TODO:  I'm not sure if I want to allow nullary functions
      %% at the top level when they're not allowed in let forms.
      %% Strikes me as potentially quite confusing.
-     ?_assertEqual({ok, #mlfe_fun_def{name={symbol, 1, "x"},
+     ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "x"},
                                       args=[], 
                                       body={int, 1, 5}}},
                    parse(scanner:scan("x=5"))),
-     ?_assertEqual({ok, #mlfe_fun_def{name={symbol, 1, "double"}, 
+     ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "double"}, 
                                        args=[{symbol, 1, "x"}],
                                        body=#mlfe_apply{
                                                type=undefined,
@@ -497,7 +497,7 @@ defn_test_() ->
                                                args=[{symbol, 1, "x"},
                                                      {symbol, 1, "x"}]}}},
                   parse(scanner:scan("double x = x + x"))),
-     ?_assertEqual({ok, #mlfe_fun_def{name={symbol, 1, "add"}, 
+     ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "add"}, 
                                       args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
                                       body=#mlfe_apply{
                                               type=undefined,
@@ -515,7 +515,7 @@ float_math_test_() ->
     ].
 
 let_binding_test_() ->
-    [?_assertEqual({ok, #fun_binding{
+    [?_assertMatch({ok, #fun_binding{
                            def=#mlfe_fun_def{
                                   name={symbol, 1, "double"}, 
                                   args=[{symbol, 1, "x"}],
@@ -528,7 +528,7 @@ let_binding_test_() ->
                                    name={symbol, 1, "double"}, 
                                    args=[{int, 1, 2}]}}}, 
                    parse(scanner:scan("let double x = x + x in double 2"))),
-     ?_assertEqual({ok, #var_binding{
+     ?_assertMatch({ok, #var_binding{
                            name={symbol, 1, "x"},
                            to_bind=#mlfe_apply{
                                       name={symbol, 1, "double"},
@@ -537,7 +537,7 @@ let_binding_test_() ->
                                    name={symbol, 1, "double"},
                                    args=[{symbol, 1, "x"}]}}},
                     parse(scanner:scan("let x = double 2 in double x"))),
-     ?_assertEqual({ok, #mlfe_fun_def{
+     ?_assertMatch({ok, #mlfe_fun_def{
                            name={symbol, 1, "doubler"}, 
                            args=[{symbol, 1, "x"}],
                            body=#fun_binding{
@@ -556,7 +556,7 @@ let_binding_test_() ->
                            "doubler x =\n"
                            "  let double x = x + x in\n"
                            "  double 2"))),
-     ?_assertEqual({ok, #mlfe_fun_def{
+     ?_assertMatch({ok, #mlfe_fun_def{
                            name={symbol,1,"my_fun"},
                            args=[{symbol,1,"x"},{symbol,1,"y"}],
                            body=#fun_binding{
@@ -594,53 +594,53 @@ let_binding_test_() ->
     ].
 
 application_test_() ->
-    [?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "double"},
+    [?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "double"},
                                     args=[{int, 1, 2}]}},
                   parse(scanner:scan("double 2"))),
-     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "two"}, 
+     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "two"}, 
                                     args=[{symbol, 1, "symbols"}]}},
                    parse(scanner:scan("two symbols"))),
-     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "x"}, 
+     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "x"}, 
                                     args=[{symbol, 1, "y"}, {symbol, 1, "z"}]}},
                    parse(scanner:scan("x y z"))),
-     ?_assertEqual({ok, {error, {invalid_fun_application,
+     ?_assertMatch({ok, {error, {invalid_fun_application,
                             {int, 1, 1},
                            [{symbol, 1, "x"}, {symbol, 1, "y"}]}}},
                     parse(scanner:scan("1 x y"))),
-     ?_assertEqual({ok, #mlfe_apply{
+     ?_assertMatch({ok, #mlfe_apply{
                            name={'module', {symbol, 1, "fun"}, 2},
                            args=[{int, 1, 1}, {symbol, 1, "x"}]}},
                    parse(scanner:scan("module.fun 1 x")))
     ].
 
 module_def_test_() ->
-    [?_assertEqual({ok, {module, 'test_mod'}}, 
+    [?_assertMatch({ok, {module, 'test_mod'}}, 
                    parse(scanner:scan("module test_mod"))),
-     ?_assertEqual({ok, {module, 'myMod'}}, 
+     ?_assertMatch({ok, {module, 'myMod'}}, 
                    parse(scanner:scan("module myMod")))
     ].
 
 export_test_() ->
-    [?_assertEqual({ok, {export, [{"add", 2}]}},
+    [?_assertMatch({ok, {export, [{"add", 2}]}},
                   parse(scanner:scan("export add/2")))
     ].
 
 expr_test_() ->
-    [?_assertEqual({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
-     ?_assertEqual({ok, #mlfe_apply{type=undefined,
+    [?_assertMatch({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
+     ?_assertMatch({ok, #mlfe_apply{type=undefined,
                                     name={bif, '+', 1, erlang, '+'}, 
                                     args=[{int, 1, 1}, 
                                           {int, 1, 5}]}},
                   parse(scanner:scan("1 + 5"))),
-     ?_assertEqual({ok, #mlfe_apply{name={symbol, 1, "add"}, 
+     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "add"}, 
                                     args=[{symbol, 1, "x"},
                                           {int, 1, 2}]}},
                    parse(scanner:scan("add x 2"))),
-     ?_assertEqual({ok, 
+     ?_assertMatch({ok, 
                     #mlfe_apply{name={symbol, 1, "double"},
                                 args=[{symbol, 1, "x"}]}}, 
                    parse(scanner:scan("(double x)"))),
-     ?_assertEqual({ok, #mlfe_apply{
+     ?_assertMatch({ok, #mlfe_apply{
                            name={symbol, 1, "tuple_func"},
                            args=[#mlfe_tuple{
                                     arity=2,
@@ -682,7 +682,7 @@ module_with_let_test() ->
                   parse_module(0, Code)).
 
 match_test_() ->
-    [?_assertEqual({ok, #mlfe_match{match_expr={symbol, 1, "x"},
+    [?_assertMatch({ok, #mlfe_match{match_expr={symbol, 1, "x"},
                                     clauses=[#mlfe_clause{
                                                 pattern={int, 2, 0}, 
                                                 result={symbol, 2, "zero"}},
@@ -693,7 +693,7 @@ match_test_() ->
                            "match x with\n"
                            " 0 -> zero\n"
                            "| _ -> non_zero\n"))),
-     ?_assertEqual({ok, #mlfe_match{match_expr=#mlfe_apply{
+     ?_assertMatch({ok, #mlfe_match{match_expr=#mlfe_apply{
                                                   name={symbol, 1, "add"}, 
                                                   args=[{symbol, 1, "x"}, 
                                                         {symbol, 1, "y"}]},
@@ -710,7 +710,7 @@ match_test_() ->
                            " 0 -> :zero\n"
                            "| 1 -> :one\n"
                            "| _ -> :more_than_one\n"))),
-     ?_assertEqual({ok, #mlfe_match{
+     ?_assertMatch({ok, #mlfe_match{
                            match_expr={symbol, 1, "x"},
                            clauses=[#mlfe_clause{
                                        pattern=#mlfe_tuple{
@@ -728,7 +728,7 @@ match_test_() ->
                            "match x with\n"
                            "  (_, x) -> :anything_first\n"
                            "| (1, x) -> :one_first\n"))),
-     ?_assertEqual({ok, #mlfe_match{
+     ?_assertMatch({ok, #mlfe_match{
                            match_expr=#mlfe_tuple{
                                          arity=2, 
                                          values=[{symbol, 1, "x"}, 
@@ -749,14 +749,14 @@ match_test_() ->
 
 tuple_test_() ->
     %% first no unary tuples:
-    [?_assertEqual({ok, {int, 1, 1}}, parse(scanner:scan("(1)"))),
-     ?_assertEqual({ok, #mlfe_tuple{arity=2, 
+    [?_assertMatch({ok, {int, 1, 1}}, parse(scanner:scan("(1)"))),
+     ?_assertMatch({ok, #mlfe_tuple{arity=2, 
                                     values=[{int, 1, 1}, {int, 1, 2}]}},
                    parse(scanner:scan("(1, 2)"))),
-     ?_assertEqual({ok, #mlfe_tuple{arity=2,
+     ?_assertMatch({ok, #mlfe_tuple{arity=2,
                                     values=[{symbol, 1, "x"}, {int, 1, 1}]}},
                    parse(scanner:scan("(x, 1)"))),
-     ?_assertEqual({ok, #mlfe_tuple{
+     ?_assertMatch({ok, #mlfe_tuple{
                            arity=2, 
                            values=[#mlfe_tuple{arity=2, 
                                                values=[{int, 1, 1}, 
@@ -773,18 +773,18 @@ list_test_() ->
                                                   head={int, 1, 3},
                                                   tail={nil, 0}}}}},
                    test_parse("[1, 2, 3]")),
-     ?_assertEqual({ok, {nil, 1}}, parse(scanner:scan("[]"))),
-     ?_assertEqual({ok, #mlfe_cons{head={int, 1, 1}, tail={nil, 1}}},
+     ?_assertMatch({ok, {nil, 1}}, parse(scanner:scan("[]"))),
+     ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1}, tail={nil, 1}}},
                    parse(scanner:scan("[1]"))),
-     ?_assertEqual({ok, #mlfe_cons{
+     ?_assertMatch({ok, #mlfe_cons{
                            head={symbol, 1, "x"},
                            tail=#mlfe_cons{head={int, 1, 1}, 
                                            tail={nil, 1}}}},
                    parse(scanner:scan("x :: [1]"))),
-     ?_assertEqual({ok, #mlfe_cons{head={int, 1, 1},
+     ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1},
                                    tail={symbol, 1, "y"}}},
                    parse(scanner:scan("1 :: y"))),
-     ?_assertEqual({ok, #mlfe_match{
+     ?_assertMatch({ok, #mlfe_match{
                            match_expr={symbol,1,"x"},
                            clauses=[#mlfe_clause{pattern={nil,2},
                                                  result={nil,2}},
@@ -799,8 +799,8 @@ list_test_() ->
     ].
 
 string_test_() ->
-    [?_assertEqual({ok, {string, 1, "Hello world"}}, test_parse("\"Hello world\"")),
-     ?_assertEqual({ok, {string, 1, "Nested \" quotes"}},
+    [?_assertMatch({ok, {string, 1, "Hello world"}}, test_parse("\"Hello world\"")),
+     ?_assertMatch({ok, {string, 1, "Nested \" quotes"}},
                    test_parse("\"Nested " "\"" " quotes\""))
     ].
 

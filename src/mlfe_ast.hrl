@@ -129,6 +129,7 @@
 -type mlfe_type_apply() :: #mlfe_type_apply{}.
 
 -record(mlfe_cons, {type=undefined :: typ(),
+                    line=0 :: integer(),
                     head :: mlfe_expression(),
                     tail :: mlfe_cons()
                           | mlfe_nil()
@@ -157,6 +158,7 @@
 -type mlfe_type_check() :: #mlfe_type_check{}.
 
 -record(mlfe_clause, {type=undefined :: typ(),
+                      line=0 :: integer(),
                       pattern :: mlfe_expression(),
                       guards=[] :: list(mlfe_expression()),
                       result :: mlfe_expression()
@@ -164,6 +166,7 @@
 -type mlfe_clause() :: #mlfe_clause{}.
 
 -record(mlfe_match, {type=undefined :: typ(),
+                     line=0 :: integer(),
                      match_expr :: mlfe_expression(),
                      clauses :: list(mlfe_clause())
                     }).

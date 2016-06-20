@@ -135,7 +135,7 @@ cons -> '[' ']' :
   {nil, L}.
 cons -> '[' term ']' : 
   {_, L} = '$3',
-  #mlfe_cons{head='$2', tail={nil, L}}.
+  #mlfe_cons{head='$2', tail={nil, L}, line=L}.
 cons -> term ':' term : #mlfe_cons{head='$1', tail='$3'}.
 cons -> '[' literal_cons_items ']':
   F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
@@ -183,13 +183,15 @@ guards -> guard ',' guards : ['$1'|'$3'].
 
 match_pattern -> term : '$1'.
 match_clause -> match_pattern '->' simple_expr :
-  #mlfe_clause{pattern='$1', result='$3'}.
+  #mlfe_clause{pattern='$1', result='$3', line=term_line('$1')}.
 match_clause -> match_pattern ',' guards '->' simple_expr :
   #mlfe_clause{pattern='$1', guards='$3', result='$5'}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
 
-match_with  -> match simple_expr with match_clauses : #mlfe_match{match_expr='$2', clauses='$4'}.
+match_with  -> match simple_expr with match_clauses : 
+  {match, L} = '$1',
+  #mlfe_match{match_expr='$2', clauses='$4', line=L}.
 
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
@@ -299,3 +301,11 @@ make_binding(#mlfe_fun_def{name=N, args=[], body=B}, Expr) ->
 make_binding(Def, Expr) ->
     #fun_binding{def=Def, expr=Expr}.
     
+term_line(Term) ->
+    case Term of
+        {_, L} when is_integer(L) -> L;
+        {_, L, _} when is_integer(L) -> L;
+        #mlfe_cons{line=L} -> L;
+        #mlfe_tuple{values=[H|_]} -> term_line(H);
+        #mlfe_type_apply{name=N} -> term_line(N)
+    end.
