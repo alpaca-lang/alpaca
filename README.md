@@ -53,6 +53,32 @@ where I'm going.
 
 `example.mlfe` is a work in progress showing roughly what I'm aiming for.
 
+# What's Missing
+A very incomplete list:
+
+- binaries (at all).  I'm mostly thinking of just reimplementing the
+  basic Erlang syntax, probably not very difficult.
+- binary strings vs lists of characters, like Elixir.  I suspect
+  default UTF-8 is a good decision.
+- anything like behaviours or things that would support them.  Traits,
+  type classes, ML modules, etc all smell like supersets to me but I'm
+  not sure which way to jump yet.
+- simpler FFI to Erlang via dialyzer.  I'm not certain how feasible
+  this is but I'd like to dig a little deeper to see if it's possible.
+- anything for unit testing
+- annotations in the BEAM file output (source line numbers, etc).  Not
+  hard based on what I've seen in the [LFE](https://github.com/lfe)
+  code base.
+- support for typing anything other than a raw source file.  I need to
+  investigate reading/writing beam file annotations to help with this
+  I suspect.
+- records, especially with structural matching.
+- pattern matching in function declarations directly rather than in
+  the body.
+- type annotations/restrictions/ascriptions.  I'm toying with the idea
+  of putting these in comments so that if the documentation is wrong
+  it yields a compiler error.
+
 # Parsing Approach
 I'm planning on parsing/validating over several passes:
 
@@ -134,34 +160,9 @@ already in the list of entered modules.  If so, type checking fails with an
 error.
 
 ## No "Any" Type
-There is currently no "any" root type.  This is going to be a problem for
+There is currently no "any" root/bottom type.  This is going to be a problem for
 something like a simple `println`/`printf` function as a simple to use version
 of this would best take a List of Any.  The FFI to Erlang code gets around this
 by not type checking the arguments passed to it and only checking the result
 portion of the pattern matches.
-
-# Current TODO
-A somewhat structured (but unordered) set of what it will take to get to
-something usable, even before worrying about tooling around dependency
-management, etc.
-
-## Missing Types
-
-- binary
-- boolean
-- pid
-- map
-- iolist
-- structs
-- data types (tagged unions)/ADTs
-
-## Basic Items
-
-- pattern matching guards
-
-## Receive
-I think this will look like basic clauses as in matches but also requires an
-optional timeout and associated action.  I'm as yet unsure of how I'm going to
-handle guards on types but likely in the same way I do for the Erlang FFI.  I'm
-thinking a form of predicate at the moment.
 

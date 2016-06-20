@@ -1,16 +1,15 @@
 module math
 
-export add/2
-export sub/2
+export add/2, sub/2
 
 adder x y = x + y
 
 add x y = adder x y
 
-(* I think the assertions should actually get imported/defined
- * by a library, where a test case in the list really returns
- * either "passed" or "failed and here's a message why".
- *)
+/* I think the assertions should actually get imported/defined
+   by a library, where a test case in the list really returns
+   either "passed" or "failed and here's a message why".
+*/
 -test add = [assert_equal (add 2 2) 4,
              assert_equal (add 1 5) 6]
 
