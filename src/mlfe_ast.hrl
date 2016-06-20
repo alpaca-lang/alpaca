@@ -49,6 +49,13 @@
              | t_clause()
              | typer:t_cell().  % a reference cell for a type.
 
+-record(mlfe_comment, {
+          multi_line=false :: bool(),
+          line=0 :: integer(),
+          text="" :: string()}).
+-type mlfe_comment() :: #mlfe_comment{}.
+
+
 -type mlfe_symbol() :: {symbol, integer(), string()}.
 
 -type mlfe_unit() :: {unit, integer()}.
@@ -60,6 +67,7 @@
 
 %%% The variable _, meaning "don't care":
 -type mlfe_any() :: {any, integer()}.
+
 -type mlfe_string() :: {string, integer(), binary()}.
 
 -type mlfe_const() :: mlfe_unit()
@@ -85,6 +93,13 @@
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
+%% Explicit built-in list type for use in ADT definitions.
+-type mlfe_list_type() :: {mlfe_list, 
+                           mlfe_type()
+                           | mlfe_type_tuple()
+                           | mlfe_type_var()
+                           | mlfe_base_type()}.
+
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ(),
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
@@ -103,7 +118,8 @@
           members=[]               :: list(mlfe_constructor()
                                            | mlfe_type()
                                            | mlfe_type_tuple()
-                                           | mlfe_base_type())
+                                           | mlfe_base_type()
+                                           | mlfe_list_type())
          }).
 -type mlfe_type() :: #mlfe_type{}.
 
@@ -162,7 +178,8 @@
                    clauses :: list(mlfe_clause())
                   }).
 
--type mlfe_expression() :: mlfe_const()
+-type mlfe_expression() :: mlfe_comment()
+                         | mlfe_const()
                          | mlfe_symbol()
                          | mlfe_apply()
                          | mlfe_type_apply()

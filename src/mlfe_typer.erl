@@ -513,11 +513,11 @@ inst_type_members(ParentADT, [], Env, FinishedMembers) ->
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
     inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
-inst_type_members(ADT, [{t_list, TExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{mlfe_list, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstMem]} ->
-            inst_type_members(ADT, Rem, Env2, [{t_list, InstMem}|Memo])
+            inst_type_members(ADT, Rem, Env2, [new_cell({t_list, InstMem})|Memo])
     end;
 inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
     Default = {error, {bad_variable, L, N}},
@@ -529,8 +529,8 @@ inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
     case inst_type_members(ADT, Ms, Env, []) of
         {error, _}=Err ->
             Err;
-        {ok, _, _, InstMembers} ->
-            inst_type_members(ADT, T, Env, [new_cell({t_tuple, InstMembers})|Memo])
+        {ok, Env2, _, InstMembers} ->
+            inst_type_members(ADT, T, Env2, [new_cell({t_tuple, InstMembers})|Memo])
     end;
 
 inst_type_members(ADT,
@@ -1038,9 +1038,7 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
             Err;
         {T, NextVar} ->
             Env3 = update_counter(NextVar, Env2),
-            
-            io:format("===  FUN DEF:  ==============~n", []),
-            dump_env(Env3),
+            %dump_env(Env3),
             JustTypes = [Typ || {_, Typ} <- ArgTypes],
             {{t_arrow, JustTypes, T}, NextVar}
     end;
@@ -1049,15 +1047,13 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
 typ_of(Env, Lvl, #fun_binding{
                def=#mlfe_fun_def{name={symbol, _, N}}=E, 
                expr=E2}) ->
-    io:format("=== FUN BIND:  ~s ========~n", [N]),
     {TypE, NextVar} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
 
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    io:format("=== VAR BIND:  ~s ========~n", [N]),
-    dump_env(Env),
+    %dump_env(Env),
     {TypE, NextVar} = typ_of(Env, Lvl, E1),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).

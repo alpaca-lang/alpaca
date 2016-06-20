@@ -2,8 +2,12 @@ module basic_adt
 
 export len/1
 
+/* simple linked list,
+   multi-line comment.
+*/
 type my_list 'x = Cons ('x, my_list 'x) | Nil
 
 len l = match l with
     Nil -> 0
+    // single line comment should be ignored:
   | Cons (_, tail) -> 1 + (len tail)

@@ -1,5 +1,6 @@
 Nonterminals 
 
+comment
 op infix
 const
 type mono_type poly_type type_member type_members type_expr type_vars
@@ -19,6 +20,8 @@ expr simple_expr.
 
 Terminals 
 
+comment_line comment_lines
+
 module export 
 type_declare type_constructor type_var base_type base_list
 boolean int float atom string chars '_'
@@ -35,6 +38,19 @@ let in '(' ')' '/' ','
 eq neq gt lt gte lte.
 
 Rootsymbol expr.
+
+%% Comments are stripped in the AST assembly right now but I want them 
+%% embedded soon.
+comment -> comment_line :
+  {comment_line, L, Chars} = '$1',
+  #mlfe_comment{multi_line=false,
+                line=L,
+                text=Chars}.
+comment -> comment_lines :
+  {comment_lines, L, Chars} = '$1',
+  #mlfe_comment{multi_line=true,
+                line=L,
+                text=Chars}.
 
 module_def -> module atom : {module, '$1'}.
 
@@ -64,7 +80,7 @@ type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
 type_expr -> base_list type_expr: 
-  {t_list, '$2'}.
+  {mlfe_list, '$2'}.
 
 type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
 type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].
@@ -221,6 +237,7 @@ simple_expr -> match_with : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.
 
+expr -> comment : '$1'.
 expr -> simple_expr : '$1'.
 expr -> type : '$1'.
 expr -> module_def : '$1'.

@@ -95,8 +95,6 @@ check_dupes([], _, _) ->
 
 unique_type_names(Types) ->
     Names = lists:sort([N || #mlfe_type{name={type_name, _, N}} <- Types]),
-    io:format("Types:  ~w~n", [Types]),
-    io:format("Names:  ~w~n", [Names]),
     check_dupes(Names, 
                 fun(A, B) -> A =:= B end, 
                 fun(A) -> {error, {duplicate_type, A}} end).
@@ -123,15 +121,27 @@ update_memo(#mlfe_module{name=Name}, {module, DupeName}) ->
 update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#mlfe_module{function_exports=Es ++ Exports}};
 update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
-    io:format("Adding function ~w~n", [N]),
+    io:format("Adding parsed function ~w~n", [N]),
     {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
     {ok, M#mlfe_module{types=[T|Ts]}};
+update_memo(M, #mlfe_comment{}) ->
+    {ok, M};
 update_memo(_, Bad) ->
     {error, {"Top level requires defs, module, and export declarations", Bad}}.
 
+%% Select a discrete batch of tokens to parse.  This basically wants a sequence
+%% from the beginning of a top-level expression to a recognizable break between
+%% it and the next discrete expression (e.g. two newlines).
 next_batch([{break, _}|Rem], Memo) ->
     {lists:reverse(Memo), Rem};
+%% TODO:  comments should get embedded in the AST for a "go fmt"-like tool as
+%%        well as compiler-checked documentation.  This will require new fields
+%%        in AST nodes.
+next_batch([{comment_lines, _, _}|Rem], Memo) ->
+    next_batch(Rem, Memo);
+next_batch([{comment_line, _, _}|Rem], Memo) ->
+    next_batch(Rem, Memo);
 next_batch([], Memo) ->
     {lists:reverse(Memo), []};
 next_batch([Token|Tail], Memo) ->

@@ -91,5 +91,26 @@ _    : {token, {'_', TokenLine}}.
 {WS} : skip_token.
 {BRK} : {token, {break, TokenLine}}.
 
+%% Comments
+//[.]*\n : 
+  Text = string:sub_string(TokenChars, 3),
+  {token, {comment_line, TokenLine, Text}}.
+(/\*([^*]|(\*+[^*/]))*\*+/)|(//.*) : {token, {comment_lines, TokenLine, TokenChars}}.
+
+%% Separators
+,     : {token, {',', TokenLine}}.
+/     : {token, {'/', TokenLine}}.
+
+{     : {token, {'{', TokenLine}}.
+}     : {token, {'}', TokenLine}}.
+\(    : {token, {'(', TokenLine}}.
+\)    : {token, {')', TokenLine}}.
+\|    : {token, {'|', TokenLine}}.
+\:\:    : {token, {':', TokenLine}}.
+\[    : {token, {'[', TokenLine}}.
+\]    : {token, {']', TokenLine}}.
+()    : {token, {unit, TokenLine}}.
+
+
 Erlang code.
 
