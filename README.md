@@ -133,10 +133,36 @@ constructors in tuples led by atoms, e.g.
 become `{'Cons', {1, 'Nil'}}`.  Exercise caution with the order of
 your pattern match clauses accordingly.
 
+## Modules (The Erlang Kind)
+ML-style modules aren't implemented and I'm leaning somewhat more
+towards type classes and traits.  Modules in MLFE are the same as
+modules in Erlang, top-level entities including:
+
+- a module name (required)
+- function exports (with arity, as in Erlang)
+- type declarations (ADTs)
+- functions which can contain other functions and variables via `let`
+bindings.
+
+An example:
+
+    module try
+
+    export map/2  // separate multiple exports with commas
+
+    // type variables start with a single quote:
+    type maybe_success 'error 'ok = Error 'error | Success 'ok
+
+    // Apply a function to a successful result or preserve an error.
+    map e f = match e with
+        Error _ -> e
+      | Success ok -> Success (f ok)
+
 # Problems
 ## What's Missing
 A very incomplete list:
 
+- exception handling (try/catch)
 - any sort of standard library.  Biggest missing things to me right
   now are things like basic string manipulation functions and
   adapters for `gen_server`, etc.

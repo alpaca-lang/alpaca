@@ -1,3 +1,17 @@
+% Copyright 2016 Jeremy Pierre
+%
+% Licensed under the Apache License, Version 2.0 (the "License");
+% you may not use this file except in compliance with the License.
+% You may obtain a copy of the License at
+%
+%     http://www.apache.org/licenses/LICENSE-2.0
+%
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS,
+% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+% See the License for the specific language governing permissions and
+% limitations under the License.
+
 %%% ## Type-Tracking Data Types 
 %%% 
 %%% These are all of the specs the typer uses to track MLFE types.
@@ -49,6 +63,8 @@
              | t_clause()
              | typer:t_cell().  % a reference cell for a type.
 
+%%% ## MLFE AST Nodes
+
 -record(mlfe_comment, {
           multi_line=false :: bool(),
           line=0 :: integer(),
@@ -77,6 +93,11 @@
                     | mlfe_atom()
                     | mlfe_string()
                       .
+
+%%% ### AST Nodes For Types
+%%% 
+%%% AST nodes that describe the basic included types and constructs for
+%%% defining and instantiating ADTs (type constructors).
 
 -type mlfe_base_type() :: t_atom
                         | t_int
@@ -128,6 +149,8 @@
                           arg=none :: none | mlfe_expression()}).
 -type mlfe_type_apply() :: #mlfe_type_apply{}.
 
+%%% ### Lists
+
 -record(mlfe_cons, {type=undefined :: typ(),
                     line=0 :: integer(),
                     head :: mlfe_expression(),
@@ -139,11 +162,15 @@
 -type mlfe_nil() :: {nil, integer()}.
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
+%%% ### Tuples
+
 -record(mlfe_tuple, {type=undefined :: typ(),
                      arity :: integer(),
                      values :: list(mlfe_expression())
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
+
+%%% Pattern Matching
 
 -type type_check() :: is_integer
                     | is_float
@@ -173,6 +200,8 @@
                     }).
 -type mlfe_match() :: #mlfe_match{}.
 
+%%% ### Erlang FFI
+%%% 
 %%% A call to an Erlang function via the Foreign Function Interface.
 %%% Only the result of these calls is typed.
 -record(mlfe_ffi, {type=undefined :: typ(),
@@ -182,6 +211,7 @@
                    clauses :: list(mlfe_clause())
                   }).
 
+%%% ### Module Building Blocks
 -type mlfe_expression() :: mlfe_comment()
                          | mlfe_const()
                          | mlfe_symbol()
@@ -194,6 +224,7 @@
                          | mlfe_type_check()
                          | mlfe_binding()
                          | mlfe_fun_def()
+                         | mlfe_type_import()
                            .
 
 -record(fun_binding, {def :: mlfe_fun_def(),
@@ -248,6 +279,10 @@
           }).
 
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
+
+-record(mlfe_type_import, {module=undefined :: atom(),
+                          type=undefined :: string()}).
+-type mlfe_type_import() :: #mlfe_type_import{}.
 
 -record(mlfe_module, {
           name=no_module :: atom(),

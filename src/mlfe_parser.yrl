@@ -1,3 +1,17 @@
+% Copyright 2016 Jeremy Pierre
+%
+% Licensed under the Apache License, Version 2.0 (the "License");
+% you may not use this file except in compliance with the License.
+% You may obtain a copy of the License at
+%
+%     http://www.apache.org/licenses/LICENSE-2.0
+%
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS,
+% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+% See the License for the specific language governing permissions and
+% limitations under the License.
+
 Nonterminals 
 
 comment
@@ -6,6 +20,7 @@ const
 type mono_type poly_type type_member type_members type_expr type_vars
 type_tuple type_tuple_member type_tuple_list 
 type_apply
+type_import
 
 cons nil literal_cons_items
 term terms nested_terms
@@ -24,6 +39,7 @@ comment_line comment_lines
 
 module export 
 type_declare type_constructor type_var base_type base_list
+use
 boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
@@ -51,6 +67,10 @@ comment -> comment_lines :
   #mlfe_comment{multi_line=true,
                 line=L,
                 text=Chars}.
+
+type_import -> use module_fun:
+  [Mod, Type] = string:tokens('$2', "."),
+  #mlfe_type_import{module=list_to_atom(Mod), type=Type}
 
 module_def -> module atom : {module, '$1'}.
 
