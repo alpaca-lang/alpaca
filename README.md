@@ -118,16 +118,16 @@ will type to a tuple of `integer`, `float`.
 Since strings are currently just lists of characters as in Erlang
 proper, only the first clause will ever match:
 
-type my_list_string_union = list int | string
+    type my_list_string_union = list int | string
 
-match "Hello, world" with
-l, is_list l -> l
-s, is_string s -> s
+    match "Hello, world" with
+        l, is_list l -> l
+      | s, is_string s -> s
 
 Further, nullary type constructors are encoded as atoms and unary
 constructors in tuples led by atoms, e.g.
 
-type my_list 'x = Nil | Cons ('x, my_list 'x)
+    type my_list 'x = Nil | Cons ('x, my_list 'x)
 
 `Nil` will become `'Nil'` after compilation and `Cons (1, Nil)` will
 become `{'Cons', {1, 'Nil'}}`.  Exercise caution with the order of
