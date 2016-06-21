@@ -149,7 +149,8 @@
                     | is_float
                     | is_atom
                     | is_bool
-                    | is_list.
+                    | is_list
+                    | is_string.
 
 %% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
 -record(mlfe_type_check, {type :: type_check(),

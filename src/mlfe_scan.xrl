@@ -6,9 +6,9 @@ SYM = {L}[a-zA-Z0-9_]*
 ATOM = :[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
-BRK = \n\n
+BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
-TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_chars
+TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string
 
 BASE_TYPE = atom|int|float|string|pid|bool
 BASE_LIST = list
@@ -68,7 +68,7 @@ type : {token, {type_declare, TokenLine}}.
 {SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
 
 %% String
-"([^"]|\\.|\")*" :
+"(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
   {token, {string, TokenLine, S}}.
 

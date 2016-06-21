@@ -208,7 +208,7 @@ deep_copy_type(T, _) ->
 copy_type(P, RefMap) when is_pid(P) ->
     copy_cell(P, RefMap);
 copy_type(T, M) ->
-    {T, M}.
+    {new_cell(T), M}.
 
 %%% ### Typer
 %%% 
@@ -795,6 +795,8 @@ typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
     {new_cell(t_float), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {new_cell(t_atom), VarNum};
+typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->
+    {new_cell(t_string), VN};
 typ_of(Env, Lvl, {symbol, _, N}) ->
     case inst(N, Lvl, Env) of
         {error, _} = E -> E;
@@ -1279,19 +1281,19 @@ dump_term(T) ->
 -ifdef(TEST).
 
 from_code(C) ->
-    {ok, E} = parser:parse(scanner:scan(C)),
+    {ok, E} = mlfe_ast_gen:parse(scanner:scan(C)),
     E.
 
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
 top_typ_of(Code) ->
-    {ok, E} = parser:parse(scanner:scan(Code)),
+    {ok, E} = mlfe_ast_gen:parse(scanner:scan(Code)),
     typ_of(new_env(), E).
 
 %% Check the type of the expression in code from the "top-level" with a
 %% new environment that contains the provided ADTs.
 top_typ_with_types(Code, ADTs) ->
-    {ok, E} = parser:parse(scanner:scan(Code)),
+    {ok, E} = mlfe_ast_gen:parse(scanner:scan(Code)),
     Env = new_env(),
     typ_of(Env#env{current_types=ADTs,
                    type_constructors=constructors(ADTs)}, 
@@ -1430,7 +1432,7 @@ module_typing_test() ->
         "add x y = x + y\n\n"
         "head l = match l with\n"
         "  h :: t -> h",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     ?assertMatch({ok, #mlfe_module{
                          functions=[
                                     #mlfe_fun_def{
@@ -1452,7 +1454,7 @@ module_with_forward_reference_test() ->
         "export add/2\n\n"
         "add x y = adder x y\n\n"
         "adder x y = x + y",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     ?assertMatch({ok, #mlfe_module{
                          functions=[
@@ -1472,8 +1474,8 @@ simple_inter_module_test() ->
         "module inter_module_two\n\n"
         "export adder/2\n\n"
         "adder x y = x + y",
-    {ok, NV, _, M1} = parser:parse_module(0, Mod1),
-    {ok, _, _, M2} = parser:parse_module(NV, Mod2),
+    {ok, NV, _, M1} = mlfe_ast_gen:parse_module(0, Mod1),
+    {ok, _, _, M2} = mlfe_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch({ok, #mlfe_module{
@@ -1494,8 +1496,8 @@ bidirectional_module_fail_test() ->
         "export adder/2, failing_fun/1\n\n"
         "adder x y = x + y\n\n"
         "failing_fun x = inter_module_one.add x x",
-    {ok, NV, _, M1} = parser:parse_module(0, Mod1),
-    {ok, _, _, M2} = parser:parse_module(NV, Mod2),
+    {ok, NV, _, M1} = mlfe_ast_gen:parse_module(0, Mod1),
+    {ok, _, _, M2} = mlfe_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch({error, {bidirectional_module_ref, 
@@ -1535,7 +1537,7 @@ infinite_mutual_recursion_test() ->
         "module mutual_rec_test\n\n"
         "a x = b x\n\n"
         "b x = let y = x + 1 in a y",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     E = new_env(),
     ?assertMatch({ok, #mlfe_module{
                          name=mutual_rec_test,
@@ -1555,7 +1557,7 @@ terminating_mutual_recursion_test() ->
         "b x = match x with\n"
         "  10 -> :ten\n"
         "| y -> a y",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     E = new_env(),
     ?assertMatch({ok, #mlfe_module{
                          name=terminating_mutual_rec_test,
@@ -1848,7 +1850,7 @@ rename_constructor_wildcard_test() ->
         "| Pair (_, _) -> :tuple\n"
         "| Pair (_, Pair (_, _)) -> :nested_t"
         "| Pair (_, Pair (_, Pair(_, _))) -> :double_nested_t",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
@@ -1873,7 +1875,7 @@ json_union_type_test() ->
         "  | f, is_float f -> :float"
         "  | (_, _) :: _ -> :json_object"
         "  | _ :: _ -> :json_array",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, 
@@ -1907,7 +1909,7 @@ module_with_types_test() ->
         "| f, is_float f -> :float\n"
         "| (_, _) -> :tuple"
         "| (_, (_, _)) -> :nested",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
@@ -1936,7 +1938,7 @@ module_matching_lists_test() ->
         "Nil -> :nil"
         "| Cons (i, Nil), is_integer i -> :one_item"
         "| Cons (i, x) -> :more_than_one",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
@@ -1966,7 +1968,7 @@ type_var_protection_test() ->
         "| Cons (f, Nil), is_float f -> :one_float"
         "| Cons (f, x) -> :more_than_one_float\n\n"
         "c () = (Cons (1.0, Nil), Cons(1, Nil))",
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
@@ -2005,7 +2007,7 @@ type_var_protection_fail_unify_test() ->
         "let x = Cons (1.0, Nil) in "
         "Cons (1, x)",
     Env = new_env(),
-    {ok, _, _, M} = parser:parse_module(0, Code),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Res = typ_module(M, Env),
     ?assertMatch({error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
     

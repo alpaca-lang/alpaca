@@ -1,0 +1,7 @@
+module string_concat
+
+export hello/1
+
+hello x = call_erlang :string :concat ["Hello, ", x] with
+      s, is_string s -> s
+      

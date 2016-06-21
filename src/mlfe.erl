@@ -47,7 +47,7 @@ parse_modules(Mods) ->
     F = fun
             (_, {error, _}=Err) -> Err;
             (ModCode, {ok, NV, Map, Acc}) ->
-                case parser:parse_module(NV, ModCode) of
+                case mlfe_ast_gen:parse_module(NV, ModCode) of
                     {ok, NV2, Map2, Mod} ->
                         {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
                     {error, _}=Err ->
@@ -92,6 +92,13 @@ basic_adt_compile_test() ->
     ?assertEqual(0, N:len('Nil')),
     ?assertEqual(1, N:len({'Cons', {1, 'Nil'}})),
     ?assertEqual(2, N:len({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
+    true = code:delete(N).
+
+basic_concat_compile_test() ->
+    Res = compile({files, ["test_files/string_concat.mlfe"]}),
+    [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
+    {module, N} = code:load_binary(N, FN, Bin),
+    ?assertEqual("Hello, world", N:hello("world")),
     true = code:delete(N).
 
 -endif.

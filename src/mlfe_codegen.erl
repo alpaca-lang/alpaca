@@ -61,8 +61,8 @@ gen_expr(_, {atom, _, A}) ->
     cerl:c_atom(list_to_atom(A));
 gen_expr(_, {chars, _, Cs}) ->
     cerl:c_string(Cs);
-gen_expr(_, {string, _, _S}) ->
-    {error, not_implemented};
+gen_expr(_, {string, _, S}) ->
+    cerl:c_string(S);
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
 gen_expr(_Env, [{symbol, _, V}]) ->
@@ -73,10 +73,15 @@ gen_expr(_, {nil, _}) ->
     cerl:c_nil();
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
-gen_expr(Env, #mlfe_type_check{type=is_integer, expr={symbol, _, _}=S}) ->
+gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
-      cerl:c_atom('is_integer'),
+      cerl:c_atom('is_list'),
+      [gen_expr(Env, S)]);
+gen_expr(Env, #mlfe_type_check{type=T, expr={symbol, _, _}=S}) ->
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom(T),
       [gen_expr(Env, S)]);
 gen_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
     cerl:c_call(
@@ -177,7 +182,7 @@ gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
 -ifdef(TEST).
 
 parse_and_gen(Code) ->
-    {ok, _, _, Mod} = parser:parse_module(0, Code),
+    {ok, _, _, Mod} = mlfe_ast_gen:parse_module(0, Code),
     {ok, Forms} = mlfe_codegen:gen(Mod),
     compile:forms(Forms, [report, verbose, from_core]).
 

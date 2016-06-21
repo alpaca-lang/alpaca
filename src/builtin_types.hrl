@@ -34,4 +34,5 @@
                           {is_float, t_float},
                           {is_atom, t_atom},
                           {is_bool, t_bool},
-                          {is_list, t_list}]).
+                          {is_list, t_list},
+                          {is_string, t_string}]).
