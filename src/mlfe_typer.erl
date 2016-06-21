@@ -201,7 +201,6 @@ deep_copy_type({t_list, A}, RefMap) ->
     {NewList, _} = copy_type_list(A, RefMap),
     {t_list, NewList};
 
-%% TODO:  individual cell copy.
 deep_copy_type(T, _) ->
     T.
 
@@ -210,9 +209,7 @@ copy_type(P, RefMap) when is_pid(P) ->
 copy_type(T, M) ->
     {new_cell(T), M}.
 
-%%% ### Typer
-%%% 
-%%%
+%%% ## Type Inferencer
 
 occurs(Label, Level, P) when is_pid(P) ->
     occurs(Label, Level, get_cell(P));
@@ -235,7 +232,7 @@ unwrap_cell(Typ) ->
     Typ.
 
 %% Get the name of the current module out of the environment.  Useful for
-%% errro generation.
+%% error generation.
 module_name(#env{current_module=#mlfe_module{name=N}}) ->
     N;
 module_name(_) ->
@@ -407,9 +404,6 @@ unify_adt(C1, C2,
 
 unify_adt(_, _, A, B, Env, L) ->
     unify_error(Env, L, A, B).
-
-
-
 
 %%% Given two different types, find a type in the set of currently available
 %%% types that can unify them or fail.
@@ -819,13 +813,10 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
                       #mlfe_cons{}=Cons ->
                           typ_of(update_counter(NV1, Env), Lvl, Cons);
                       {symbol, L, _} = S -> 
-                          {STyp, Next} = typ_of(
-                                           update_counter(NV1, Env), 
-                                           Lvl, 
-                                           S),
-                          {TL, #env{next_var=Next2}} = new_var(
-                                               Lvl, 
-                                               update_counter(Next, Env)),
+                          {STyp, Next} = 
+                              typ_of(update_counter(NV1, Env), Lvl, S),
+                          {TL, #env{next_var=Next2}} = 
+                              new_var(Lvl, update_counter(Next, Env)),
                           case unify({t_list, TL}, STyp, Env, L) of
                               {error, _} = E -> E;
                               ok -> {STyp, Next2}
@@ -966,34 +957,29 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
     [FC|TCs] = lists:reverse(TypedCs),
 
     case lists:foldl(UnifyFolder, FC, TCs) of
-        {error, _} = Err ->
-            Err;
+        {error, _} = Err -> Err;
         _ ->
             %% unify the expression with the unified pattern:
             {t_clause, PTyp, _, RTyp} = FC,
             case unify(ETyp, PTyp, Env, Line) of
-                {error, _} = Err ->
-                    Err;
+                {error, _} = Err -> Err;
                 %% only need to return the result type of the unified clause types:
-                ok -> 
-                    {RTyp, NextVar2} 
+                ok -> {RTyp, NextVar2} 
             end
     end;
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R, line=L}) ->
     {PTyp, _, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
-    F = fun
-            (_, {error, _}=Err) -> Err;
-            (G, {Typs, AccEnv}) -> 
+    F = fun(_, {error, _}=Err) -> Err;
+           (G, {Typs, AccEnv}) -> 
                 case typ_of(AccEnv, Lvl, G) of
                     {error, _}=Err -> Err;
                     {GTyp, NV} -> {[GTyp|Typs], update_counter(NV, AccEnv)}
                 end
         end,
     {GTyps, Env2} = lists:foldl(F, {[], NewEnv}, Gs),
-    UnifyFolder = fun
-                      (_, {error, _}=Err) -> Err;
-                      (N, Acc) ->
+    UnifyFolder = fun(_, {error, _}=Err) -> Err;
+                     (N, Acc) ->
                           case unify(N, Acc, Env, L) of
                               {error, _}=Err -> Err;
                               ok -> Acc
@@ -1022,7 +1008,7 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
             end
     end;
 
-%%% Calls to Erlang code are only have their return value typed.
+%%% Calls to Erlang code only have their return value typed.
 typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
     ClauseFolder = fun(C, {Typs, EnvAcc}) ->
                            {{t_clause, _, _, T}, X} = typ_of(EnvAcc, Lvl, C),
@@ -1064,7 +1050,7 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
             {{t_arrow, JustTypes, T}, NextVar}
     end;
 
-%% A let binding inside a function:
+%% A function binding inside a function:
 typ_of(Env, Lvl, #fun_binding{
                def=#mlfe_fun_def{name={symbol, _, N}}=E, 
                expr=E2}) ->
@@ -1143,8 +1129,7 @@ get_fun(Module, FunName, Arity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun(
-  [#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A) when length(Args) =:= A, N =:= FN ->
+filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A) when length(Args) =:= A, N =:= FN ->
     {ok, Fun};
 filter_to_fun([_|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
@@ -1169,7 +1154,7 @@ args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
 %%% (variables) that occur in the pattern.  "NameNum" is used to give 
 %%% "wildcard" variable names (the '_' throwaway label) sequential and thus
 %%% differing _actual_ variable names.  This is necessary so that two different
-%%% occurrences of '_' with different types don't collide in `unify/2` and
+%%% occurrences of '_' with different types don't collide in `unify/4` and
 %%% thus cause typing to fail when it really should succeed.
 %%% 
 %%% In addition to the type determined for the thing we're adding bindings from,
@@ -1277,6 +1262,8 @@ dump_term({link, P}) when is_pid(P) ->
 dump_term(T) ->
     io_lib:format("~w", [T]).
 
+
+%%% Tests
 
 -ifdef(TEST).
 
@@ -1638,15 +1625,8 @@ type_guard_test_() ->
 
     ].
 
-%%% ## ADT Tests
+%%% ### ADT Tests
 %%% 
-%%% My implementation plan:
-%%% 
-%%% - unification failure looks at type unions to make progress
-%%% - typing of ADTs
-%%% - unification of ADTs
-%%% - binding and generalization of type constructors
-%%% - typing of type constructors
 %%% 
 %%% Tests for ADTs that are simply unions of existing types:
 union_adt_test_() ->
