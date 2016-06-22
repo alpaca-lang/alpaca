@@ -140,6 +140,7 @@ modules in Erlang, top-level entities including:
 
 - a module name (required)
 - function exports (with arity, as in Erlang)
+- type imports (e.g. `use module.type`)
 - type declarations (ADTs)
 - functions which can contain other functions and variables via `let`
 bindings.
