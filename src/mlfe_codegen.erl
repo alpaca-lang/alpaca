@@ -41,7 +41,7 @@ gen_export({N, A}) ->
 gen_funs(Env, Funs, []) ->
     {Env, Funs};
 gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}]}=F|T]) ->
-    NewEnv = [{N, 0}|Env],
+    NewEnv = [{N, 1}|Env],
     io:format("Env is ~w~n", [NewEnv]),
     NewF = gen_fun(NewEnv, F),
     gen_funs(NewEnv, [NewF|Funs], T);
@@ -53,8 +53,8 @@ gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=A}=F|T]) ->
 
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
     io:format("~nCompiling unit function ~s~n", [N]),
-    FName = cerl:c_fname(list_to_atom(N), 0),
-    A = [],
+    FName = cerl:c_fname(list_to_atom(N), 1),
+    A = [cerl:c_var('_unit')],
     B = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
@@ -113,10 +113,10 @@ gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
-                0 ->
-                    cerl:c_fname(list_to_atom(Name), 0)
+                1 ->
+                    cerl:c_fname(list_to_atom(Name), 1)
             end,
-    cerl:c_apply(FName, []);
+    cerl:c_apply(FName, [cerl:c_atom(unit)]);
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
     io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
@@ -181,7 +181,7 @@ gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
 gen_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
     Arity = case A of
-                [{unit, _}] -> 0;
+                [{unit, _}] -> 1;
                 L -> length(L)
             end,
     NewEnv = [{N, Arity}|Env],

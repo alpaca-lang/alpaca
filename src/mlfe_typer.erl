@@ -738,9 +738,35 @@ unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
 unwrap(X) ->
     X.
 
+missing_type_error(SourceModule, Module, Type) ->
+    {error, {no_such_type, SourceModule, Module, Type}}.
+
+retrieve_type(SourceModule, Module, Type, []) ->
+    missing_type_error(SourceModule, Module, Type);
+retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts}|Rem]) ->
+    case [TT || #mlfe_type{name={type_name, _, T}}=TT <- Ts] of
+        [Type] -> {ok, Type};
+        [] -> retrieve_type(SM, M, T, Rem)
+    end;
+retrieve_type(SM, M, T, [_|Rem]) ->
+    retrieve_type(SM, M, T, Rem).
+
 -spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
                                                   {error, term()}.
-typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
+typ_module(#mlfe_module{functions=Fs, 
+                        name=Name, 
+                        types=Ts,
+                        type_imports=Imports}=M, 
+           #env{modules=Modules}=Env) ->
+
+    %% Fold function to yield all the imported types or report a missing one.
+    ImportFolder = fun(_, {error, _}=Err) -> Err;
+                      (_, [{error, _}=Err|_]) -> Err;
+                      (#mlfe_type_import{module=M, type=T}, Acc) -> 
+                           [retrieve_type(Name, M, T, Modules)|Acc]
+                   end,
+
+    %% Fold function to instantiate all in-scope ADTs.
     TypFolder = fun(_, {error, _}=Err) -> 
                         Err;
                    (T, {Typs, E}) -> 
@@ -749,20 +775,26 @@ typ_module(#mlfe_module{functions=Fs, name=Name, types=Ts}=M, Env) ->
                             {error, _}=Err   -> Err
                         end
                 end,
-    case lists:foldl(TypFolder, {[], Env}, Ts) of
-        {error, _}=Err ->
-            Err;
-        {ADTs, Env2} ->
-            TypBindings = [{N, A}||#adt{name=N}=A <- ADTs],
-            Env3 = Env#env{
-                     type_bindings=TypBindings,
-                     current_module=M,
-                     current_types=Ts,
-                     type_constructors=constructors(Ts),
-                     entered_modules=[Name]},
-            case typ_module_funs(Fs, Env3, []) of
-                {error, _} = E -> E;
-                [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
+    case lists:foldl(ImportFolder, [], Imports) of
+        {error, _}=Err -> Err;
+        Imported ->
+            AllTypes = Ts ++ [T || {ok, T} <- Imported],
+            io:format("~nAll types are ~n~w~n~n", [AllTypes]),
+            case lists:foldl(TypFolder, {[], Env}, AllTypes) of
+                {error, _}=Err ->
+                    Err;
+                {ADTs, Env2} ->
+                    TypBindings = [{N, A}||#adt{name=N}=A <- ADTs],
+                    Env3 = Env#env{
+                             type_bindings=TypBindings,
+                             current_module=M,
+                             current_types=AllTypes,
+                             type_constructors=constructors(AllTypes),
+                             entered_modules=[Name]},
+                    case typ_module_funs(Fs, Env3, []) of
+                        {error, _} = E -> E;
+                        [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
+                    end
             end
     end.
 

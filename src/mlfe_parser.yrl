@@ -69,13 +69,15 @@ comment -> comment_lines :
                 text=Chars}.
 
 type_import -> use module_fun:
-  [Mod, Type] = string:tokens('$2', "."),
-  #mlfe_type_import{module=list_to_atom(Mod), type=Type}
+  {module_fun, _, MF} = '$2',
+  [Mod, Type] = string:tokens(MF, "."),
+  #mlfe_type_import{module=list_to_atom(Mod), type=Type}.
 
 module_def -> module atom : {module, '$1'}.
 
 module_part -> defn : '$1'.
 module_part -> export_def : '$1'.
+module_part -> type_import : '$1'.
 
 module_parts -> module_part : ['$1'].
 module_parts -> module_part module_parts : ['$1'|'$2'].
@@ -264,6 +266,7 @@ expr -> simple_expr : '$1'.
 expr -> type : '$1'.
 expr -> module_def : '$1'.
 expr -> export_def : '$1'.
+expr -> type_import : '$1'.
 expr -> defn : '$1'.
 
 Erlang code.

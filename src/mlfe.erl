@@ -76,9 +76,8 @@ type_modules({error, _}=Err) ->
 type_modules(Mods) ->
     E = mlfe_typer:new_env(Mods),
 
-    F = fun
-            (_, {error, _, _}=Err) -> Err;
-            (M, {ok, Env, Acc}) ->
+    F = fun(_, {error, _, _}=Err) -> Err;
+           (M, {ok, Env, Acc}) ->
                 case mlfe_typer:typ_module(M, Env) of
                     {ok, M2} -> {ok, mlfe_typer:replace_env_module(Env, M2), [M2|Acc]};
                     Err -> Err
@@ -113,5 +112,22 @@ basic_concat_compile_test() ->
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual("Hello, world", N:hello("world")),
     true = code:delete(N).
+
+compile_and_load(Files) ->
+    Compiled = compile({files, Files}),
+    LoadFolder = fun(#compiled_module{name=N, filename=FN, bytes=Bin}, Acc) ->
+                         {module, N} = code:load_binary(N, FN, Bin),
+                         io:format("Loaded ~w ~s~n", [N, FN]),
+                         [N|Acc]
+                 end,
+    lists:foldl(LoadFolder, [], Compiled).
+
+type_import_test() ->
+    Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"],
+    ModuleNames = compile_and_load(Files),
+    io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
+    M = type_import,
+    ?assertEqual(2, M:test_output(unit)),
+    [code:delete(N) || N <- ModuleNames].
 
 -endif.

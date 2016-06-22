@@ -118,6 +118,8 @@ update_memo(#mlfe_module{name=no_module}=Mod, {module, Name}) ->
     {ok, Mod#mlfe_module{name=Name}};
 update_memo(#mlfe_module{name=Name}, {module, DupeName}) ->
     {error, {module_rename, Name, DupeName}};
+update_memo(#mlfe_module{type_imports=Imports}=M, #mlfe_type_import{}=I) ->
+    {ok, M#mlfe_module{type_imports=Imports ++ [I]}};
 update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#mlfe_module{function_exports=Es ++ Exports}};
 update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->

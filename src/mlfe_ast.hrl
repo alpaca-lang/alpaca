@@ -288,6 +288,7 @@
           name=no_module :: atom(),
           function_exports=[] :: list({string(), integer()}),
           types=[] :: list(mlfe_type()),
+          type_imports=[] :: list(mlfe_type_import()),
           type_exports=[] :: list(string()),
           functions=[] :: list(mlfe_fun_def())
          }).

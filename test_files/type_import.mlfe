@@ -1,0 +1,11 @@
+module type_import
+
+use basic_adt.my_list
+
+export test_output/1, hello/1
+
+test_output () =
+  let l = Cons (1, Cons (2, Nil)) in
+  basic_adt.len l
+
+hello x = "hello"
