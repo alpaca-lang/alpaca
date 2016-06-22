@@ -50,7 +50,8 @@
                  | t_float
                  | t_atom
                  | t_bool
-                 | t_string.
+                 | t_string
+                 | t_unit.
 
 -type typ() :: undefined
              | qvar()
@@ -211,15 +212,30 @@
                    clauses :: list(mlfe_clause())
                   }).
 
+%%% ### Receive
+
+-record(mlfe_receive, {type=undefined :: typ(),
+                       line=0 :: integer(),
+                       clauses=[] :: list(mlfe_clause()),
+                       timeout=infinity :: infinity | integer(),
+                       timeout_action=undefined :: undefined
+                                                 | mlfe_value_expression()}).
+-type mlfe_receive() :: #mlfe_receive{}.
+
 %%% ### Module Building Blocks
+
+%%% Expressions that result in values:
+-type mlfe_value_expression() :: mlfe_const()
+                               | mlfe_symbol()
+                               | mlfe_list()
+                               | mlfe_tuple()
+                               | mlfe_apply()
+                               | mlfe_type_apply()
+                               | mlfe_match()
+                               | mlfe_receive().
+
 -type mlfe_expression() :: mlfe_comment()
-                         | mlfe_const()
-                         | mlfe_symbol()
-                         | mlfe_apply()
-                         | mlfe_type_apply()
-                         | mlfe_list()
-                         | mlfe_tuple()
-                         | mlfe_match()
+                         | mlfe_value_expression()
                          | mlfe_binding()
                          | mlfe_type_check()
                          | mlfe_binding()

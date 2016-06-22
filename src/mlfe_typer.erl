@@ -215,6 +215,10 @@ deep_copy_type({t_list, A}, RefMap) ->
     {NewList, _} = copy_type_list(A, RefMap),
     {t_list, NewList};
 
+%%% Deep copying is used only for function application so we extract the
+%%% arrow for typing here:
+deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
+    deep_copy_type(Arrow, RefMap);
 deep_copy_type(T, _) ->
     T.
 
@@ -305,13 +309,8 @@ unify(T1, T2, Env, Line) ->
             ok;
         {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
             case unify_list(A1, B1, Env, Line) of
-                {error, _} = E ->
-                    E;
-                {_ResA1, _ResB1} ->
-                    case unify(A2, B2, Env, Line) of
-                        {error, _} = E -> E;
-                        ok             -> ok
-                    end
+                {error, _} = E   -> E;
+                {_ResA1, _ResB1} -> unify(A2, B2, Env, Line)                    
             end;
         {{t_tuple, A}, {t_tuple, B}} when length(A) =:= length(B) ->
             case unify_list(A, B, Env, Line) of
@@ -332,10 +331,44 @@ unify(T1, T2, Env, Line) ->
             unify(A, B, Env, Line);
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
+        
+        %%% Receivers unify with each other or in the case of a receiver and
+        %%% something else, the receiver unifies its result type with the other
+        %%% expression and both become receivers.
+        {{t_receiver, RecvA, ResA}, {t_receiver, RecvB, ResB}} ->
+            case unify(RecvA, RecvB, Env, Line) of
+                {error, _}=Err -> Err;
+                ok -> case unify(ResA, ResB, Env, Line) of
+                          {error, _}=Err -> Err;
+                          ok -> 
+                              set_cell(T2, {link, T1}),
+                              ok
+                      end
+            end;
+        {{t_receiver, Recv, ResA}, {t_arrow, Args, ResB}=B} ->
+            case unify(ResA, ResB, Env, Line) of
+                {error, _}=Err -> Err;
+                ok ->
+                    NewTyp = {t_receiver, Recv, {t_arrow, Args, ResA}},
+                    set_cell(T1, NewTyp),
+                    set_cell(T2, {link, T1}),
+                    ok
+            end;
+        {{t_arrow, Args, ResA}, {t_receiver, Recv, ResB}} ->
+            unify(T2, T1, Env, Line);
+        {{t_receiver, Recv, ResA}, B} ->
+            case unify(ResA, B, Env, Line) of
+                {error, _}=Err -> Err;
+                ok ->
+                    set_cell(T2, {link, T1}),
+                    ok
+                end;
+        {A, {t_receiver, Recv, ResB}=B} ->
+            unify(T2, T1, Env, Line);
         {_T1, _T2} ->
             case find_covering_type(_T1, _T2, Env, Line) of
                 {error, _}=Err -> 
-                    io:format("UNIFY FAIL:  ~s AND ~s~n", [dump_term(X)||X<-[_T1, _T2]]),
+                    io:format("UNIFY FAIL:  ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
                     Err;
                 {ok, EnvOut, Union} ->
                     io:format("UNIFIED ~w AND ~w on ~w~n", 
@@ -390,10 +423,8 @@ unify_adt(C1, C2,
                    end,
     case lists:filter(MemberFilter, MA) of 
         [#adt{vars=ToCheck}] ->
-            UnifyFun = fun({{_, X}, {_, Y}}, ok) ->
-                               unify(L, X, Y, Env);
-                          (_, {error, _}=Err) ->
-                               Err
+            UnifyFun = fun(_, {error, _}=Err)    -> Err;
+                          ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
                        end,
             lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
         _ -> unify_adt(C2, C1, B, A, Env, L)
@@ -644,7 +675,7 @@ unify_list(_, [], _, Env, L) ->
 unify_list([A|TA], [B|TB], {MA, MB}, Env, L) ->
     case unify(A, B, Env, L) of
         {error, _} = E -> E;
-        _ -> unify_list(TA, TB, {[A|MA], [B|MB]}, Env, L)
+        ok -> unify_list(TA, TB, {[A|MA], [B|MB]}, Env, L)
     end.
 
 
@@ -717,8 +748,11 @@ gen(_, T) ->
 typ_list([], _Lvl, #env{next_var=NextVar}, Memo) ->
     {lists:reverse(Memo), NextVar};
 typ_list([H|T], Lvl, Env, Memo) ->
-    {Typ, NextVar} = typ_of(Env, Lvl, H),
-    typ_list(T, Lvl, update_counter(NextVar, Env), [Typ|Memo]).
+    case typ_of(Env, Lvl, H) of
+        {error, _}=Err -> Err;
+        {Typ, NextVar} ->
+            typ_list(T, Lvl, update_counter(NextVar, Env), [Typ|Memo])
+    end.
 
 unwrap(P) when is_pid(P) ->
     unwrap(get_cell(P));
@@ -735,6 +769,8 @@ unwrap({t_list, T}) ->
 unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
     ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs],
             members=[unwrap(M) || M <- Ms]};
+unwrap({t_receiver, A, B}) ->
+    {t_receiver, unwrap(A), unwrap(B)};
 unwrap(X) ->
     X.
 
@@ -779,7 +815,6 @@ typ_module(#mlfe_module{functions=Fs,
         {error, _}=Err -> Err;
         Imported ->
             AllTypes = Ts ++ [T || {ok, T} <- Imported],
-            io:format("~nAll types are ~n~w~n~n", [AllTypes]),
             case lists:foldl(TypFolder, {[], Env}, AllTypes) of
                 {error, _}=Err ->
                     Err;
@@ -842,6 +877,8 @@ typ_of(Env, Lvl, {symbol, _, N}) ->
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
+typ_of(#env{next_var=VN}, Lvl, {unit, _}) ->
+    {new_cell(t_unit), VN};
 
 typ_of(Env, Lvl, {'_', _}) ->
     {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
@@ -975,38 +1012,12 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
 %% type.
 typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
     {ETyp, NextVar1} = typ_of(Env, Lvl, E),
-    ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
-                           case typ_of(EnvAcc, Lvl, C) of
-                               {error, _}=Err -> Err;
-                               {TypC, NV} -> 
-                                   {[TypC|Clauses], update_counter(NV, EnvAcc)}
-                           end
-                   end,
-    {TypedCs, #env{next_var=NextVar2}} = lists:foldl(
-                                           ClauseFolder, 
-                                           {[], update_counter(NextVar1, Env)}, Cs),
-    UnifyFolder = fun({t_clause, PA, _, RA}, Acc) ->
-                          case Acc of
-                              {t_clause, PB, _, RB} = TypC ->
-                                  case unify(PA, PB, Env, Line) of
-                                      ok -> 
-                                          case unify(RA, RB, Env, Line) of
-                                                ok -> TypC;
-                                                {error, _} = Err -> Err
-                                            end;
-                                      {error, _} = Err -> Err
-                                  end;
-                              {error, _} = Err ->
-                                  Err
-                          end
-                  end,
-    [FC|TCs] = lists:reverse(TypedCs),
+    Env2 = update_counter(NextVar1, Env),
 
-    case lists:foldl(UnifyFolder, FC, TCs) of
+    case unify_clauses(Env2, Lvl, Cs, Line) of
         {error, _} = Err -> Err;
-        _ ->
+        {ok, {t_clause, PTyp, _, RTyp}, #env{next_var=NextVar2}}  ->
             %% unify the expression with the unified pattern:
-            {t_clause, PTyp, _, RTyp} = FC,
             case unify(ETyp, PTyp, Env, Line) of
                 {error, _} = Err -> Err;
                 %% only need to return the result type of the unified clause types:
@@ -1054,6 +1065,25 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
             end
     end;
 
+typ_of(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}=Recv) ->
+    case unify_clauses(Env, Lvl, Cs, Line) of
+        {error, _}=Err -> Err;
+        {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
+            case TA of
+                undefined -> 
+                    {new_cell({t_receiver, PTyp, RTyp}), Env2#env.next_var};
+                E -> case typ_of(Env2, Lvl, E) of
+                         {error, _}=Err -> Err;
+                         {Typ, NV} ->
+                             Env3 = update_counter(NV, Env2),
+                             case unify(Typ, RTyp, Env3, Line) of
+                                 {error, _}=Err -> Err;
+                                 ok -> {new_cell({t_receiver, PTyp, RTyp}), NV}
+                             end
+                     end
+            end
+    end;
+
 %%% Calls to Erlang code only have their return value typed.
 typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
     ClauseFolder = fun(C, {Typs, EnvAcc}) ->
@@ -1093,7 +1123,13 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
             Env3 = update_counter(NextVar, Env2),
             %dump_env(Env3),
             JustTypes = [Typ || {_, Typ} <- ArgTypes],
-            {{t_arrow, JustTypes, T}, NextVar}
+            case unwrap(T) of
+                {t_receiver, Recv, _Res} ->
+                    {_, RecvC, ResC} = get_cell(T),
+                    {{t_receiver, RecvC, {t_arrow, JustTypes, ResC}}, NextVar};
+                _ ->
+                    {{t_arrow, JustTypes, T}, NextVar}
+            end
     end;
 
 %% A function binding inside a function:
@@ -1111,6 +1147,42 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
 
+%%% This was pulled out of typing match expressions since the exact same clause
+%%% type unification has to occur in match and receive expressions.
+unify_clauses(Env, Lvl, Cs, Line) ->
+        ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
+                           case typ_of(EnvAcc, Lvl, C) of
+                               {error, _}=Err -> Err;
+                               {TypC, NV} -> 
+                                   {[TypC|Clauses], update_counter(NV, EnvAcc)}
+                           end
+                   end,
+    case lists:foldl(ClauseFolder, {[], Env}, Cs) of
+        {error, _}=Err -> Err;
+        {TypedCs, #env{next_var=NextVar2}} ->
+            UnifyFolder = fun({t_clause, PA, _, RA}=C, Acc) ->
+                                  case Acc of
+                                      {t_clause, PB, _, RB} = TypC ->
+                                          case unify(PA, PB, Env, Line) of
+                                              ok -> 
+                                                  case unify(RA, RB, Env, Line) of
+                                                      ok -> TypC;
+                                                      {error, _} = Err -> Err
+                                                  end;
+                                              {error, _} = Err -> Err
+                                          end;
+                                      {error, _} = Err ->
+                                          Err
+                                  end
+                          end,
+    
+            [FC|TCs] = lists:reverse(TypedCs),
+            case lists:foldl(UnifyFolder, FC, TCs) of
+                {error, _}=Err -> Err;
+                _ -> {ok, FC, update_counter(NextVar2, Env)}
+            end
+    end.
+
 %% Get the line number that should be reported by an application AST node.
 apply_line(#mlfe_apply{name={symbol, L, _}}) ->
     L;
@@ -1120,6 +1192,19 @@ apply_line(#mlfe_apply{name={bif, _, L, _, _}}) ->
     L.
 
 typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
+    case TypF of
+        _ when is_pid(TypF) ->
+            case get_cell(TypF) of
+                {t_receiver, _, App} -> 
+                    typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line);
+                _ ->
+                    typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
+            end;
+        _ ->
+            typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
+    end.
+
+typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% we make a deep copy of the function we're unifying 
     %% so that the types we apply to the function don't 
     %% force every other application to unify with them 
@@ -1127,19 +1212,20 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
     CopiedTypF = deep_copy_type(TypF, maps:new()),
     
-    {ArgTypes, NextVar2} = 
-        typ_list(Args, Lvl, update_counter(NextVar, Env), []),
-
-    TypRes = new_cell(t_rec),
-    Env2 = update_counter(NextVar2, Env),
-    
-    Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-    case unify(CopiedTypF, Arrow, Env2, Line) of
-        {error, _} = E ->
-            E;
-        ok ->
-            #env{next_var=VarNum} = Env2,
-            {TypRes, VarNum}
+    case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
+        {error, _}=Err -> Err;
+        {ArgTypes, NextVar2} ->
+            TypRes = new_cell(t_rec),
+            Env2 = update_counter(NextVar2, Env),
+            
+            Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
+            case unify(CopiedTypF, Arrow, Env2, Line) of
+                {error, _} = E ->
+                    E;
+                ok ->
+                    #env{next_var=VarNum} = Env2,
+                    {TypRes, VarNum}
+            end
     end.
 
 -spec extract_fun(
@@ -2037,4 +2123,97 @@ type_var_protection_fail_unify_test() ->
     Res = typ_module(M, Env),
     ?assertMatch({error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
     
+%%% ### Process Interaction Typing Tests
+%%% 
+%%% Things like receive, send, and spawn.
+
+module_typ_and_parse(Code) ->
+    Env = new_env(),
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    typ_module(M, Env).
+
+receive_test_() ->
+    [?_assertMatch({{t_receiver, t_int, t_int}, _},
+                   top_typ_of(
+                     "receive with "
+                     "  i -> i + 1")),
+     ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+                   top_typ_of(
+                     "receive with "
+                     "  i -> i + 1 "
+                     "| f -> f +. 1")),
+     fun() ->
+             Code = 
+                 "module receive_adt\n\n"
+                 "type my_union = float | int\n\n"
+                 "a () = receive with "
+                 "  i, is_integer i -> :received_int"
+                 "| f, is_float f -> :received_float",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      name={symbol, 5, "a"},
+                                      type={t_receiver,
+                                            #adt{name="my_union"},
+                                            {t_arrow,
+                                             [t_unit],
+                                             t_atom}}
+                                     }]}},
+                module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = 
+                 "module union_receives\n\n"
+                 "f x = receive with "
+                 "    0 -> :ok"
+                 "  | i -> g (i + x)\n\n"
+                 "g x = receive with "
+                 "  i -> f (i - x)",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                       functions=[#mlfe_fun_def{
+                                     name={symbol, 3, "f"},
+                                     type={t_receiver,
+                                           t_int,
+                                           {t_arrow,
+                                            [t_int],
+                                            t_atom}}},
+                                  #mlfe_fun_def{
+                                     name={symbol, 5, "g"},
+                                     type={t_receiver,
+                                           t_int,
+                                           {t_arrow,
+                                            [t_int],
+                                            t_atom}}}
+                                 ]}},
+                module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code =
+                 "module union_for_two_receivers\n\n"
+                 "type t = A | B\n\n"
+                 "a () = receive with "
+                 "A -> b ()\n\n"
+                 "b () = receive with "
+                 "B -> a () after 5 a()",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                     name={symbol, 5, "a"},
+                                     type={t_receiver,
+                                           #adt{name="t"},
+                                           {t_arrow,
+                                            [t_unit],
+                                            t_rec}}},
+                                   #mlfe_fun_def{
+                                      name={symbol, 7, "b"},
+                                      type={t_receiver,
+                                            #adt{name="t"},
+                                            {t_arrow,
+                                             [t_unit],
+                                             t_rec}}}
+                                  ]}},
+                module_typ_and_parse(Code))
+     end
+    ].
 -endif.

@@ -326,7 +326,12 @@ rename_bindings(NV, M, #mlfe_match{}=Match) ->
             end
     end;
 
-%% TODO:  guards!
+rename_bindings(NV, M, #mlfe_receive{clauses=Cs}=Recv) ->
+    case rename_clause_list(NV, M, Cs) of
+        {error, _} = Err -> Err;
+        {NV2, M2, Cs2}   -> {NV2, M2, Recv#mlfe_receive{clauses=Cs2}}
+    end;
+
 rename_bindings(NV, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error

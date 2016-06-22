@@ -29,6 +29,7 @@ defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern 
+receive_block
 compare type_check guard guards
 ffi_call
 expr simple_expr.
@@ -45,6 +46,8 @@ symbol module_fun
 assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
+receive after
+
 call_erlang
 
 type_check_tok
@@ -215,6 +218,13 @@ match_with  -> match simple_expr with match_clauses :
   {match, L} = '$1',
   #mlfe_match{match_expr='$2', clauses='$4', line=L}.
 
+receive_block -> receive with match_clauses :
+  {_, Line} = '$1',
+  #mlfe_receive{line=Line, clauses='$3'}.
+receive_block -> receive_block after int simple_expr :
+  {_, _, Timeout} = '$3',
+  '$1'#mlfe_receive{timeout=Timeout, timeout_action='$4'}.
+
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -258,6 +268,7 @@ end.
 
 simple_expr -> binding : '$1'.
 simple_expr -> match_with : '$1'.
+simple_expr -> receive_block : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.
 

@@ -50,8 +50,10 @@ with        : {token, {with, TokenLine}}.
 call_erlang : {token, {call_erlang, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
-type : {token, {type_declare, TokenLine}}.
-use : {token, {use, TokenLine}}.
+type        : {token, {type_declare, TokenLine}}.
+use         : {token, {use, TokenLine}}.
+receive     : {token, {'receive', TokenLine}}.
+after       : {token, {'after', TokenLine}}.
 
 %% Base types are the fundamental types available on the Erlang VM.
 {BASE_TYPE} : {token, {base_type, TokenLine, TokenChars}}.
