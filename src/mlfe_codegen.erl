@@ -41,11 +41,7 @@ gen_export({N, A}) ->
 
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
-%gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}]}=F|T]) ->
-%    io:format("Env is ~w~n", [Env]),
-%    NewF = gen_fun(Env, F),
-%    gen_funs(Env, [NewF|Funs], T);
-gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=A}=F|T]) ->
+gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
     io:format("Env is ~w~n", [Env]),
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
