@@ -67,7 +67,7 @@
 %%% ## MLFE AST Nodes
 
 -record(mlfe_comment, {
-          multi_line=false :: bool(),
+          multi_line=false :: boolean(),
           line=0 :: integer(),
           text="" :: string()}).
 -type mlfe_comment() :: #mlfe_comment{}.

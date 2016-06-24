@@ -169,6 +169,7 @@ A very incomplete list:
   adapters for `gen_server`, etc.
 - binaries (at all).  I'm mostly thinking of just reimplementing the
   basic Erlang syntax, probably not very difficult.
+- maps
 - binary strings vs lists of characters, like Elixir.  I suspect
   default UTF-8 is a good decision.
 - anything like behaviours or things that would support them.  Traits,
