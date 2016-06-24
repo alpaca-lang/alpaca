@@ -2,6 +2,8 @@ module basic_math
 
 export add2/1, add/2
 
+add2 x = add x 2
+
 add x y = x + y
 
-add2 x = add x 2
+

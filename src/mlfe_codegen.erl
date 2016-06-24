@@ -26,7 +26,8 @@ gen(#mlfe_module{}=Mod) ->
        name=ModuleName, 
        function_exports=Exports, 
        functions=Funs} = Mod,
-    {_Env, CompiledFuns} = gen_funs([], [], Funs),
+    Env = [{N, length(Args)}||#mlfe_fun_def{name={symbol, _, N}, args=Args}<-Funs],
+    {_Env, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledExports = [gen_export(E) || E <- Exports],
     {ok, cerl:c_module(
            cerl:c_atom(ModuleName),
@@ -39,17 +40,15 @@ gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
 gen_funs(Env, Funs, []) ->
-    {Env, Funs};
-gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}]}=F|T]) ->
-    NewEnv = [{N, 1}|Env],
-    io:format("Env is ~w~n", [NewEnv]),
-    NewF = gen_fun(NewEnv, F),
-    gen_funs(NewEnv, [NewF|Funs], T);
+    {Env, lists:reverse(Funs)};
+%gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}]}=F|T]) ->
+%    io:format("Env is ~w~n", [Env]),
+%    NewF = gen_fun(Env, F),
+%    gen_funs(Env, [NewF|Funs], T);
 gen_funs(Env, Funs, [#mlfe_fun_def{name={symbol, _, N}, args=A}=F|T]) ->
-    NewEnv = [{N, length(A)}|Env],
-    io:format("Env is ~w~n", [NewEnv]),
-    NewF = gen_fun(NewEnv, F),
-    gen_funs(NewEnv, [NewF|Funs], T).
+    io:format("Env is ~w~n", [Env]),
+    NewF = gen_fun(Env, F),
+    gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
     io:format("~nCompiling unit function ~s~n", [N]),
@@ -112,6 +111,7 @@ gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
+                    io:format("Undefined arity for ~s~n", [Name]),
                     cerl:c_var(list_to_atom(Name));
                 1 ->
                     cerl:c_fname(list_to_atom(Name), 1)
@@ -121,6 +121,7 @@ gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
     io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
+                    io:format("Undefined arity for ~s~n", [Name]),
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
                     cerl:c_fname(list_to_atom(Name), Arity)
