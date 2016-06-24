@@ -67,14 +67,16 @@ new_cell(Typ) ->
     spawn(?MODULE, cell, [Typ]).
 
 -spec get_cell(t_cell()) -> typ().
-get_cell(Cell) ->
+get_cell(Cell) when is_pid(Cell) ->
     Cell ! {get, self()},
     receive
         Val -> Val
     end.
 
+
 set_cell(Cell, Val) ->
-    Cell ! {set, Val}.
+    Cell ! {set, Val},
+    ok.
 
 %%% The `map` is a map of `unbound type variable name` to a `t_cell()`.
 %%% It's used to ensure that each reference or link to a single type
@@ -219,6 +221,9 @@ deep_copy_type({t_list, A}, RefMap) ->
 %%% arrow for typing here:
 deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
     deep_copy_type(Arrow, RefMap);
+deep_copy_type({t_receiver, A, B}, RefMap) ->
+    {t_receiver, deep_copy_type(A, RefMap), deep_copy_type(B, RefMap)};
+
 deep_copy_type(T, _) ->
     T.
 
@@ -307,10 +312,68 @@ unify(T1, T2, Env, Line) ->
             end,
             set_cell(T2, {link, T1}),
             ok;
+        %%% This section creeps me right out at the moment.  This is where some
+        %%% other operator that moves the receiver to the outside should be.
+        %%% Smells like a functor or monad to me.
         {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
             case unify_list(A1, B1, Env, Line) of
-                {error, _} = E   -> E;
-                {_ResA1, _ResB1} -> unify(A2, B2, Env, Line)                    
+                {error, _} = E  -> E;
+                {ResA1, _ResB1} ->
+                    %% Unwrap cells and links down to the first non-cell level.
+                    %% Super gross.
+                    F = fun(C) when is_pid(C) ->
+                                case get_cell(C) of
+                                    {t_receive, _, _}=R -> 
+                                        R;
+                                    {link, CC} when is_pid(CC) -> case get_cell(CC) of
+                                                     {t_receiver, _, _}=R2 ->
+                                                          R2;
+                                                      Other ->
+                                                          none
+                                                  end;
+                                    _ ->
+                                        none
+                                end;
+                           (Other) ->
+                                none
+                        end,
+                    RR = [Receiver||{t_receiver, _, _}=Receiver <- lists:map(F, A1)],
+                    %% Any argument to a function application that is a receiver
+                    %% makes the entire expression a receiver.
+                    case RR of
+                        [] -> 
+                            unify(A2, B2, Env, Line);
+                        %% The received types for each receiver must unify in
+                        %% order for the process to be typed correctly.
+                        [{t_receiver, H, _}|Tail] ->
+                            Unify = fun(_, {error, _}=Err) -> Err;
+                                       ({t_receiver, T, _}, Acc) -> 
+                                            case unify(T, Acc, Env, Line) of
+                                                {error, _}=Err -> Err;
+                                                ok -> T
+                                            end;
+                                       (Other, Acc) ->
+                                            Acc
+                                    end,
+                            case lists:foldl(Unify, H, Tail) of
+                                {error, _}=Err -> Err;
+                                Typ ->
+                                    case unify(A2, B2, Env, Line) of
+                                        {error, _}=Err -> Err;
+                                        ok ->
+                                            %% Re-wrapping with fresh cells because
+                                            %% I was running into cycles.  This
+                                            %% entire block of arrow unification
+                                            %% needs to be rewritten.
+                                            Receiver = {t_receiver, 
+                                                        new_cell(unwrap(H)),
+                                                        new_cell(unwrap(A2))},
+                                            set_cell(A2, Receiver),
+                                            set_cell(B2, {link, A2}),
+                                            ok
+                                    end
+                            end
+                    end
             end;
         {{t_tuple, A}, {t_tuple, B}} when length(A) =:= length(B) ->
             case unify_list(A, B, Env, Line) of
@@ -1124,9 +1187,9 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
             %dump_env(Env3),
             JustTypes = [Typ || {_, Typ} <- ArgTypes],
             case unwrap(T) of
-                {t_receiver, Recv, _Res} ->
-                    {_, RecvC, ResC} = get_cell(T),
-                    {{t_receiver, RecvC, {t_arrow, JustTypes, ResC}}, NextVar};
+                {t_receiver, Recv, Res} ->
+                    {{t_receiver, new_cell(Recv), 
+                      {t_arrow, JustTypes, new_cell(Res)}}, NextVar};
                 _ ->
                     {{t_arrow, JustTypes, T}, NextVar}
             end
@@ -1144,8 +1207,9 @@ typ_of(Env, Lvl, #fun_binding{
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     %dump_env(Env),
     {TypE, NextVar} = typ_of(Env, Lvl, E1),
+    Gen = gen(Lvl, TypE),
     Env2 = update_counter(NextVar, Env),
-    typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2).
+    typ_of(update_binding(N, Gen, Env2), Lvl+1, E2).
 
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
@@ -1195,8 +1259,14 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
     case TypF of
         _ when is_pid(TypF) ->
             case get_cell(TypF) of
-                {t_receiver, _, App} -> 
-                    typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line);
+                {t_receiver, Recv, App} -> 
+                    case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
+                        {error, _}=Err -> Err;
+                        {Typ, NV} -> 
+                            NewRec = {t_receiver, Recv, Typ},
+                            set_cell(TypF, NewRec),
+                            {TypF, NV}
+                    end;
                 _ ->
                     typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
             end;
@@ -1205,6 +1275,7 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
     end.
 
 typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
+    dump_env(Env),
     %% we make a deep copy of the function we're unifying 
     %% so that the types we apply to the function don't 
     %% force every other application to unify with them 
@@ -1217,7 +1288,7 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
         {ArgTypes, NextVar2} ->
             TypRes = new_cell(t_rec),
             Env2 = update_counter(NextVar2, Env),
-            
+
             Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
             case unify(CopiedTypF, Arrow, Env2, Line) of
                 {error, _} = E ->
@@ -2214,6 +2285,39 @@ receive_test_() ->
                                              t_rec}}}
                                   ]}},
                 module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = 
+                 "module receive_in_let\n\n"
+                 "f x = "
+                 "  let y = receive with "
+                 "    i -> i "
+                 "  in let z = receive with "
+                 "    i -> i "
+                 "  in x + y + z",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      type={t_receiver,
+                                            t_int,
+                                            {t_arrow,
+                                             [t_int],
+                                             t_int}}}
+                                  ]}},
+                module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = 
+                 "module receive_in_let\n\n"
+                 "f x = "
+                 "  let y = receive with "
+                 "    i -> i "
+                 "  in let z = receive with "
+                 "    flt, is_float flt -> flt "
+                 "  in x + y + z",
+             ?assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+                          module_typ_and_parse(Code))
      end
+
     ].
 -endif.
