@@ -276,6 +276,11 @@ rename_bindings(NextVar, Map, #mlfe_spawn{function=F, args=Args}=Spawn) ->
     FArgs = [X||{_, _, X} <- [rename_bindings(NextVar, Map, A)||A <- Args]],
     {NextVar, Map, Spawn#mlfe_spawn{function=FName, args=FArgs}};
 
+rename_bindings(NextVar, Map, #mlfe_send{message=M, pid=P}=Send) ->
+    {_, _, M2} = rename_bindings(NextVar, Map, M),
+    {_, _, P2} = rename_bindings(NextVar, Map, P),
+    {NextVar, Map, Send#mlfe_send{message=M2, pid=P2}};
+
 rename_bindings(NextVar, Map, #mlfe_type_apply{arg=none}=A) ->
     {NextVar, Map, A};
 rename_bindings(NextVar, Map, #mlfe_type_apply{arg=Arg}=A) ->

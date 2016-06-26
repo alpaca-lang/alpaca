@@ -30,6 +30,7 @@ apply
 module_def module_part module_parts export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern 
 
+send_to
 receive_block
 spawn_pid
 
@@ -49,6 +50,8 @@ symbol module_fun
 assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
+
+send
 receive after
 spawn
 
@@ -222,6 +225,10 @@ match_with  -> match simple_expr with match_clauses :
   {match, L} = '$1',
   #mlfe_match{match_expr='$2', clauses='$4', line=L}.
 
+send_to-> send term term :
+  {send, L} = '$1',
+  #mlfe_send{line=L, message='$2', pid='$3'}.
+
 receive_block -> receive with match_clauses :
   {_, Line} = '$1',
   #mlfe_receive{line=Line, clauses='$3'}.
@@ -282,6 +289,7 @@ end.
 
 simple_expr -> binding : '$1'.
 simple_expr -> match_with : '$1'.
+simple_expr -> send_to : '$1'.
 simple_expr -> receive_block : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.

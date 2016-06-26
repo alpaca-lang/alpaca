@@ -53,6 +53,7 @@ export      : {token, {export, TokenLine}}.
 type        : {token, {type_declare, TokenLine}}.
 use         : {token, {use, TokenLine}}.
 spawn       : {token, {spawn, TokenLine}}.
+send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 

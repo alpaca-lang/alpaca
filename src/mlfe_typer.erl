@@ -1188,6 +1188,27 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
             end
     end;
 
+typ_of(Env, Lvl, #mlfe_send{line=L, message=M, pid=P}) ->
+    case typ_of(Env, Lvl, P) of
+        {error, _}=Err -> Err;
+        {T, NV} ->
+            case unwrap(T) of
+                {t_pid, PidT} ->
+                    Env2 = update_counter(NV, Env),
+                    case typ_of(Env2, Lvl, M) of
+                        {error, _}=Err -> Err;
+                        {MT, NV2} ->
+                            Env3 = update_counter(NV2, Env2),
+                            case unify(PidT, MT, Env3, L) of
+                                {error, _}=Err -> Err;
+                                ok -> {t_unit, NV}
+                            end
+                    end;
+                Other ->
+                    io:format("Other is ~w ~w~n", [Other, unwrap(Other)]),
+                    {error, {send_to_pid_only, module_name(Env), L, Other}}
+            end
+    end;
 typ_of(Env, Lvl, #mlfe_receive{}=Recv) ->
     type_receive(Env, Lvl, Recv);
 
@@ -2616,5 +2637,40 @@ spawn_test_() ->
                                      #mlfe_fun_def{}]}},
                   module_typ_and_parse(Code))
        end
+    ].
+
+send_message_test_() ->
+    [fun() ->
+             Code =
+                 "module send_example_1\n\n"
+                 "f x = receive with "
+                 "  i -> f (i + x)\n\n"
+                 "spawn_and_message_f = "
+                 "  let p = spawn f [0] in "
+                 "  send 1 p",
+             ?assertMatch(
+                {ok, #mlfe_module{}},
+                module_typ_and_parse(Code))
+     end
+    , fun() ->
+              Code =
+                  "module send_to_bad_pid\n\n"
+                  "f x = receive with "
+                  "  i -> f (i + x)\n\n"
+                  "spawn_and_message_f = "
+                  "  let p = spawn f [0] in "
+                  "  send 1.0 p",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, t_int, t_float}},
+                 module_typ_and_parse(Code))
+      end
+    , fun () ->
+              Code =
+                  "module send_to_non_pid\n\n"
+                  "f x = send 1 x",
+              ?assertMatch(
+                 {error, {send_to_pid_only, send_to_non_pid, 3, {unbound, _, _}}},
+                 module_typ_and_parse(Code))
+      end
     ].
 -endif.

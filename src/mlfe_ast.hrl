@@ -228,6 +228,12 @@
                      args=[] :: list(mlfe_expression())}).
 -type mlfe_spawn() :: #mlfe_spawn{}.
 
+-record(mlfe_send, {type=undefined :: typ(),
+                    line=0 :: integer(),
+                    message :: mlfe_value_expression(),
+                    pid :: mlfe_expression()}).
+-type mlfe_send() :: #mlfe_send{}.
+
 -record(mlfe_receive, {type=undefined :: typ(),
                        line=0 :: integer(),
                        clauses=[] :: list(mlfe_clause()),
