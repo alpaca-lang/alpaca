@@ -2664,7 +2664,7 @@ send_message_test_() ->
                  {error, {cannot_unify, _, _, t_int, t_float}},
                  module_typ_and_parse(Code))
       end
-    , fun () ->
+    , fun() ->
               Code =
                   "module send_to_non_pid\n\n"
                   "f x = send 1 x",
@@ -2672,5 +2672,16 @@ send_message_test_() ->
                  {error, {send_to_pid_only, send_to_non_pid, 3, {unbound, _, _}}},
                  module_typ_and_parse(Code))
       end
-    ].
+    , fun() ->
+              Code =
+                  "module send_to_non_receiver\n\n"
+                  "f x = f (x+1)\n\n"
+                  "start_f x = "
+                  "  let p = spawn f [x] in "
+                  "  send 1 p",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, undefined, t_int}},
+                 module_typ_and_parse(Code))
+      end
+    ]. 
 -endif.
