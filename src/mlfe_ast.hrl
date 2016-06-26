@@ -29,6 +29,12 @@
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
 
+-type t_adt_constructor() :: {t_adt_con, string()}.
+
+%% Processes that are spawned with functions that are not receivers are not
+%% allowed to be sent messages.
+-type t_pid() :: {t_pid, typ()}.
+
 -type t_cons() :: {t_cons, typ(), t_list()}.
 -type t_nil() :: t_nil.
 -type t_list() :: t_cons() | t_nil().
@@ -58,6 +64,7 @@
              | tvar()
              | t_arrow()
              | t_adt()
+             | t_adt_constructor()
              | t_const()
              | t_list()
              | t_tuple()
@@ -212,7 +219,14 @@
                    clauses :: list(mlfe_clause())
                   }).
 
-%%% ### Receive
+%%% ### Processes
+
+-record(mlfe_spawn, {type=undefined :: typ(),
+                     line=0 :: integer(),
+                     module=undefined :: atom(),
+                     function={symbol, 0, ""} :: mlfe_symbol(),
+                     args=[] :: list(mlfe_expression())}).
+-type mlfe_spawn() :: #mlfe_spawn{}.
 
 -record(mlfe_receive, {type=undefined :: typ(),
                        line=0 :: integer(),

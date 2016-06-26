@@ -29,7 +29,10 @@ defn binding
 apply
 module_def module_part module_parts export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern 
+
 receive_block
+spawn_pid
+
 compare type_check guard guards
 ffi_call
 expr simple_expr.
@@ -47,6 +50,7 @@ assign int_math float_math
 '[' ']' ':'
 match with '|' '->'
 receive after
+spawn
 
 call_erlang
 
@@ -225,6 +229,16 @@ receive_block -> receive_block after int simple_expr :
   {_, _, Timeout} = '$3',
   '$1'#mlfe_receive{timeout=Timeout, timeout_action='$4'}.
 
+%% Only supporting spawning functions inside the current module
+%% for now:
+spawn_pid -> spawn symbol cons:
+  {_, L} = '$1',
+  Args = cons_to_list('$3'),
+  #mlfe_spawn{line=L,
+              module=undefined,
+              function='$2',
+              args=Args}.
+
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -271,6 +285,7 @@ simple_expr -> match_with : '$1'.
 simple_expr -> receive_block : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.
+simple_expr -> spawn_pid : '$1'.
 
 expr -> comment : '$1'.
 expr -> simple_expr : '$1'.
@@ -343,3 +358,8 @@ term_line(Term) ->
         #mlfe_tuple{values=[H|_]} -> term_line(H);
         #mlfe_type_apply{name=N} -> term_line(N)
     end.
+
+cons_to_list({nil, _}) ->
+    [];
+cons_to_list(#mlfe_cons{head=H, tail=T}) ->
+    [H|cons_to_list(T)].

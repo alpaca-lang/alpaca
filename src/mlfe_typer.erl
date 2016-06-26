@@ -28,7 +28,7 @@
 -include("builtin_types.hrl").
 
 -export([cell/1, new_env/0, new_env/1, replace_env_module/2,
-         typ_of/2, typ_of/3, typ_module/2]).
+         typ_of/3, typ_module/2]).
 -export_type([env/0, typ/0, t_cell/0]).
 
 -ifdef(TEST).
@@ -246,7 +246,7 @@ occurs(Label, Level, {t_arrow, Params, RetTyp}) ->
     {t_arrow, 
      lists:map(fun(T) -> occurs(Label, Level, T) end, Params),
      occurs(Label, Level, RetTyp)};
-occurs(_, _, T) ->
+occurs(_L, _Lvl, T) ->
     T.
 
 unwrap_cell(C) when is_pid(C) ->
@@ -316,14 +316,19 @@ unify(T1, T2, Env, Line) ->
         %%% other operator that moves the receiver to the outside should be.
         %%% Smells like a functor or monad to me.
         {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
-            case unify_list(A1, B1, Env, Line) of
+            ArrowArgCells = fun(C) when is_pid(C) ->
+                                    {t_arrow, Xs, _}=get_cell(C),
+                                    Xs;
+                               ({t_arrow, Xs, _}) -> Xs
+                            end,
+            case unify_list(ArrowArgCells(T1), ArrowArgCells(T2), Env, Line) of
                 {error, _} = E  -> E;
                 {ResA1, _ResB1} ->
                     %% Unwrap cells and links down to the first non-cell level.
                     %% Super gross.
                     F = fun(C) when is_pid(C) ->
                                 case get_cell(C) of
-                                    {t_receive, _, _}=R -> 
+                                    {t_receiver, _, _}=R -> 
                                         R;
                                     {link, CC} when is_pid(CC) -> case get_cell(CC) of
                                                      {t_receiver, _, _}=R2 ->
@@ -331,13 +336,34 @@ unify(T1, T2, Env, Line) ->
                                                       Other ->
                                                           none
                                                   end;
-                                    _ ->
-                                        none
+                                    {link, {t_receiver, _, _}=R2} -> R2;
+                                    O -> none
                                 end;
-                           (Other) ->
-                                none
+                           ({link, CC}) when is_pid(CC) -> 
+                                case get_cell(CC) of
+                                    {t_receiver, _, _}=R2 -> R2;
+                                    Other -> none
+                                end;
+                           ({t_receiver, _, _}=X) -> X;
+                           (Other) -> none
                         end,
-                    RR = [Receiver||{t_receiver, _, _}=Receiver <- lists:map(F, A1)],
+                    AArgs = case T1 of
+                                _ when is_pid(T1) ->
+                                    {t_arrow, Xs, _}=get_cell(T1),
+                                    Xs;
+                                _ ->
+                                    {t_arrow, Xs, _}=T1,
+                                    Xs
+                            end,
+
+                    StripCell = fun(C) when is_pid(C) -> get_cell(C);
+                                   ({link, C}) when is_pid(C) -> get_cell(C);
+                                   ({link, X}) -> X;
+                                   (X) -> X
+                                end,
+                    NoCellArgs = lists:map(StripCell, lists:map(StripCell, AArgs)),
+                    RR = [Receiver||{t_receiver, _, _}=Receiver 
+                                        <- lists:map(F, NoCellArgs)],
                     %% Any argument to a function application that is a receiver
                     %% makes the entire expression a receiver.
                     case RR of
@@ -399,9 +425,21 @@ unify(T1, T2, Env, Line) ->
         %%% something else, the receiver unifies its result type with the other
         %%% expression and both become receivers.
         {{t_receiver, RecvA, ResA}, {t_receiver, RecvB, ResB}} ->
-            case unify(RecvA, RecvB, Env, Line) of
+            RecvRes = fun(C) when is_pid(C) ->
+                              {t_receiver, _, X} = get_cell(C),
+                              X;
+                          ({t_receiver, _, X}) -> 
+                              X
+                       end,
+            RecvR = fun(C) when is_pid(C) ->
+                            {t_receiver, X, _} = get_cell(C),
+                            X;
+                       ({t_receiver, X, _}) -> 
+                            X
+                       end,
+            case unify(RecvR(T1), RecvR(T2), Env, Line) of
                 {error, _}=Err -> Err;
-                ok -> case unify(ResA, ResB, Env, Line) of
+                ok -> case unify(RecvRes(T1), RecvRes(T2), Env, Line) of
                           {error, _}=Err -> Err;
                           ok -> 
                               set_cell(T2, {link, T1}),
@@ -419,8 +457,8 @@ unify(T1, T2, Env, Line) ->
             end;
         {{t_arrow, Args, ResA}, {t_receiver, Recv, ResB}} ->
             unify(T2, T1, Env, Line);
-        {{t_receiver, Recv, ResA}, B} ->
-            case unify(ResA, B, Env, Line) of
+        {{t_receiver, Recv, ResA}=A, B} ->
+            case unify(ResA, new_cell(B), Env, Line) of
                 {error, _}=Err -> Err;
                 ok ->
                     set_cell(T2, {link, T1}),
@@ -432,6 +470,7 @@ unify(T1, T2, Env, Line) ->
             case find_covering_type(_T1, _T2, Env, Line) of
                 {error, _}=Err -> 
                     io:format("UNIFY FAIL:  ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
+                    io:format("LINE ~w~n", [Line]),
                     Err;
                 {ok, EnvOut, Union} ->
                     io:format("UNIFIED ~w AND ~w on ~w~n", 
@@ -480,18 +519,28 @@ unify_adt(C1, C2,
 
 unify_adt(C1, C2, 
           #adt{name=NA, vars=VarsA, members=MA}=A, 
-          #adt{name=NB, vars=VarsB}=B, Env, L) ->
-    MemberFilter = fun(#adt{name=NB}) -> true;
-                      (_) -> false
+          #adt{name=NB, vars=VarsB, members=MB}=B, Env, L) ->
+    MemberFilter = fun(N) -> fun(#adt{name=N}) -> true;
+                                (_) -> false
+                             end
                    end,
-    case lists:filter(MemberFilter, MA) of 
+    case lists:filter(MemberFilter(NB), MA) of 
         [#adt{vars=ToCheck}] ->
             UnifyFun = fun(_, {error, _}=Err)    -> Err;
                           ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
                        end,
             lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
-        _ -> unify_adt(C2, C1, B, A, Env, L)
+        _ ->
+            case lists:filter(MemberFilter(NA), MB) of 
+                [#adt{vars=ToCheck}] ->
+                    UnifyFun = fun(_, {error, _}=Err)    -> Err;
+                                  ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
+                               end,
+                    lists:foldl(UnifyFun, ok, lists:zip(VarsA, ToCheck));
+                _ -> unify_error(Env, L, A, B)
+            end
     end;
+
 unify_adt(C1, C2,
           #adt{name=N, vars=Vs, members=Ms}=A,
           {t_tuple, TupleMs}=ToCheck,
@@ -661,7 +710,8 @@ inst_type_members(ADT,
             NewMember = #adt{name=N, vars=lists:zip(Names, Members)},
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
-                        
+inst_type_members(ADT, [#mlfe_constructor{name={_, _, N}}|T], Env, Memo) ->
+    inst_type_members(ADT, T, Env, [{t_adt_cons, N}|Memo]);
 %% Everything else gets discared.  Type constructors are not types in their 
 %% own right and thus not eligible for unification so we just discard them here:
 inst_type_members(ADT, [_|T], Env, Memo) ->
@@ -834,6 +884,8 @@ unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
             members=[unwrap(M) || M <- Ms]};
 unwrap({t_receiver, A, B}) ->
     {t_receiver, unwrap(A), unwrap(B)};
+unwrap({t_pid, A}) ->
+    {t_pid, unwrap(A)};
 unwrap(X) ->
     X.
 
@@ -899,20 +951,13 @@ typ_module(#mlfe_module{functions=Fs,
 typ_module_funs([], _Env, Memo) ->
     lists:reverse(Memo);
 typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
-    case typ_of(Env, F) of
+    case typ_of(Env, 0, F) of
         {error, _} = E -> 
             E;
-        {Typ, Env2} ->
+        {Typ, NV} ->
+            Env2 = update_counter(NV, Env),
             Env3 = update_binding(Name, Typ, Env2),
-            typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=Typ}|Memo])
-    end.
-
-%% Top-level typ_of unwraps the reference cells used in unification.
--spec typ_of(Env::env(), Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
-typ_of(Env, Exp) ->
-    case typ_of(Env, 0, Exp) of
-        {error, _} = E -> E;
-        {Typ, NewVar} -> {unwrap(Typ), update_counter(NewVar, Env)}
+            typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=unwrap(Typ)}|Memo])
     end.
 
 %% In the past I returned the environment entirely but this contained mutations
@@ -976,6 +1021,8 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
                       NonList ->
                           {error, {cons_to_non_list, NonList}}
                   end,
+
+    %% TODO:  there's no error check here:
     ListType = case TTyp of
                    P when is_pid(P) ->
                        case get_cell(TTyp) of
@@ -1023,25 +1070,34 @@ typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
     end;
 
 typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
+    Satisfy = fun() ->
+                      %% Naively assume a single call to the same function for now.
+                      %% does the module exist and does it export the function?
+                      case extract_fun(Env, Mod, X, Arity) of
+                          {error, _} = E -> E;
+                          {ok, Module, Fun} -> 
+                              Env2 = Env#env{current_module=Module, 
+                                             entered_modules=[Mod | Env#env.entered_modules]},
+                              case typ_of(Env2, Lvl, Fun) of
+                                  {error, _} = E -> E;
+                                  {TypF, NextVar} ->
+                                      typ_apply(update_counter(NextVar, Env), 
+                                                Lvl, TypF, NextVar, Args, L)
+                              end
+                      end
+              end,
+    Error = fun() ->
+                    [CurrMod|_] = Env#env.entered_modules,
+                    {error, {bidirectional_module_ref, Mod, CurrMod}}
+            end,
+
     case [M || M <- Env#env.entered_modules, M == Mod] of
-        [] ->
-            %% Naively assume a single call to the same function for now.
-            % does the module exist and does it export the function?
-            case extract_fun(Env, Mod, X, Arity) of
-                {error, _} = E -> E;
-                {ok, Module, Fun} -> 
-                    Env2 = Env#env{current_module=Module, 
-                                   entered_modules=[Mod | Env#env.entered_modules]},
-                    case typ_of(Env2, Lvl, Fun) of
-                        {error, _} = E -> E;
-                        {TypF, NextVar} ->
-                            typ_apply(update_counter(NextVar, Env), 
-                                      Lvl, TypF, NextVar, Args, L)
-                    end
-            end;
-        _  -> 
-            [CurrMod|_] = Env#env.entered_modules,
-            {error, {bidirectional_module_ref, Mod, CurrMod}}
+        [] -> Satisfy();
+        [Mod] -> case Env#env.current_module of
+                     #mlfe_module{name=Mod} -> Satisfy();
+                     _ -> Error()
+                 end;
+        _  -> Error()
     end;
 
 typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
@@ -1058,8 +1114,11 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
                          Mod = Env#env.current_module,
                          case get_fun(Mod, FN, length(Args)) of
                              {ok, _, Fun} ->
-                                 {TypF, NextVar} = typ_of(Env, Lvl, Fun),
-                                 typ_apply(Env, Lvl, TypF, NextVar, Args, L);
+                                 case typ_of(Env, Lvl, Fun) of
+                                     {error, _}=Err -> Err;
+                                     {TypF, NextVar} ->
+                                         typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                 end;
                              {error, _} = E -> E
                          end
                  end,                                       
@@ -1067,7 +1126,8 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     case typ_of(Env, Lvl, N) of
         {error, {bad_variable_name, _}} -> ForwardFun();
         {error, _} = E -> E;
-        {TypF, NextVar} -> typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+        {TypF, NextVar} -> 
+            typ_apply(Env, Lvl, TypF, NextVar, Args, L)
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
@@ -1128,24 +1188,8 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
             end
     end;
 
-typ_of(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}=Recv) ->
-    case unify_clauses(Env, Lvl, Cs, Line) of
-        {error, _}=Err -> Err;
-        {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
-            case TA of
-                undefined -> 
-                    {new_cell({t_receiver, PTyp, RTyp}), Env2#env.next_var};
-                E -> case typ_of(Env2, Lvl, E) of
-                         {error, _}=Err -> Err;
-                         {Typ, NV} ->
-                             Env3 = update_counter(NV, Env2),
-                             case unify(Typ, RTyp, Env3, Line) of
-                                 {error, _}=Err -> Err;
-                                 ok -> {new_cell({t_receiver, PTyp, RTyp}), NV}
-                             end
-                     end
-            end
-    end;
+typ_of(Env, Lvl, #mlfe_receive{}=Recv) ->
+    type_receive(Env, Lvl, Recv);
 
 %%% Calls to Erlang code only have their return value typed.
 typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
@@ -1171,6 +1215,39 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
             {FC, NV2}
     end;
 
+%% Spawning of functions in the current module:
+typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) ->
+    
+    %% make a function application and type it:
+    Apply = #mlfe_apply{name=F, args=Args},
+    #mlfe_module{functions=MFs} = Env#env.current_module,
+    {_, _, FN} = F,
+    FunTyp = case [Fun||#mlfe_fun_def{name={_, _, FF}}=Fun <- MFs, FF =:= FN] of
+                 [#mlfe_fun_def{type=undefined}=Fun] ->
+                     typ_of(Env, Lvl, Fun);
+                 [#mlfe_fun_def{type=T}] ->
+                     {T, Env#env.next_var};
+                 [] ->
+                     {error, {no_function, module_name(Env), L, FN}}
+             end,
+
+    case FunTyp of
+        {error, _}=Err -> Err;
+        {SpawnFunTyp, NV} ->
+            Env2 = update_counter(NV, Env),
+            case typ_of(Env2, Lvl, Apply) of
+                {error, _}=Err -> Err;
+                {_, NV2} ->
+                    %% use the type of the application to type a pid
+                    case SpawnFunTyp of
+                        {t_receiver, Recv, _} ->
+                            {new_cell({t_pid, Recv}), NV2};
+                        Other ->
+                            {new_cell({t_pid, undefined}), NV2}
+                    end
+            end
+    end;
+
 typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     %% I'm leaving the environment mutation here because the body
     %% needs the bindings:
@@ -1183,14 +1260,15 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
         {error, _} = Err ->
             Err;
         {T, NextVar} ->
-            Env3 = update_counter(NextVar, Env2),
-            %dump_env(Env3),
             JustTypes = [Typ || {_, Typ} <- ArgTypes],
             case unwrap(T) of
                 {t_receiver, Recv, Res} ->
-                    {{t_receiver, new_cell(Recv), 
-                      {t_arrow, JustTypes, new_cell(Res)}}, NextVar};
-                _ ->
+                    TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
+                    {t_receiver, Recv2, Res2}=Coll=collapse_receivers(TRec, Env, Lvl),
+                    X = {{t_receiver, Recv2,
+                      {t_arrow, JustTypes, Res2}}, NextVar},
+                    X;
+                Other ->
                     {{t_arrow, JustTypes, T}, NextVar}
             end
     end;
@@ -1206,15 +1284,21 @@ typ_of(Env, Lvl, #fun_binding{
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     %dump_env(Env),
-    {TypE, NextVar} = typ_of(Env, Lvl, E1),
-    Gen = gen(Lvl, TypE),
-    Env2 = update_counter(NextVar, Env),
-    typ_of(update_binding(N, Gen, Env2), Lvl+1, E2).
+    case typ_of(Env, Lvl, E1) of
+        {error, _}=Err ->
+            Err;
+        {TypE, NextVar} ->
+            Gen = gen(Lvl, TypE),
+            Env2 = update_counter(NextVar, Env),
+            {Typ, _}=Res = typ_of(update_binding(N, Gen, Env2), Lvl+1, E2),
+            Res
+    end.
 
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
 unify_clauses(Env, Lvl, Cs, Line) ->
-        ClauseFolder = fun(C, {Clauses, EnvAcc}) ->
+    ClauseFolder = fun(_, {error, _}=Err) -> Err;
+                      (C, {Clauses, EnvAcc}) ->
                            case typ_of(EnvAcc, Lvl, C) of
                                {error, _}=Err -> Err;
                                {TypC, NV} -> 
@@ -1224,7 +1308,8 @@ unify_clauses(Env, Lvl, Cs, Line) ->
     case lists:foldl(ClauseFolder, {[], Env}, Cs) of
         {error, _}=Err -> Err;
         {TypedCs, #env{next_var=NextVar2}} ->
-            UnifyFolder = fun({t_clause, PA, _, RA}=C, Acc) ->
+            UnifyFolder = fun(_, {error, _}=Err) -> Err;
+                             ({t_clause, PA, _, RA}=C, Acc) ->
                                   case Acc of
                                       {t_clause, PB, _, RB} = TypC ->
                                           case unify(PA, PB, Env, Line) of
@@ -1235,15 +1320,83 @@ unify_clauses(Env, Lvl, Cs, Line) ->
                                                   end;
                                               {error, _} = Err -> Err
                                           end;
-                                      {error, _} = Err ->
-                                          Err
+                                      {error, _} = Err -> Err
                                   end
                           end,
     
             [FC|TCs] = lists:reverse(TypedCs),
             case lists:foldl(UnifyFolder, FC, TCs) of
-                {error, _}=Err -> Err;
+                {error, _}=Err ->Err;
                 _ -> {ok, FC, update_counter(NextVar2, Env)}
+            end
+    end.
+
+collapse_error({error, _}=Err, _) ->
+    Err;
+collapse_error(Res, F) ->
+    F(Res).
+
+collapse_receivers(C, Env, Line) when is_pid(C) ->
+    collapse_error(
+      collapse_receivers(get_cell(C), Env, Line), 
+      fun(R) -> set_cell(C, R), C end);
+collapse_receivers({link, C}, Env, Line) when is_pid(C) ->
+    collapse_error(
+      collapse_receivers(C, Env, Line),
+      fun(Res) -> {link, Res} end);
+collapse_receivers({t_receiver, Typ, C}=Recv, Env, Line) when is_pid(C) ->
+    case get_cell(C) of
+        {t_receiver, _, _}=Nested -> 
+            case collapse_receivers(Nested, Env, Line) of
+                {error, _}=Err -> Err;
+                {t_receiver, _, Res}=Collapsed ->
+                    {NewVar, Env2} = new_var(0, Env),
+                    case unify({t_receiver, Typ, Res},
+                               new_cell(Collapsed),
+                               Env2, Line) of
+                        ok -> {t_receiver, Typ, Res};
+                        {error, _} = Err -> Err
+                    end
+            end;
+        {link, CC} when is_pid(CC) ->
+            collapse_receivers({t_receiver, Typ, CC}, Env, Line);
+        Other ->
+            Recv
+    end;
+collapse_receivers({t_receiver, T, E}, Env, Line) ->
+    collapse_receivers({t_receiver, T, new_cell(E)}, Env, Line);
+collapse_receivers(E, _, _) ->
+    E.
+
+type_receive(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}) ->
+    case unify_clauses(Env, Lvl, Cs, Line) of
+        {error, _}=Err -> Err;
+        {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
+            Collapsed = collapse_receivers(RTyp, Env, Line),
+            case unwrap(Collapsed) of
+                {t_receiver, _, B} ->
+                    RC = new_cell(Collapsed),
+                    case unify(RC, new_cell(B), Env, Line) of
+                        %% TODO:  return this error
+                        {error, _}=Er -> erlang:error(Er);
+                        ok -> RC
+                    end;
+                _ -> Collapsed
+            end,
+            
+            case TA of
+                undefined -> 
+                    {new_cell({t_receiver, PTyp, RTyp}), Env2#env.next_var};
+                E -> case typ_of(Env2, Lvl, E) of
+                         {error, _}=Err -> Err;
+                         {Typ, NV} ->
+                             Env3 = update_counter(NV, Env2),
+                             CollapsedC = new_cell(Collapsed),
+                             case unify(Typ, CollapsedC, Env3, Line) of
+                                 {error, _}=Err -> Err;
+                                 ok -> {new_cell({t_receiver, PTyp, CollapsedC}), NV}
+                             end
+                     end
             end
     end.
 
@@ -1256,26 +1409,44 @@ apply_line(#mlfe_apply{name={bif, _, L, _, _}}) ->
     L.
 
 typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
-    case TypF of
-        _ when is_pid(TypF) ->
-            case get_cell(TypF) of
-                {t_receiver, Recv, App} -> 
-                    case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
-                        {error, _}=Err -> Err;
-                        {Typ, NV} -> 
-                            NewRec = {t_receiver, Recv, Typ},
-                            set_cell(TypF, NewRec),
-                            {TypF, NV}
-                    end;
-                _ ->
-                    typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
-            end;
-        _ ->
-            typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
-    end.
-
+    Result = 
+        case TypF of
+            _ when is_pid(TypF) ->
+                case get_cell(TypF) of
+                    {t_receiver, Recv, App} -> 
+                        case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
+                            {error, _}=Err -> Err;
+                            {Typ, NV} -> 
+                                NewRec = {t_receiver, Recv, Typ},
+                                set_cell(TypF, NewRec),
+                                {TypF, NV}
+                        end;
+                    _ ->
+                        typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
+                end;
+            {t_receiver, Recv, App} ->
+                case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
+                    {error, _}=Err -> Err;
+                    {Typ, NV} -> 
+                        case get_cell(Typ) of
+                            {t_receiver, Recv2, RetTyp} ->
+                                case unify(Recv, Recv2, Env, Line) of
+                                    {error, _}=Err -> Err;
+                                    ok ->
+                                        NewRec = {t_receiver, Recv, RetTyp},
+                                        {NewRec, NV}
+                                end;
+                            _ ->
+                                NewRec = {t_receiver, Recv, Typ},
+                                {NewRec, NV}
+                        end
+                end;
+            _ ->
+                typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
+        end,
+    Result.
+         
 typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
-    dump_env(Env),
     %% we make a deep copy of the function we're unifying 
     %% so that the types we apply to the function don't 
     %% force every other application to unify with them 
@@ -1343,7 +1514,7 @@ args_to_types([], _Lvl, Env, Memo) ->
     {lists:reverse(Memo), Env};
 args_to_types([{unit, _}|T], Lvl, Env, Memo) ->
     %% have to give t_unit a name for filtering later:
-    args_to_types(T, Lvl, Env, [{unit, t_unit}|Memo]);
+    args_to_types(T, Lvl, Env, [{unit, new_cell(t_unit)}|Memo]);
 args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
     case proplists:get_value(N, Bs) of
         undefined ->
@@ -1450,7 +1621,7 @@ rename_wildcards(O, N) ->
 
 dump_env(#env{next_var=V, bindings=Bs}) ->
     io:format("Next var number is ~w~n", [V]),
-    [io:format("Env:  ~s ~s~n", [N, dump_term(T)])||{N, T} <- Bs].
+    [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])||{N, T} <- Bs].
 
 dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
@@ -1469,6 +1640,15 @@ dump_term(T) ->
 %%% Tests
 
 -ifdef(TEST).
+
+%% Top-level typ_of unwraps the reference cells used in unification.
+%% This is only preserved for tests at the moment.
+-spec typ_of(Env::env(), Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
+typ_of(Env, Exp) ->
+    case typ_of(Env, 0, Exp) of
+        {error, _} = E -> E;
+        {Typ, NewVar} -> {unwrap(Typ), update_counter(NewVar, Env)}
+    end.
 
 from_code(C) ->
     {ok, E} = mlfe_ast_gen:parse(scanner:scan(C)),
@@ -2043,7 +2223,9 @@ rename_constructor_wildcard_test() ->
                                              [#adt{
                                                  name="t",
                                                  vars=[],
-                                                 members=[t_float, t_int]}],
+                                                 members=[{t_adt_cons, "Pair"},
+                                                          t_float, 
+                                                          t_int]}],
                                              t_atom}}]}}, 
                  Res).    
 
@@ -2201,6 +2383,7 @@ type_var_protection_fail_unify_test() ->
 module_typ_and_parse(Code) ->
     Env = new_env(),
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    Env#env{modules=[M]},
     typ_module(M, Env).
 
 receive_test_() ->
@@ -2319,5 +2502,119 @@ receive_test_() ->
                           module_typ_and_parse(Code))
      end
 
+    ].
+
+spawn_test_() ->
+    [fun() ->
+             Code = 
+                 "module spawn_module\n\n"
+                 "export f/1, start_f/1\n\n"
+                 "f x = receive with "
+                 " i -> f (x + i)\n\n"
+                 "start_f init = spawn f [init]",
+             ?assertMatch({ok, #mlfe_module{
+                                 functions=[#mlfe_fun_def{
+                                               name={symbol, 5, "f"},
+                                               type={t_receiver, 
+                                                     t_int,
+                                                     {t_arrow,
+                                                      [t_int],
+                                                      t_rec}}},
+                                            #mlfe_fun_def{
+                                               name={symbol, 7, "start_f"},
+                                               type={t_arrow,
+                                                     [t_int],
+                                                     {t_pid, t_int}
+                                              }}]}},
+                          module_typ_and_parse(Code))
+     end
+     , fun() ->
+               Code =
+                   "module spawn_composed_receiver\n\n"
+                   "recv () = receive with "
+                   "  i, is_integer i -> i\n\n"
+                   "not_recv () = (recv ()) + 2",
+               ?assertMatch({ok, #mlfe_module{
+                                   functions=[#mlfe_fun_def{
+                                                name={symbol, 3, "recv"},
+                                                type={t_receiver,
+                                                      t_int,
+                                                      {t_arrow,
+                                                       [t_unit],
+                                                       t_int}}},
+                                              #mlfe_fun_def{
+                                                name={symbol, 5, "not_recv"},
+                                                type={t_receiver,
+                                                      t_int,
+                                                      {t_arrow,
+                                                       [t_unit],
+                                                       t_int}}}]}},
+                            module_typ_and_parse(Code))
+     end
+    , fun() ->
+              Code =
+                  "module spawn_composed_pid\n\n"
+                  "type t = A int | B int\n\n"
+                  "a x = let y = receive with "
+                  "    B xx -> b (x + xx)\n"
+                  "  | A xx -> xx + x in "
+                  "  a (x + y)\n\n"
+                  "b x = receive with "
+                  "    A xx -> a (x + xx)\n"
+                  "  | B xx -> b (xx + x)\n\n"
+                  "start_a init = spawn a [init]",
+              ?assertMatch({ok, #mlfe_module{
+                                   functions=[#mlfe_fun_def{
+                                                 name={symbol, _, "a"},
+                                                 type={t_receiver,
+                                                       #adt{name="t"},
+                                                       {t_arrow,
+                                                        [t_int],
+                                                        t_rec}}},
+                                              #mlfe_fun_def{
+                                                 name={symbol, _, "b"},
+                                                type={t_receiver,
+                                                      #adt{name="t"},
+                                                      {t_arrow,
+                                                       [t_int],
+                                                       t_rec}}},
+                                              #mlfe_fun_def{
+                                                 name={symbol, _, "start_a"},
+                                                 type={t_arrow,
+                                                       [t_int],
+                                                       {t_pid, #adt{name="t"}}}}]}},
+                           module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module unify_failure_for_spawn\n\n"
+                  "type t = A int\n\n"
+                  "type u = B int\n\n"
+                  "a x = let y = receive with "
+                  "    B xx -> b (x + xx)\n"
+                  "  | A xx -> xx + x in "
+                  "  a (x + y)\n\n"
+                  "b x = receive with "
+                  "    A xx -> a (x + xx)\n"
+                  "  | B xx -> b (xx + x)\n\n"
+                  "start_a init = spawn a [init]",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, #adt{name="u"}, #adt{name="t"}}},
+                 module_typ_and_parse(Code))
+      end
+     , fun() ->
+               Code =
+                   "module non_receiver_pid\n\n"
+                   "export f/1, start_f/1\n\n"
+                   "f x = f (x + 1)\n\n"
+                   "start_f () = spawn f [0]",
+               ?assertMatch(
+                  {ok, #mlfe_module{
+                          functions=[#mlfe_fun_def{
+                                        name={symbol, _, "f"},
+                                        type={t_arrow, [t_int], t_rec}},
+                                     #mlfe_fun_def{}]}},
+                  module_typ_and_parse(Code))
+       end
     ].
 -endif.

@@ -52,6 +52,7 @@ module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type        : {token, {type_declare, TokenLine}}.
 use         : {token, {use, TokenLine}}.
+spawn       : {token, {spawn, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 
@@ -70,10 +71,10 @@ after       : {token, {'after', TokenLine}}.
 {TYPE_CHECK} : {token, {type_check_tok, list_to_atom(TokenChars), TokenLine}}.
 
 %% Integer
-[+-]?{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
+[-]?{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
 
 %% Float
-[+-]?{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
+[-]?{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 
 %% Symbol
 {SYM}  : {token, {symbol, TokenLine, TokenChars}}.
