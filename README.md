@@ -1,10 +1,10 @@
 mlfe
 =====
 
-ML-flavoured/fronted Erlang.
+ML-flavoured Erlang.
 
 # Intentions/Goals
-I want something that looks and operates a little bit like ML on the Erlang VM with:
+I want something that looks and operates a little bit like an ML on the Erlang VM with:
 
 - static typing of itself.  I'm deliberately ignoring typing of Erlang
   code that calls into MLFE.
@@ -28,6 +28,7 @@ suggest possible union types if there isn't an appropriate one in scope.
 - type inferencer with ADTs.  Tuples for product types and unions for sum.
 - compile type-checked source to `.beam` binaries
 - simple FFI to Erlang
+- type-safe message flows for processes defined inside MLFE
 
 # Current FFI
 The FFI is quite limited at present and operates as follows:
@@ -38,13 +39,15 @@ The FFI is quite limited at present and operates as follows:
 
 There's clearly room to provide a version that skips the pattern match and
 succeeds if dialyzer supplies a return type for the function that matches a type
-in scope (union or otherwise).
+in scope (union or otherwise).  Worth noting that the FFI assumes you
+know what you're doing and does _not_ check that the module and
+function you're calling exist.
 
 # Using It
 It's not very usable yet but the tests should give a relatively clear picture as to
 where I'm going.  `test_files` contains some example source files used
 in unit tests.  You can call `mlfe:compile({files,
-[List, Of, Files]})` or `mlfe:compile({text, CodeAsAString})` for now.
+[List, Of, File, Names, As, Strings]})` or `mlfe:compile({text, CodeAsAString})` for now.
 
 ## Built-In Stuff
 Most of the basic Erlang data types are supported:
@@ -69,7 +72,7 @@ On top of that you can define ADTs, e.g.
 
 And ADTs with more basic types in unions work, e.g.
 
-    type json = int | float | string | bool "
+    type json = int | float | string | bool
               | list json
               | list (string, json)
 
@@ -159,10 +162,57 @@ An example:
         Error _ -> e
       | Success ok -> Success (f ok)
 
+## Processes
+An example:
+
+    f x = receive with
+      (y, sender) ->
+        let z = x + y in
+        let sent = send z sender in
+      f z
+
+    start_f init = spawn f [init]
+
+All of the above is type checked, including the spawn and message sends.
+Any expression that contains a `receive` block becomes a "receiver"
+with an associated type.  The type inferred for `f` above is the
+following:
+
+    {t_receiver,
+      {t_tuple, [t_int, {t_pid, t_int}]},
+      {t_arrow, [t_int], t_rec}}
+
+This means that:
+
+- `f` has it's own function type (the `t_arrow` part) but it _also_
+  contains one or more receive calls that handle tuples of integers
+  and PIDs that receive integers themselves.
+- `f`'s function type is one that takes integers and is infinitely
+recursive.
+
+`send` returns `unit` but there's no "do" notation/side effect support
+at the moment hence the let binding.  `spawn` for the moment can only
+start functions defined in the module it's called within to simplify
+some cross-module lookup stuff for the time being.  I intend to
+support spawning functions in other modules fairly soon.
+
+Note that the following will yield a type error:
+
+    a x = receive with
+      i -> b x + i
+
+    b x = receive with
+      f -> a x + i
+
+This is because `b` is a `t_float` receiver while `a` is a `t_int`
+receiver.  Adding a union type like `type t = int | float` will solve
+the type error.
+
 # Problems
 ## What's Missing
 A very incomplete list:
 
+- `self()`, though the FFI provides a trivial temporary solution.
 - exception handling (try/catch)
 - any sort of standard library.  Biggest missing things to me right
   now are things like basic string manipulation functions and
@@ -199,7 +249,7 @@ I've been learning-while-doing so there are a number of issues with
 the code, including but not limited to:
 
 - reference cells in the typer are processes that are never garbage
-  collected.
+  collected and it's pretty trigger-happy about creating them.
 - there's a lot of cruft around error handling that should all be
   refactored into some sort of basic monad-like thing.  This is
   extremely evident in `mlfe_ast_gen.erl` and `mlfe_typer.erl`.  Frankly
