@@ -47,7 +47,10 @@ function you're calling exist.
 It's not very usable yet but the tests should give a relatively clear picture as to
 where I'm going.  `test_files` contains some example source files used
 in unit tests.  You can call `mlfe:compile({files,
-[List, Of, File, Names, As, Strings]})` or `mlfe:compile({text, CodeAsAString})` for now.
+[List, Of, File, Names, As, Strings]})` or `mlfe:compile({text,
+CodeAsAString})` for now.  Errors from the compiler (e.g. type errors)
+are almost comically hostile to usability at the moment.  See the
+tests in `mlfe_typer.erl`.
 
 ## Built-In Stuff
 Most of the basic Erlang data types are supported:
@@ -59,6 +62,9 @@ Most of the basic Erlang data types are supported:
 - strings, "A string"
 - lists, `[1, 2, 3]` or `1 :: 2 :: [3]`
 - tuples, `("a", :tuple, "of arity", 4)`
+- pids, these are parametric (like lists, "generics").  If you're
+  including them in a type you can do something like `type t = int |
+  pid int` for a type that covers integers and processes that receive integers.
 
 In addition there is a unit type, expressed as `()`.
 
@@ -208,11 +214,17 @@ This is because `b` is a `t_float` receiver while `a` is a `t_int`
 receiver.  Adding a union type like `type t = int | float` will solve
 the type error.
 
+If you spawn a function which nowhere in its call graph posesses a
+`receive` block, the pid will be typed as `undefined`, which means
+_all_ message sends to that process will be a type error.
+
 # Problems
 ## What's Missing
 A very incomplete list:
 
-- `self()`, though the FFI provides a trivial temporary solution.
+- `self()` - it's a little tricky to type.  The type-safe solution is
+  to spawn a process and then send it its own pid.  Still thinking
+  about how to do this better.
 - exception handling (try/catch)
 - any sort of standard library.  Biggest missing things to me right
   now are things like basic string manipulation functions and

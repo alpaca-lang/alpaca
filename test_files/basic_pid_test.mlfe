@@ -4,8 +4,7 @@ export pid_fun/1, start_pid_fun/1
 
 type t = Add int | Fetch (pid int)
 
-pid_fun x =
-receive with
+pid_fun x = receive with
     Add i -> pid_fun x + i
   | Fetch sender ->
     let sent = send x sender in
