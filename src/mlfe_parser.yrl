@@ -43,7 +43,7 @@ Terminals
 comment_line comment_lines
 
 module export 
-type_declare type_constructor type_var base_type base_list
+type_declare type_constructor type_var base_type base_list base_pid
 use
 boolean int float atom string chars '_'
 symbol module_fun
@@ -113,6 +113,8 @@ type_expr -> base_type :
   list_to_atom("t_" ++ T).
 type_expr -> base_list type_expr: 
   {mlfe_list, '$2'}.
+type_expr -> base_pid type_expr :
+  {mlfe_pid, '$2'}.
 
 type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
 type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].

@@ -50,6 +50,7 @@ compile({files, Filenames}) ->
 
 compile_module(#mlfe_module{name=N}=Mod) ->
     {ok, Forms} = mlfe_codegen:gen(Mod),
+    io:format("~nFORMS~n~w~n", [Forms]),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
     #compiled_module{
        name=N,
@@ -130,4 +131,20 @@ type_import_test() ->
     ?assertEqual(2, M:test_output(unit)),
     [code:delete(N) || N <- ModuleNames].
 
+basic_pid_test() ->
+    Files = ["test_files/basic_pid_test.mlfe"],
+    [M] = compile_and_load(Files),
+    Pid = M:start_pid_fun(0),
+    Pid ! {'Fetch', self()},
+    X = receive
+            I -> I
+        end,
+    ?assertEqual(0, X),
+    Pid ! {'Add', 5},
+    Pid ! {'Fetch', self()},
+    ShouldBe5 = receive
+                    II -> II
+                end,
+    ?assertEqual(5, ShouldBe5),
+    code:delete(M).
 -endif.

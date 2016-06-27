@@ -420,6 +420,17 @@ unify(T1, T2, Env, Line) ->
             unify(A, B, Env, Line);
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
+
+        {{t_pid, A}, {t_pid, B}} ->
+            {t_pid, AC} = get_cell(T1),
+            {t_pid, BC} = get_cell(T2),
+            case unify(AC, BC, Env, Line) of
+                {error, _}=Err -> Err;
+                ok ->
+                    set_cell(T1, new_cell({t_pid, AC})),
+                    set_cell(T2, {link, T1}),
+                    ok
+            end;    
         
         %%% Receivers unify with each other or in the case of a receiver and
         %%% something else, the receiver unifies its result type with the other
@@ -685,6 +696,13 @@ inst_type_members(ADT, [{mlfe_list, TExp}|Rem], Env, Memo) ->
         {ok, Env2, _, [InstMem]} ->
             inst_type_members(ADT, Rem, Env2, [new_cell({t_list, InstMem})|Memo])
     end;
+inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
+    case inst_type_members(ADT, [TExp], Env, []) of
+        {error, _}=Err -> Err;
+        {ok, Env2, _, [InstMem]} ->
+            inst_type_members(ADT, Rem, Env2, [new_cell({t_pid, InstMem})|Memo])
+    end;
+
 inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
     Default = {error, {bad_variable, L, N}},
     case proplists:get_value(N, Vs, Default) of
@@ -1192,9 +1210,12 @@ typ_of(Env, Lvl, #mlfe_send{line=L, message=M, pid=P}) ->
     case typ_of(Env, Lvl, P) of
         {error, _}=Err -> Err;
         {T, NV} ->
-            case unwrap(T) of
-                {t_pid, PidT} ->
-                    Env2 = update_counter(NV, Env),
+            {Var, Env2} = new_var(Lvl, Env),
+            PidT = new_cell(Var),
+            PC = new_cell({t_pid, PidT}),
+            case unify(T, PC, Env2, Lvl) of
+                {error, _}=Err -> Err;
+                ok ->
                     case typ_of(Env2, Lvl, M) of
                         {error, _}=Err -> Err;
                         {MT, NV2} ->
@@ -1203,10 +1224,7 @@ typ_of(Env, Lvl, #mlfe_send{line=L, message=M, pid=P}) ->
                                 {error, _}=Err -> Err;
                                 ok -> {t_unit, NV}
                             end
-                    end;
-                Other ->
-                    io:format("Other is ~w ~w~n", [Other, unwrap(Other)]),
-                    {error, {send_to_pid_only, module_name(Env), L, Other}}
+                    end
             end
     end;
 typ_of(Env, Lvl, #mlfe_receive{}=Recv) ->
@@ -1264,7 +1282,7 @@ typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) -
                         {t_receiver, Recv, _} ->
                             {new_cell({t_pid, Recv}), NV2};
                         Other ->
-                            {new_cell({t_pid, undefined}), NV2}
+                            {new_cell({t_pid, new_cell(undefined)}), NV2}
                     end
             end
     end;
@@ -2667,9 +2685,9 @@ send_message_test_() ->
     , fun() ->
               Code =
                   "module send_to_non_pid\n\n"
-                  "f x = send 1 x",
+                  "f x = send 1 2",
               ?assertMatch(
-                 {error, {send_to_pid_only, send_to_non_pid, 3, {unbound, _, _}}},
+                 {error, {cannot_unify, send_to_non_pid, _, t_int, {t_pid, _}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->

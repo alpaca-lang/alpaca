@@ -49,4 +49,5 @@
                           {is_atom, t_atom},
                           {is_bool, t_bool},
                           {is_list, t_list},
+                          {is_pid, t_pid},
                           {is_string, t_string}]).

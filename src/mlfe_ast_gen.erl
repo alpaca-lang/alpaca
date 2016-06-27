@@ -41,12 +41,14 @@ rebind_and_validate_module(_, {error, _} = Err) ->
 rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{}=Mod}) ->
     validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
 
-rebind_and_validate_functions(NextVarNum, #mlfe_module{functions=Funs}=Mod) ->
+rebind_and_validate_functions(NextVarNum, #mlfe_module{
+                                             name=MN,
+                                             functions=Funs}=Mod) ->
     F = fun
             (_, {error, _}=Err) ->
                 Err;
             (F, {NV, M, Memo}) ->
-                case rename_bindings(NV, F) of
+                case rename_bindings(NV, MN, F) of
                     {error, _}=Err ->
                         Err;
                     {NV2, M2, F2} ->
@@ -168,13 +170,14 @@ next_batch([Token|Tail], Memo) ->
 
 -spec rename_bindings(
         NextVar::integer(),
+        MN::atom(),
         TopLevel::mlfe_fun_def()) -> {integer(), map(), mlfe_fun_def()} | 
                                      {error, term()}.
-rename_bindings(NextVar, #mlfe_fun_def{name={symbol, _, Name}, args=As}=TopLevel) ->
+rename_bindings(NextVar, MN, #mlfe_fun_def{name={symbol, _, Name}, args=As}=TopLevel) ->
     SeedMap = #{Name => Name},
-    case rebind_args(NextVar, SeedMap, As) of
+    case rebind_args(NextVar, MN, SeedMap, As) of
         {NV, M, Args} ->
-            case rename_bindings(NV, M, TopLevel#mlfe_fun_def.body) of
+            case rename_bindings(NV, MN, M, TopLevel#mlfe_fun_def.body) of
                 {NV2, M2, E} -> {NV2, M2, TopLevel#mlfe_fun_def{
                                             body=E,
                                             args=Args}};
@@ -183,7 +186,7 @@ rename_bindings(NextVar, #mlfe_fun_def{name={symbol, _, Name}, args=As}=TopLevel
         {error, _} = E -> E
     end.
 
-rebind_args(NextVar, Map, Args) ->
+rebind_args(NextVar, MN, Map, Args) ->
     F = fun
             ({error, _} = E, _) -> E;
             ({symbol, L, N}, {NV, AccMap, Syms}) -> 
@@ -202,26 +205,26 @@ rebind_args(NextVar, Map, Args) ->
         {error, _}=Err -> Err
     end.
 
-rename_bindings(NextVar, Map, #fun_binding{def=Def, expr=E}) ->
-    case rename_bindings(NextVar, Map, Def) of
+rename_bindings(NextVar, MN, Map, #fun_binding{def=Def, expr=E}) ->
+    case rename_bindings(NextVar, MN, Map, Def) of
         {error, _} = Err ->
             Err;
-        {NV, M2, Def2} -> case rename_bindings(NV, M2, E) of
+        {NV, M2, Def2} -> case rename_bindings(NV, MN, M2, E) of
                               {error, _} = Err -> Err;
                               {NV2, M3, E2} -> {NV2, 
                                                 M3, 
                                                 #fun_binding{def=Def2, expr=E2}}
                           end
     end;
-rename_bindings(NV, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
+rename_bindings(NV, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
     #mlfe_fun_def{args=Args, body=Body} = Def,
     case maps:get(Name, M, undefined) of
         undefined ->
             Synth = next_var(NV),
             M2 = maps:put(Name, Synth, M),
-            case rebind_args(NV+1, M2, Args) of
+            case rebind_args(NV+1, MN, M2, Args) of
                 {error, _}=Err -> Err;
-                {NV3, M3, Args2} -> case rename_bindings(NV3, M3, Body) of
+                {NV3, M3, Args2} -> case rename_bindings(NV3, MN, M3, Body) of
                                         {error, _}=Err -> Err;
                                         {NV4, M4, Body2} ->
                                             {NV4, M4, #mlfe_fun_def{
@@ -233,7 +236,7 @@ rename_bindings(NV, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
         _ ->
             {error, {duplicate_definition, Name, L}}
     end;
-rename_bindings(NextVar, Map, #var_binding{}=VB) ->
+rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
     #var_binding{name={symbol, L, N},
                  to_bind=TB,
                  expr=E} = VB,
@@ -241,9 +244,9 @@ rename_bindings(NextVar, Map, #var_binding{}=VB) ->
         undefined ->
             Synth = next_var(NextVar),
             M2 = maps:put(N, Synth, Map),
-            case rename_bindings(NextVar+1, M2, TB) of
+            case rename_bindings(NextVar+1, MN, M2, TB) of
                 {error, _} = Err -> Err;
-                {NV, M3, TB2} -> case rename_bindings(NV, M3, E) of
+                {NV, M3, TB2} -> case rename_bindings(NV, MN, M3, E) of
                                      {error, _} = Err -> Err;
                                      {NV2, M4, E2} -> {NV2,
                                                        M4,
@@ -257,79 +260,84 @@ rename_bindings(NextVar, Map, #var_binding{}=VB) ->
             {error, {duplicate_definition, N, L}}
     end;
 
-rename_bindings(NextVar, Map, #mlfe_apply{name=N, args=Args}=App) ->
+rename_bindings(NextVar, MN, Map, #mlfe_apply{name=N, args=Args}=App) ->
     FName = case N of
                {symbol, _, _} = S -> 
-                    {_, _, X} = rename_bindings(NextVar, Map, S),
+                    {_, _, X} = rename_bindings(NextVar, MN, Map, S),
                     X;
                _ -> N
            end,
-    {_, _, Name} = rename_bindings(NextVar, Map, FName),
-    case rename_binding_list(NextVar, Map, Args) of
+    {_, _, Name} = rename_bindings(NextVar, MN, Map, FName),
+    case rename_binding_list(NextVar, MN, Map, Args) of
         {error, _} = Err -> Err;
         {NV2, M2, Args2} ->
             {NV2, M2, App#mlfe_apply{name=Name, args=Args2}}
     end;
 
-rename_bindings(NextVar, Map, #mlfe_spawn{function=F, args=Args}=Spawn) ->
-    {_, _, FName} = rename_bindings(NextVar, Map, F),
-    FArgs = [X||{_, _, X} <- [rename_bindings(NextVar, Map, A)||A <- Args]],
-    {NextVar, Map, Spawn#mlfe_spawn{function=FName, args=FArgs}};
+rename_bindings(NextVar, MN, Map, #mlfe_spawn{
+                                     function=F,
+                                     args=Args}=Spawn) ->
+    {_, _, FName} = rename_bindings(NextVar, MN, Map, F),
+    FArgs = [X||{_, _, X} <- [rename_bindings(NextVar, MN, Map, A)||A <- Args]],
+    {NextVar, Map, Spawn#mlfe_spawn{
+                     function=FName, 
+                     from_module=MN,
+                     args=FArgs}};
 
-rename_bindings(NextVar, Map, #mlfe_send{message=M, pid=P}=Send) ->
-    {_, _, M2} = rename_bindings(NextVar, Map, M),
-    {_, _, P2} = rename_bindings(NextVar, Map, P),
+rename_bindings(NextVar, MN, Map, #mlfe_send{message=M, pid=P}=Send) ->
+    {_, _, M2} = rename_bindings(NextVar, MN, Map, M),
+    {_, _, P2} = rename_bindings(NextVar, MN, Map, P),
     {NextVar, Map, Send#mlfe_send{message=M2, pid=P2}};
 
-rename_bindings(NextVar, Map, #mlfe_type_apply{arg=none}=A) ->
+rename_bindings(NextVar, MN, Map, #mlfe_type_apply{arg=none}=A) ->
     {NextVar, Map, A};
-rename_bindings(NextVar, Map, #mlfe_type_apply{arg=Arg}=A) ->
-    case rename_bindings(NextVar, Map, Arg) of
+rename_bindings(NextVar, MN, Map, #mlfe_type_apply{arg=Arg}=A) ->
+    case rename_bindings(NextVar, MN, Map, Arg) of
         {error, _}=Err -> Err;
         {NV, M, Arg2} -> {NV, M, A#mlfe_type_apply{arg=Arg2}}
     end;
-rename_bindings(NextVar, Map, #mlfe_type_check{expr=E}=TC) ->
-    case rename_bindings(NextVar, Map, E) of
+rename_bindings(NextVar, MN, Map, #mlfe_type_check{expr=E}=TC) ->
+    case rename_bindings(NextVar, MN, Map, E) of
         {error, _}=Err -> Err;
         {NV, M, E2} -> {NV, M, TC#mlfe_type_check{expr=E2}}
     end;
 
-rename_bindings(NextVar, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
-    case rename_bindings(NextVar, Map, H) of
+rename_bindings(NextVar, MN, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
+    case rename_bindings(NextVar, MN, Map, H) of
         {error, _} = Err -> Err;
-        {NV, M, H2} -> case rename_bindings(NV, M, T) of
+        {NV, M, H2} -> case rename_bindings(NV, MN, M, T) of
                            {error, _} = Err -> Err;
                            {NV2, M2, T2} -> {NV2, M2, Cons#mlfe_cons{
                                                         head=H2,
                                                         tail=T2}}
                        end
     end;
-rename_bindings(NextVar, Map, #mlfe_tuple{values=Vs}=T) ->
-    case rename_binding_list(NextVar, Map, Vs) of
+rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
+    case rename_binding_list(NextVar, MN, Map, Vs) of
         {error, _} = Err -> Err;
         {NV, M, Vals2} -> {NV, M, T#mlfe_tuple{values=Vals2}}
     end;
-rename_bindings(NextVar, Map, {symbol, L, N}=S) ->
+rename_bindings(NextVar, MN, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
         undefined -> {NextVar, Map, S};
         Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
     end;
-rename_bindings(NV, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
-    case rename_bindings(NV, M, Args) of
+rename_bindings(NV, MN, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
+    case rename_bindings(NV, MN, M, Args) of
         {error, _} = Err -> Err;
-        {NV2, M2, Args2} -> case rename_clause_list(NV2, M2, Cs) of
+        {NV2, M2, Args2} -> case rename_clause_list(NV2, MN, M2, Cs) of
                                 {error, _} = Err -> 
                                     Err;
                                 {NV3, M3, Cs2} ->
                                     {NV3, M3, FFI#mlfe_ffi{args=Args2, clauses=Cs2}}
                             end
     end;
-rename_bindings(NV, M, #mlfe_match{}=Match) ->
+rename_bindings(NV, MN, M, #mlfe_match{}=Match) ->
     #mlfe_match{match_expr=ME, clauses=Cs} = Match,
-    case rename_bindings(NV, M, ME) of
+    case rename_bindings(NV, MN, M, ME) of
         {error, _} = Err -> Err;
         {NV2, M2, ME2} -> 
-            case rename_clause_list(NV2, M2, Cs) of
+            case rename_clause_list(NV2, MN, M2, Cs) of
                 {error, _} = Err -> 
                     Err;
                 {NV3, M3, Cs2} -> 
@@ -337,23 +345,23 @@ rename_bindings(NV, M, #mlfe_match{}=Match) ->
             end
     end;
 
-rename_bindings(NV, M, #mlfe_receive{clauses=Cs}=Recv) ->
-    case rename_clause_list(NV, M, Cs) of
+rename_bindings(NV, MN, M, #mlfe_receive{clauses=Cs}=Recv) ->
+    case rename_clause_list(NV, MN, M, Cs) of
         {error, _} = Err -> Err;
         {NV2, M2, Cs2}   -> {NV2, M2, Recv#mlfe_receive{clauses=Cs2}}
     end;
 
-rename_bindings(NV, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
+rename_bindings(NV, MN, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
     case make_bindings(NV, M, P) of
         {error, _} = Err -> Err;
         {NV2, M2, P2} -> 
-            case rename_bindings(NV2, M2, R) of
+            case rename_bindings(NV2, MN, M2, R) of
                 {error, _} = Err -> Err;
                 {NV3, M3, R2} -> 
-                    case rename_binding_list(NV3, M3, Gs) of
+                    case rename_binding_list(NV3, MN, M3, Gs) of
                         {error, _}=Err -> Err;
                         {NV4, _M4, Gs2} ->
                     
@@ -367,13 +375,13 @@ rename_bindings(NV, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
                     end
             end
     end;
-rename_bindings(NextVar, Map, Expr) ->
+rename_bindings(NextVar, _MN, Map, Expr) ->
     {NextVar, Map, Expr}.
 
-rename_binding_list(NextVar, Map, Bindings) ->
+rename_binding_list(NextVar, MN, Map, Bindings) ->
     F = fun
             (_, {error, _} = Err) -> Err;
-            (A, {NV, M, Memo})    -> case rename_bindings(NV, M, A) of
+            (A, {NV, M, Memo})    -> case rename_bindings(NV, MN, M, A) of
                                          {error, _} = Err -> Err;
                                          {NV2, M2, A2} -> {NV2, M2, [A2|Memo]}
                                      end
@@ -385,11 +393,11 @@ rename_binding_list(NextVar, Map, Bindings) ->
 
 %% For renaming bindings in a list of clauses.  Broken out from pattern
 %% matching because it will be reused for FFI and receive.
-rename_clause_list(NV, M, Cs) ->
+rename_clause_list(NV, MN, M, Cs) ->
     F = fun
             (_, {error, _}=Err) -> Err;
             (C, {X, Y, Memo}) ->
-                case rename_bindings(X, Y, C) of
+                case rename_bindings(X, MN, Y, C) of
                     {error, _} = Err -> Err;
                     {A, B, C2} -> {A, B, [C2|Memo]}
                 end
@@ -909,9 +917,9 @@ rebinding_test_() ->
                                             name={bif, '+', 1, 'erlang', '+'},
                                             args=[{symbol, 1, "svar_0"}, 
                                                   {symbol, 1, "svar_1"}]}}}},
-                   rename_bindings(0, A)),
+                   rename_bindings(0, undefined, A)),
      ?_assertMatch({error, {duplicate_definition, "x", 2}},
-                   rename_bindings(0, B)),
+                   rename_bindings(0, undefined, B)),
      ?_assertMatch({_, _, #mlfe_fun_def{
                              name={symbol, 1, "f"},
                              args=[{symbol, 1, "svar_0"}],
@@ -927,8 +935,9 @@ rebinding_test_() ->
                                                             values=[{symbol, 3, "svar_2"},
                                                                     {symbol, 3, "svar_3"}]},
                                                  result={symbol, 3, "svar_3"}}]}}},
-                   rename_bindings(0, C)),
-     ?_assertMatch({error, {duplicate_definition, "x", 2}}, rename_bindings(0, D)),
+                   rename_bindings(0, undefined, C)),
+     ?_assertMatch({error, {duplicate_definition, "x", 2}}, 
+                   rename_bindings(0, undefined, D)),
      ?_assertMatch({_, _, 
                     #mlfe_fun_def{
                        body=#mlfe_match{
@@ -947,8 +956,9 @@ rebinding_test_() ->
                                                      head={symbol, 3, "svar_2"},
                                                      tail={symbol, 3, "svar_3"}},
                                           result={symbol, 3, "svar_2"}}]}}}, 
-                   rename_bindings(0, E)),
-     ?_assertMatch({error, {duplicate_definition, "y", 2}}, rename_bindings(0, F))
+                   rename_bindings(0, undefined, E)),
+     ?_assertMatch({error, {duplicate_definition, "y", 2}}, 
+                   rename_bindings(0, undefined, F))
     ].
 
 -endif.

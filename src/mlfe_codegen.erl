@@ -175,6 +175,38 @@ gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
 gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(gen_expr(Env, E), [gen_expr(Env, X) || X <- Cs]);
 
+gen_expr(Env, #mlfe_spawn{from_module=M, 
+                          module=undefined, 
+                          function={symbol, _, FN},
+                          args=Args}) ->
+
+    ArgCons = lists:foldl(
+                fun(A, L) -> cerl:c_cons(gen_expr(Env, A), L) end,
+                cerl:c_nil(), 
+                lists:reverse(Args)),
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom('spawn'),
+      [cerl:c_atom(M), cerl:c_atom(FN), ArgCons]);
+
+gen_expr(Env, #mlfe_receive{clauses=Cs, timeout_action=undefined}) ->
+    cerl:c_receive([gen_expr(Env, E)||E <- Cs]);
+gen_expr(Env, #mlfe_receive{
+                 clauses=Cs, 
+                 timeout=TO,
+                 timeout_action=TA}) ->
+    X = case TO of
+            infinity -> cerl:c_atom(TO);
+            {int, _, I} -> cerl:c_int(I)
+        end,
+    cerl:c_receive([gen_expr(Env, E)||E <- Cs], X, gen_expr(Env, TA));
+
+gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom('!'),
+      [gen_expr(Env, P), gen_expr(Env, M)]);
+
 gen_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
     Arity = case A of

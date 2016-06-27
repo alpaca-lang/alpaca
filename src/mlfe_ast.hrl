@@ -224,6 +224,7 @@
 -record(mlfe_spawn, {type=undefined :: typ(),
                      line=0 :: integer(),
                      module=undefined :: atom(),
+                     from_module=undefined :: atom(),
                      function={symbol, 0, ""} :: mlfe_symbol(),
                      args=[] :: list(mlfe_expression())}).
 -type mlfe_spawn() :: #mlfe_spawn{}.
