@@ -147,4 +147,8 @@ basic_pid_test() ->
                 end,
     ?assertEqual(5, ShouldBe5),
     code:delete(M).
+
+simple_example_module_test() ->
+    [M] = compile_and_load(["test_files/simple_example.mlfe"]),
+    code:delete(M).
 -endif.

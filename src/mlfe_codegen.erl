@@ -197,7 +197,7 @@ gen_expr(Env, #mlfe_receive{
                  timeout_action=TA}) ->
     X = case TO of
             infinity -> cerl:c_atom(TO);
-            {int, _, I} -> cerl:c_int(I)
+            I -> cerl:c_int(I)
         end,
     cerl:c_receive([gen_expr(Env, E)||E <- Cs], X, gen_expr(Env, TA));
 

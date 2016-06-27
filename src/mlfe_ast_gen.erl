@@ -10,7 +10,6 @@
 parse({ok, Tokens, _}) ->
     parse(Tokens);
 parse(Tokens) when is_list(Tokens) ->
-    io:format("Parsing ~w~n", [Tokens]),
     mlfe_parser:parse(Tokens).
 
 parse_module(NextVarNum, Text) when is_list(Text) ->
@@ -125,7 +124,6 @@ update_memo(#mlfe_module{type_imports=Imports}=M, #mlfe_type_import{}=I) ->
 update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#mlfe_module{function_exports=Es ++ Exports}};
 update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
-    io:format("Adding parsed function ~w~n", [N]),
     {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
     {ok, M#mlfe_module{types=[T|Ts]}};

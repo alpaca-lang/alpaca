@@ -266,6 +266,7 @@ module_name(_) ->
 %% construction here:
 -spec unify_error(Env::env(), Line::integer(), typ(), typ()) -> unification_error().
 unify_error(Env, Line, Typ1, Typ2) ->
+    io:format("Failed on ~w ~w~n", [unwrap(Typ1), unwrap(Typ2)]),
     {error, {cannot_unify, module_name(Env), Line, Typ1, Typ2}}.
 
 %%% Unify now requires the environment not in order to make changes to it but
@@ -507,13 +508,17 @@ unify_adt(C1, C2, #adt{name=N, vars=AVars}=A, #adt{name=N, vars=BVars}, Env, L) 
             set_cell(C2, {link, C1}),
             ok
     end;
-unify_adt(C1, C2, #adt{name=N, members=Ms}=A, AtomTyp, Env, L) when is_atom(AtomTyp) ->
+unify_adt(C1, C2, #adt{name=N, vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_atom(AtomTyp) ->
     case [M||M <- Ms, unwrap(M) =:= AtomTyp] of
         [_] -> 
             set_cell(C1, A),
             set_cell(C2, {link, C1}),
             ok;
-        []  -> unify_error(Env, L, A, AtomTyp)
+        []  -> 
+            VFolder = fun(_, ok) -> ok;
+                         ({_, V}, _) -> unify(AtomTyp, V, Env, L)
+                      end,
+            lists:foldl(VFolder, unify_error(Env, L, A, AtomTyp), Vs)
     end;
 
 %% If an ADTs members are empty, it's a reference to an ADT that should
@@ -584,6 +589,7 @@ unify_adt(_, _, A, B, Env, L) ->
                        {cannot_unify, atom(), integer(), typ(), typ()} |
                        {bad_variable, integer(), mlfe_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
+    io:format("Covering for ~w ~w ~w ~w~n", [T1, unwrap(T1), T2, unwrap(T2)]),
     %% Convert all the available types to actual ADT types with
     %% which to attempt unions:
     TypeFolder = fun(_ ,{error, _}=Err) ->

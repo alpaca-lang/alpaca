@@ -30,18 +30,58 @@ suggest possible union types if there isn't an appropriate one in scope.
 - simple FFI to Erlang
 - type-safe message flows for processes defined inside MLFE
 
-# Current FFI
-The FFI is quite limited at present and operates as follows:
+Here's an example module:
 
-    call_erlang :a_module :a_function [3, "different", "arguments"] with
-       (ok, _) -> :ok
-     | (error, _) -> :error
+    module simple_example
 
-There's clearly room to provide a version that skips the pattern match and
-succeeds if dialyzer supplies a return type for the function that matches a type
-in scope (union or otherwise).  Worth noting that the FFI assumes you
-know what you're doing and does _not_ check that the module and
-function you're calling exist.
+    // a basic top-level function:
+    add2 x = x + 2
+
+    something_with_let_bindings x =
+      // a function:
+      let adder a b = a + b in
+      // a variable (immutable):
+      let x_plus_2 = adder x 2 in
+      add2 x
+
+    // a polymorphic ADT:
+    type messages 'x = 'x | Fetch pid 'x
+
+    /* A function that can be spawned to receive `messages int`
+       messages, that increments its state by received integers
+       and can be queried for its state.
+    */
+    will_be_a_process x = receive with
+        i -> will_be_a_process (x + i)
+      | Fetch sender ->
+        let sent = send x sender in
+        will_be_a_process x
+
+    start_a_process init = spawn will_be_a_process [init]
+
+# Licensing
+Copyright 2016 Jeremy Pierre
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+# Contributions
+Please note that this project is released with a Contributor Code of
+Conduct, version 1.4. By participating in this project you agree to abide by its
+terms.  See `code_of_conduct.md` for details.
+
+Pull requests with improvements and bug reports with accompanying
+tests welcome.  I'm not particularly set on syntax just yet,
+especially with respect to comments.
 
 # Using It
 It's not very usable yet but the tests should give a relatively clear picture as to
@@ -51,6 +91,35 @@ in unit tests.  You can call `mlfe:compile({files,
 CodeAsAString})` for now.  Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
 tests in `mlfe_typer.erl`.
+
+## Getting Started
+Once you've cloned this repository, you'll also need Erlang R18 (I
+currently use
+[packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+and haven't tested R19 yet) and [rebar3](https://rebar3.org).  Run
+tests and dialyzer with:
+
+    rebar3 eunit
+    rebar3 dialyzer
+
+There's no shell front-end for the compiler so if you want to build
+and type-check things written in MLFE, you will need to boot the
+erlang shell and then run `mlfe:compile/1`.  For example, if you
+wanted to compile the type import test file in the `test_files`
+folder:
+
+    rebar3 shell
+    ...
+    1> Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"].
+    2> mlfe:compile({files, Files}).
+
+This will result in either an error or a list of tuples of the following form:
+
+    {compiled_module, ModuleName, FileName, BeamBinary}
+
+The files will not actually be written by the compiler so the binaries
+described by the tuples can either be loaded directly into the running
+VM (see the tests in `mlfe.erl`) or written manually for now.
 
 ## Built-In Stuff
 Most of the basic Erlang data types are supported:
@@ -208,7 +277,7 @@ Note that the following will yield a type error:
       i -> b x + i
 
     b x = receive with
-      f -> a x + i
+      f -> a x +. i
 
 This is because `b` is a `t_float` receiver while `a` is a `t_int`
 receiver.  Adding a union type like `type t = int | float` will solve
@@ -217,6 +286,20 @@ the type error.
 If you spawn a function which nowhere in its call graph posesses a
 `receive` block, the pid will be typed as `undefined`, which means
 _all_ message sends to that process will be a type error.
+
+## Current FFI
+The FFI is quite limited at present and operates as follows:
+
+    call_erlang :a_module :a_function [3, "different", "arguments"] with
+       (ok, _) -> :ok
+     | (error, _) -> :error
+
+There's clearly room to provide a version that skips the pattern match and
+succeeds if dialyzer supplies a return type for the function that matches a type
+in scope (union or otherwise).  Worth noting that the FFI assumes you
+know what you're doing and does _not_ check that the module and
+function you're calling exist.
+
 
 # Problems
 ## What's Missing
@@ -238,7 +321,11 @@ A very incomplete list:
   type classes, ML modules, etc all smell like supersets to me but I'm
   not sure which way to jump yet.
 - simpler FFI to Erlang via dialyzer.  I'm not certain how feasible
-  this is but I'd like to dig a little deeper to see if it's possible.
+  this is but I'd like to dig a little deeper to see if it's
+  possible.  Especially important since the FFI currently only type
+  checks the results of the patterns, not the existence of the module
+  and function being called, nor the arity, nor that the types of the
+  provided arguments could ever ever match.
 - anything for unit testing
 - annotations in the BEAM file output (source line numbers, etc).  Not
   hard based on what I've seen in the [LFE](https://github.com/lfe)
@@ -272,6 +359,7 @@ the code, including but not limited to:
   expression rather than in the clauses.  I'm considering tracking the
   history of changes over the course of unifications in a reference
   cell in order to provide a typing trace to the user.
+- generalization of type variables is incompletely applied. 
 
 # Parsing Approach
 Parsing/validating occurs in several passes:
@@ -331,7 +419,7 @@ Infinitely recursive functions are typed as such and permitted as they're
 necessary for processes that loop on `receive`.  I'm presently planning on
 restricting bi-directional calls between modules for simplicity.  This means
 that given module `A` and `B`, calls can occur from functions in `A` to those in
-`B` and vice-versa but *not* in both.
+`B` or the opposite but *not* in both directions.
 
 I think this is generally pretty reasonable as bidirectional references probably
 indicate a failure to separate concerns but it has the additional benefit of
