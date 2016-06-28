@@ -124,7 +124,7 @@ VM (see the tests in `mlfe.erl`) or written manually for now.
 ## Built-In Stuff
 Most of the basic Erlang data types are supported:
 
-- booleans, `true` or `false`)
+- booleans, `true` or `false`
 - atoms, `:atom`
 - floats, `1.0`
 - integers, `1`
