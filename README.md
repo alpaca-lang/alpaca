@@ -92,21 +92,71 @@ CodeAsAString})` for now.  Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
 tests in `mlfe_typer.erl`.
 
-## Getting Started
-Once you've cloned this repository, you'll also need Erlang R18 (I
-currently use
-[packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-and haven't tested R19 yet) and [rebar3](https://rebar3.org).  Run
-tests and dialyzer with:
+## Prerequisites
+You will generally want the following two things installed:
+
+- Erlang R18 (I currently use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+and haven't tested R19 yet)
+- [Rebar3](https://rebar3.org)
+
+## Writing MLFE with Rebar3
+Thanks to [@tsloughter](https://github.com/tsloughter)'s
+[MLFE Rebar3 plugin](https://github.com/tsloughter/rebar_prv_mlfe)
+it's pretty easy to get up and running.
+
+Make a new project with Rebar3 (substituting whatever project name
+you'd like for `mlfe_example`):
+
+    $ rebar3 new app mlfe_example
+    $ cd mlfe_example
+
+In the `rebar.config` file in your project's root folder add the
+following (borrowed from @tsloughter's docs):
+
+    {plugins, [
+        {rebar_prv_mlfe, ".*", {git, "https://github.com/tsloughter/rebar_prv_mlfe.git", {branch, "master"}}}
+    ]}.
+
+    {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
+
+Now any files in `src` that end with the extension `.mlfe` will be
+compiled and included in Rebar3's output folders (provided they
+type-check and compile successfully of course).  For a simple module,
+open `src/example.mlfe` and add the following:
+
+    module example
+
+    export add/2
+
+    add x y = x + y
+
+The above is just what it looks like:  a module named `example` with a
+function that adds two integers.  You can call the function directly
+from the Erlang shell after compiling like this:
+
+    $ rebar3 shell
+    ... compiler output skipped ...
+    1> example:add(2, 6).
+    6
+    2>
+
+Note that calling MLFE from Erlang won't do any type checking but if
+you've written a variety of MLFE modules in your project, all their
+interactions with each other will be type checked and safe (provided
+the compile succeeds).
+
+## Compiler Hacking
+If you have installed the prerequisites given above, clone this
+repository and run tests and dialyzer with:
 
     rebar3 eunit
     rebar3 dialyzer
 
-There's no shell front-end for the compiler so if you want to build
-and type-check things written in MLFE, you will need to boot the
-erlang shell and then run `mlfe:compile/1`.  For example, if you
-wanted to compile the type import test file in the `test_files`
-folder:
+There's no command line front-end for the compiler so unless you use
+@tsloughter's Rebar3 plugin detailed in the previous section, you will
+need to boot the erlang shell and then run `mlfe:compile/1` to build
+and type-check things written in MLFE.  For example, if you wanted to
+compile the type import test file in the `test_files` folder:
 
     rebar3 shell
     ...
