@@ -1,0 +1,28 @@
+language: erlang
+otp_release:
+  - 19.0
+  - 18.3
+  - 17.5
+
+env:
+  global:
+    - REBAR_VSN=3.2.0
+    - PATH=./rebar3-$REBAR_VSN:$PATH
+
+cache:
+  directories:
+    - .rebar3-$REBAR_VSN
+    - /home/travis/.cache/rebar3
+
+before_install:
+  - if [ ! -f rebar3-$REBAR_VSN/rebar3 ]; then wget --no-check-certificate https://github.com/erlang/rebar3/archive/$REBAR_VSN.tar.gz; fi
+  - if [ -f $REBAR_VERSION.tar.gz ]; then tar xvzf $REBAR_VSN.tar.gz; fi
+  - cd rebar3-$REBAR_VSN
+  - if [ ! -f ./rebar3 ]; then ./bootstrap; fi
+  - cd ..
+
+before_script: [] # Need to do this, or travis will use rebar2!
+
+script:
+  - if [ "$TRAVIS_OTP_RELEASE" != "17.5" ]; then rebar3 dialyzer; fi # dialyzer before OTP 18 will fail on modules generated from XRL or YRL files.
+  - rebar3 eunit
