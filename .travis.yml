@@ -2,7 +2,7 @@ language: erlang
 otp_release:
   - 19.0
   - 18.3
-  - 17.5
+  - 18.2
 
 env:
   global:
@@ -24,5 +24,5 @@ before_install:
 before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
-  - if [ "$TRAVIS_OTP_RELEASE" != "17.5" ]; then rebar3 dialyzer; fi # dialyzer before OTP 18 will fail on modules generated from XRL or YRL files.
+  - rebar3 dialyzer
   - rebar3 eunit
