@@ -162,8 +162,7 @@
 -record(mlfe_cons, {type=undefined :: typ(),
                     line=0 :: integer(),
                     head :: mlfe_expression(),
-                    tail :: mlfe_cons()
-                          | mlfe_nil()
+                    tail :: mlfe_expression()
                    }).
 
 -type mlfe_cons() :: #mlfe_cons{}.
