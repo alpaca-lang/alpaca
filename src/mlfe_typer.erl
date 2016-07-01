@@ -24,11 +24,14 @@
 
 -module(mlfe_typer).
 
+-dialyzer({nowarn_function, dump_env/1}).
+-dialyzer({nowarn_function, dump_term/1}).
+
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
 
--export([cell/1, new_env/0, new_env/1, replace_env_module/2,
-         typ_of/3, typ_module/2]).
+-export([cell/1, new_env/1, replace_env_module/2,
+         typ_module/2]).
 -export_type([env/0, typ/0, t_cell/0]).
 
 -ifdef(TEST).
@@ -152,10 +155,6 @@ copy_cell(Cell, RefMap) ->
 }).
 
 -type env() :: #env{}.
-
--spec new_env() -> env().
-new_env() ->
-    #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs]}.
 
 new_env(Mods) ->
     #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs],
@@ -1328,7 +1327,6 @@ typ_of(Env, Lvl, #fun_binding{
 
 %% A var binding inside a function:
 typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    %dump_env(Env),
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
             Err;
@@ -1686,6 +1684,9 @@ dump_term(T) ->
 %%% Tests
 
 -ifdef(TEST).
+
+new_env() ->
+    #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs]}.
 
 %% Top-level typ_of unwraps the reference cells used in unification.
 %% This is only preserved for tests at the moment.

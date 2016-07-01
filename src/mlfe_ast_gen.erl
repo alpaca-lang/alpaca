@@ -1,6 +1,10 @@
 -module(mlfe_ast_gen).
 -export([parse/1, parse_module/2]).
 
+%% Parse is used by other modules (particularly mlfe_typer) to make ASTs
+%% from code that does not necessarily include a module:
+-ignore_xref([parse/1]).
+
 -include("mlfe_ast.hrl").
 
 -ifdef(TEST).
@@ -123,7 +127,7 @@ update_memo(#mlfe_module{type_imports=Imports}=M, #mlfe_type_import{}=I) ->
     {ok, M#mlfe_module{type_imports=Imports ++ [I]}};
 update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#mlfe_module{function_exports=Es ++ Exports}};
-update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{name=N} = Def) ->
+update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{} = Def) ->
     {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
     {ok, M#mlfe_module{types=[T|Ts]}};
@@ -184,7 +188,7 @@ rename_bindings(NextVar, MN, #mlfe_fun_def{name={symbol, _, Name}, args=As}=TopL
         {error, _} = E -> E
     end.
 
-rebind_args(NextVar, MN, Map, Args) ->
+rebind_args(NextVar, _MN, Map, Args) ->
     F = fun
             ({error, _} = E, _) -> E;
             ({symbol, L, N}, {NV, AccMap, Syms}) -> 
@@ -287,7 +291,7 @@ rename_bindings(NextVar, MN, Map, #mlfe_send{message=M, pid=P}=Send) ->
     {_, _, P2} = rename_bindings(NextVar, MN, Map, P),
     {NextVar, Map, Send#mlfe_send{message=M2, pid=P2}};
 
-rename_bindings(NextVar, MN, Map, #mlfe_type_apply{arg=none}=A) ->
+rename_bindings(NextVar, _MN, Map, #mlfe_type_apply{arg=none}=A) ->
     {NextVar, Map, A};
 rename_bindings(NextVar, MN, Map, #mlfe_type_apply{arg=Arg}=A) ->
     case rename_bindings(NextVar, MN, Map, Arg) of
@@ -315,7 +319,7 @@ rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
         {error, _} = Err -> Err;
         {NV, M, Vals2} -> {NV, M, T#mlfe_tuple{values=Vals2}}
     end;
-rename_bindings(NextVar, MN, Map, {symbol, L, N}=S) ->
+rename_bindings(NextVar, _MN, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
         undefined -> {NextVar, Map, S};
         Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
