@@ -1341,20 +1341,21 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
 
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
-unify_clauses(Env, Lvl, Cs, Line) ->
+unify_clauses(Env, Lvl, Cs, _Line) ->
     ClauseFolder = fun(_, {error, _}=Err) -> Err;
                       (C, {Clauses, EnvAcc}) ->
                            case typ_of(EnvAcc, Lvl, C) of
                                {error, _}=Err -> Err;
                                {TypC, NV} -> 
-                                   {[TypC|Clauses], update_counter(NV, EnvAcc)}
+                                   #mlfe_clause{line=Line} = C,
+                                   {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
                            end
                    end,
     case lists:foldl(ClauseFolder, {[], Env}, Cs) of
         {error, _}=Err -> Err;
         {TypedCs, #env{next_var=NextVar2}} ->
             UnifyFolder = fun(_, {error, _}=Err) -> Err;
-                             ({t_clause, PA, _, RA}=C, Acc) ->
+                             ({Line, {t_clause, PA, _, RA}}=C, Acc) ->
                                   case Acc of
                                       {t_clause, PB, _, RB} = TypC ->
                                           case unify(PA, PB, Env, Line) of
@@ -1369,7 +1370,7 @@ unify_clauses(Env, Lvl, Cs, Line) ->
                                   end
                           end,
     
-            [FC|TCs] = lists:reverse(TypedCs),
+            [{_, FC}|TCs] = lists:reverse(TypedCs),
             case lists:foldl(UnifyFolder, FC, TCs) of
                 {error, _}=Err ->Err;
                 _ -> {ok, FC, update_counter(NextVar2, Env)}
@@ -1782,6 +1783,28 @@ match_test_() ->
                      "| _ -> :x_was_more_than_one"))
     ].
 
+%% Testing that type errors are reported for the appropriate line when
+%% clauses are unified by match or receive.
+pattern_match_error_line_test_() ->
+    [?_assertMatch({error, {cannot_unify, _, 3, t_float, t_int}},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "    i, is_integer i -> :int\n"
+                     "  | f, is_float f -> :float")),
+     ?_assertMatch({error, {cannot_unify, _, 4, t_float, t_int}},
+                   top_typ_of(
+                     "f () = receive with\n"
+                     "    0 -> :zero\n"
+                     "  | 1 -> :one\n"
+                     "  | 2.0 -> :two\n"
+                     "  | 3 -> :three\n")),
+     ?_assertMatch({error, {cannot_unify, _, 3, t_string, t_atom}},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "    0 -> :zero\n"
+                     "  | i -> \"not zero\""))
+    ].
+
 tuple_test_() ->
     [?_assertMatch({{t_arrow, 
                     [{t_tuple, [t_int, t_float]}], 
@@ -1932,7 +1955,7 @@ recursive_fun_test_() ->
                      "f x = match x with\n"
                      "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 1, t_int, t_atom}},
+     ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_atom}},
                    top_typ_of(
                      "f x = match x with\n"
                      "  0 -> :zero\n"

@@ -219,7 +219,7 @@ match_pattern -> term : '$1'.
 match_clause -> match_pattern '->' simple_expr :
   #mlfe_clause{pattern='$1', result='$3', line=term_line('$1')}.
 match_clause -> match_pattern ',' guards '->' simple_expr :
-  #mlfe_clause{pattern='$1', guards='$3', result='$5'}.
+  #mlfe_clause{pattern='$1', guards='$3', result='$5', line=term_line('$1')}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
 
