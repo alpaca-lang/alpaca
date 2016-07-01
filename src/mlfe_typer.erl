@@ -315,7 +315,7 @@ unify(T1, T2, Env, Line) ->
         %%% This section creeps me right out at the moment.  This is where some
         %%% other operator that moves the receiver to the outside should be.
         %%% Smells like a functor or monad to me.
-        {{t_arrow, A1, A2}, {t_arrow, B1, B2}} ->
+        {{t_arrow, _, A2}, {t_arrow, _, B2}} ->
             ArrowArgCells = fun(C) when is_pid(C) ->
                                     {t_arrow, Xs, _}=get_cell(C),
                                     Xs;
@@ -323,7 +323,7 @@ unify(T1, T2, Env, Line) ->
                             end,
             case unify_list(ArrowArgCells(T1), ArrowArgCells(T2), Env, Line) of
                 {error, _} = E  -> E;
-                {ResA1, _ResB1} ->
+                _ ->
                     %% Unwrap cells and links down to the first non-cell level.
                     %% Super gross.
                     F = fun(C) when is_pid(C) ->
@@ -331,21 +331,19 @@ unify(T1, T2, Env, Line) ->
                                     {t_receiver, _, _}=R -> 
                                         R;
                                     {link, CC} when is_pid(CC) -> case get_cell(CC) of
-                                                     {t_receiver, _, _}=R2 ->
-                                                          R2;
-                                                      Other ->
-                                                          none
+                                                     {t_receiver, _, _}=R2 -> R2;
+                                                      _ -> none
                                                   end;
                                     {link, {t_receiver, _, _}=R2} -> R2;
-                                    O -> none
+                                    _ -> none
                                 end;
                            ({link, CC}) when is_pid(CC) -> 
                                 case get_cell(CC) of
                                     {t_receiver, _, _}=R2 -> R2;
-                                    Other -> none
+                                    _ -> none
                                 end;
                            ({t_receiver, _, _}=X) -> X;
-                           (Other) -> none
+                           (_) -> none
                         end,
                     AArgs = case T1 of
                                 _ when is_pid(T1) ->
@@ -378,12 +376,12 @@ unify(T1, T2, Env, Line) ->
                                                 {error, _}=Err -> Err;
                                                 ok -> T
                                             end;
-                                       (Other, Acc) ->
+                                       (_Other, Acc) ->
                                             Acc
                                     end,
                             case lists:foldl(Unify, H, Tail) of
                                 {error, _}=Err -> Err;
-                                Typ ->
+                                _ ->
                                     case unify(A2, B2, Env, Line) of
                                         {error, _}=Err -> Err;
                                         ok ->
@@ -421,7 +419,7 @@ unify(T1, T2, Env, Line) ->
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
 
-        {{t_pid, A}, {t_pid, B}} ->
+        {{t_pid, _}, {t_pid, _}} ->
             {t_pid, AC} = get_cell(T1),
             {t_pid, BC} = get_cell(T2),
             case unify(AC, BC, Env, Line) of
@@ -435,7 +433,7 @@ unify(T1, T2, Env, Line) ->
         %%% Receivers unify with each other or in the case of a receiver and
         %%% something else, the receiver unifies its result type with the other
         %%% expression and both become receivers.
-        {{t_receiver, RecvA, ResA}, {t_receiver, RecvB, ResB}} ->
+        {{t_receiver, _, _}, {t_receiver, _, _}} ->
             RecvRes = fun(C) when is_pid(C) ->
                               {t_receiver, _, X} = get_cell(C),
                               X;
@@ -457,7 +455,7 @@ unify(T1, T2, Env, Line) ->
                               ok
                       end
             end;
-        {{t_receiver, Recv, ResA}, {t_arrow, Args, ResB}=B} ->
+        {{t_receiver, Recv, ResA}, {t_arrow, Args, ResB}} ->
             case unify(ResA, ResB, Env, Line) of
                 {error, _}=Err -> Err;
                 ok ->
@@ -466,16 +464,16 @@ unify(T1, T2, Env, Line) ->
                     set_cell(T2, {link, T1}),
                     ok
             end;
-        {{t_arrow, Args, ResA}, {t_receiver, Recv, ResB}} ->
+        {{t_arrow, _, _}, {t_receiver, _, _}} ->
             unify(T2, T1, Env, Line);
-        {{t_receiver, Recv, ResA}=A, B} ->
+        {{t_receiver, _Recv, ResA}, B} ->
             case unify(ResA, new_cell(B), Env, Line) of
                 {error, _}=Err -> Err;
                 ok ->
                     set_cell(T2, {link, T1}),
                     ok
                 end;
-        {A, {t_receiver, Recv, ResB}=B} ->
+        {_A, {t_receiver, _Recv, _ResB}} ->
             unify(T2, T1, Env, Line);
         {_T1, _T2} ->
             case find_covering_type(_T1, _T2, Env, Line) of
@@ -483,7 +481,7 @@ unify(T1, T2, Env, Line) ->
                     io:format("UNIFY FAIL:  ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
                     io:format("LINE ~w~n", [Line]),
                     Err;
-                {ok, EnvOut, Union} ->
+                {ok, _EnvOut, Union} ->
                     io:format("UNIFIED ~w AND ~w on ~w~n", 
                               [unwrap(_T1), unwrap(_T2), unwrap(Union)]),
                     set_cell(T1, Union),
@@ -507,7 +505,7 @@ unify_adt(C1, C2, #adt{name=N, vars=AVars}=A, #adt{name=N, vars=BVars}, Env, L) 
             set_cell(C2, {link, C1}),
             ok
     end;
-unify_adt(C1, C2, #adt{name=N, vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_atom(AtomTyp) ->
+unify_adt(C1, C2, #adt{vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_atom(AtomTyp) ->
     case [M||M <- Ms, unwrap(M) =:= AtomTyp] of
         [_] -> 
             set_cell(C1, A),
@@ -524,18 +522,16 @@ unify_adt(C1, C2, #adt{name=N, vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_
 %% be instantiated in the environment.  Replace it with the instantiated
 %% version before proceeding.  Having separate cases for A and B is
 %% bothering me.
-unify_adt(C1, C2,
-          #adt{name=NA, vars=VarsA, members=[]}=A, 
-          B, Env, L) ->
+unify_adt(C1, C2, #adt{name=NA, members=[]}, B, Env, L) ->
     case proplists:get_value(NA, Env#env.type_bindings) of
         undefined -> {error, {no_type_for_name, NA}};
         ADT       -> unify_adt(C1, C2, ADT, B, Env, L)
     end;
 
-unify_adt(C1, C2, 
+unify_adt(_C1, _C2, 
           #adt{name=NA, vars=VarsA, members=MA}=A, 
           #adt{name=NB, vars=VarsB, members=MB}=B, Env, L) ->
-    MemberFilter = fun(N) -> fun(#adt{name=N}) -> true;
+    MemberFilter = fun(N) -> fun(#adt{name=AN}) when N =:= AN -> true;
                                 (_) -> false
                              end
                    end,
@@ -556,10 +552,7 @@ unify_adt(C1, C2,
             end
     end;
 
-unify_adt(C1, C2,
-          #adt{name=N, vars=Vs, members=Ms}=A,
-          {t_tuple, TupleMs}=ToCheck,
-          Env, L) ->
+unify_adt(C1, C2, #adt{members=Ms}=A, {t_tuple, _}=ToCheck, Env, L) ->
     %% Try to find an ADT member that will unify with the passed in tuple:
     F = fun(_, ok) -> ok;
            (T, Res) -> 
@@ -918,7 +911,7 @@ missing_type_error(SourceModule, Module, Type) ->
 retrieve_type(SourceModule, Module, Type, []) ->
     missing_type_error(SourceModule, Module, Type);
 retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts}|Rem]) ->
-    case [TT || #mlfe_type{name={type_name, _, T}}=TT <- Ts] of
+    case [TT || #mlfe_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
         [Type] -> {ok, Type};
         [] -> retrieve_type(SM, M, T, Rem)
     end;
@@ -936,8 +929,8 @@ typ_module(#mlfe_module{functions=Fs,
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
                       (_, [{error, _}=Err|_]) -> Err;
-                      (#mlfe_type_import{module=M, type=T}, Acc) -> 
-                           [retrieve_type(Name, M, T, Modules)|Acc]
+                      (#mlfe_type_import{module=MN, type=T}, Acc) -> 
+                           [retrieve_type(Name, MN, T, Modules)|Acc]
                    end,
 
     %% Fold function to instantiate all in-scope ADTs.
@@ -958,7 +951,7 @@ typ_module(#mlfe_module{functions=Fs,
                     Err;
                 {ADTs, Env2} ->
                     TypBindings = [{N, A}||#adt{name=N}=A <- ADTs],
-                    Env3 = Env#env{
+                    Env3 = Env2#env{
                              type_bindings=TypBindings,
                              current_module=M,
                              current_types=AllTypes,
@@ -1008,7 +1001,7 @@ typ_of(Env, Lvl, {symbol, _, N}) ->
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
-typ_of(#env{next_var=VN}, Lvl, {unit, _}) ->
+typ_of(#env{next_var=VN}, _Lvl, {unit, _}) ->
     {new_cell(t_unit), VN};
 
 typ_of(Env, Lvl, {'_', _}) ->
@@ -1062,10 +1055,10 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
-typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=none}) ->
+typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
-        {Env2, {type_arrow, CTyp, RTyp}} ->
+        {Env2, {type_arrow, _CTyp, RTyp}} ->
             {RTyp, Env2#env.next_var}
     end;
 typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=A}) ->
@@ -1129,8 +1122,8 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
     %% the user has referred to a function that is defined later than
     %% the one being typed.
     {L, FN} = case N of
-                  {symbol, L, FN} -> {L, FN};
-                  {bif, FN, L, _, _} -> {L, FN}
+                  {symbol, Line, FunName} -> {Line, FunName};
+                  {bif, FunName, Line, _, _} -> {Line, FunName}
               end,
 
     ForwardFun = fun() ->
@@ -1286,7 +1279,7 @@ typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) -
                     case SpawnFunTyp of
                         {t_receiver, Recv, _} ->
                             {new_cell({t_pid, Recv}), NV2};
-                        Other ->
+                        _ ->
                             {new_cell({t_pid, new_cell(undefined)}), NV2}
                     end
             end
@@ -1308,11 +1301,11 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
             case unwrap(T) of
                 {t_receiver, Recv, Res} ->
                     TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
-                    {t_receiver, Recv2, Res2}=Coll=collapse_receivers(TRec, Env, Lvl),
+                    {t_receiver, Recv2, Res2}=collapse_receivers(TRec, Env, Lvl),
                     X = {{t_receiver, Recv2,
                       {t_arrow, JustTypes, Res2}}, NextVar},
                     X;
-                Other ->
+                _ ->
                     {{t_arrow, JustTypes, T}, NextVar}
             end
     end;
@@ -1333,8 +1326,7 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
         {TypE, NextVar} ->
             Gen = gen(Lvl, TypE),
             Env2 = update_counter(NextVar, Env),
-            {Typ, _}=Res = typ_of(update_binding(N, Gen, Env2), Lvl+1, E2),
-            Res
+            typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
     end.
 
 %%% This was pulled out of typing match expressions since the exact same clause
@@ -1353,7 +1345,7 @@ unify_clauses(Env, Lvl, Cs) ->
         {error, _}=Err -> Err;
         {TypedCs, #env{next_var=NextVar2}} ->
             UnifyFolder = fun(_, {error, _}=Err) -> Err;
-                             ({Line, {t_clause, PA, _, RA}}=C, Acc) ->
+                             ({Line, {t_clause, PA, _, RA}}, Acc) ->
                                   case Acc of
                                       {t_clause, PB, _, RB} = TypC ->
                                           case unify(PA, PB, Env, Line) of
@@ -1394,17 +1386,16 @@ collapse_receivers({t_receiver, Typ, C}=Recv, Env, Line) when is_pid(C) ->
             case collapse_receivers(Nested, Env, Line) of
                 {error, _}=Err -> Err;
                 {t_receiver, _, Res}=Collapsed ->
-                    {NewVar, Env2} = new_var(0, Env),
                     case unify({t_receiver, Typ, Res},
                                new_cell(Collapsed),
-                               Env2, Line) of
+                               Env, Line) of
                         ok -> {t_receiver, Typ, Res};
                         {error, _} = Err -> Err
                     end
             end;
         {link, CC} when is_pid(CC) ->
             collapse_receivers({t_receiver, Typ, CC}, Env, Line);
-        Other ->
+        _Other ->
             Recv
     end;
 collapse_receivers({t_receiver, T, E}, Env, Line) ->
@@ -1646,7 +1637,7 @@ rename_wildcards(#mlfe_type_apply{arg=none}=TA, NN) ->
     {TA, NN};
 rename_wildcards(#mlfe_type_apply{arg=Arg}=TA, NN) ->
     {Arg2, NN2} = rename_wildcards(Arg, NN),
-    {TA#mlfe_type_apply{arg=Arg2}, NN};
+    {TA#mlfe_type_apply{arg=Arg2}, NN2};
 rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
     {RenH, N1} = rename_wildcards(H, NameNum),
     {RenT, N2} = rename_wildcards(T, N1),
@@ -1821,8 +1812,8 @@ tuple_test_() ->
                      "  i -> i + 1\n"
                      "| (_, y) -> y + 1\n")),
      ?_assertMatch({{t_arrow, [{t_tuple, 
-                                [{unbound, A, _}, 
-                                 {unbound, B, _},
+                                [{unbound, _A, _}, 
+                                 {unbound, _B, _},
                                  {t_tuple, 
                                   [t_int, t_int]}]}],
                      {t_tuple, [t_int, t_int]}}, _},
