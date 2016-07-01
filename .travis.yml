@@ -1,0 +1,29 @@
+language: erlang
+otp_release:
+  - 19.0
+  - 18.3
+  - 18.2
+
+env:
+  global:
+    - REBAR_VSN=3.2.0
+    - PATH=./rebar3-$REBAR_VSN:$PATH
+
+cache:
+  directories:
+    - .rebar3-$REBAR_VSN
+    - /home/travis/.cache/rebar3
+
+before_install:
+  - if [ ! -f rebar3-$REBAR_VSN/rebar3 ]; then wget --no-check-certificate https://github.com/erlang/rebar3/archive/$REBAR_VSN.tar.gz; fi
+  - if [ -f $REBAR_VSN.tar.gz ]; then tar xvzf $REBAR_VSN.tar.gz; fi
+  - cd rebar3-$REBAR_VSN
+  - if [ ! -f ./rebar3 ]; then ./bootstrap; fi
+  - cd ..
+
+before_script: [] # Need to do this, or travis will use rebar2!
+
+script:
+  - rebar3 dialyzer
+  - rebar3 xref
+  - rebar3 eunit

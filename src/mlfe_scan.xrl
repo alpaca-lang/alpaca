@@ -135,3 +135,6 @@ _    : {token, {'_', TokenLine}}.
 
 Erlang code.
 
+-dialyzer({nowarn_function, yyrev/2}).
+
+-ignore_xref([format_error/1, string/2, token/2, token/3, tokens/2, tokens/3]).
