@@ -17,17 +17,16 @@ Nonterminals
 comment
 op infix
 const
-type mono_type poly_type type_member type_members type_expr type_vars
-type_tuple type_tuple_member type_tuple_list 
+type poly_type type_member type_members type_expr type_vars
+type_tuple type_tuple_list 
 type_apply
 type_import
 
-cons nil literal_cons_items
-term terms nested_terms
+cons literal_cons_items
+term terms
 unit tuple tuple_list
 defn binding
-apply
-module_def module_part module_parts export_def export_list fun_and_arity
+module_def export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern 
 
 send_to
@@ -84,13 +83,6 @@ type_import -> use module_fun:
   #mlfe_type_import{module=list_to_atom(Mod), type=Type}.
 
 module_def -> module atom : {module, '$1'}.
-
-module_part -> defn : '$1'.
-module_part -> export_def : '$1'.
-module_part -> type_import : '$1'.
-
-module_parts -> module_part : ['$1'].
-module_parts -> module_part module_parts : ['$1'|'$2'].
 
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
@@ -331,7 +323,7 @@ make_infix(Op, A, B) ->
                 name=Name,
                 args=[A, B]}.
 
-make_define([{symbol, _, N} = Name|A], Expr) ->
+make_define([{symbol, _, _} = Name|A], Expr) ->
     case validate_args(A) of
         {ok, Args} ->
             #mlfe_fun_def{name=Name, args=Args, body=Expr};
