@@ -1,5 +1,6 @@
 mlfe
 =====
+[![Build Status](https://travis-ci.org/j14159/mlfe.svg?branch=master)](https://travis-ci.org/j14159/mlfe)
 
 ML-flavoured Erlang.
 
