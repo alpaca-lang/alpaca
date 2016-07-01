@@ -308,6 +308,8 @@ expr -> defn : '$1'.
 Erlang code.
 -include("mlfe_ast.hrl").
 
+-ignore_xref([format_error/1, parse_and_scan/1]).
+
 make_infix(Op, A, B) ->
     Name = case Op of
       {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
