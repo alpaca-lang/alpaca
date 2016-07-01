@@ -1161,7 +1161,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
     {ETyp, NextVar1} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar1, Env),
 
-    case unify_clauses(Env2, Lvl, Cs, Line) of
+    case unify_clauses(Env2, Lvl, Cs) of
         {error, _} = Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, #env{next_var=NextVar2}}  ->
             %% unify the expression with the unified pattern:
@@ -1341,7 +1341,7 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
 
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
-unify_clauses(Env, Lvl, Cs, _Line) ->
+unify_clauses(Env, Lvl, Cs) ->
     ClauseFolder = fun(_, {error, _}=Err) -> Err;
                       (C, {Clauses, EnvAcc}) ->
                            case typ_of(EnvAcc, Lvl, C) of
@@ -1415,7 +1415,7 @@ collapse_receivers(E, _, _) ->
     E.
 
 type_receive(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}) ->
-    case unify_clauses(Env, Lvl, Cs, Line) of
+    case unify_clauses(Env, Lvl, Cs) of
         {error, _}=Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
             Collapsed = collapse_receivers(RTyp, Env, Line),
