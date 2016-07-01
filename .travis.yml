@@ -25,4 +25,5 @@ before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
   - rebar3 dialyzer
+  - rebar3 xref
   - rebar3 eunit
