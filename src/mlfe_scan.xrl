@@ -135,3 +135,4 @@ _    : {token, {'_', TokenLine}}.
 
 Erlang code.
 
+-dialyzer({nowarn_function, yyrev/2}).
