@@ -436,6 +436,7 @@ module_info_helpers_test() ->
     Mod = module_info_helpers_test,
     {module, Mod} = code:load_binary(Mod, "module_info_helpers_test.beam", Bin),
     ?assertEqual(Mod, Mod:module_info(module)),
-    ?assert(is_list(Mod:module_info())).
+    ?assert(is_list(Mod:module_info())),
+    true = code:delete(Mod).
 
 -endif.
