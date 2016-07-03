@@ -31,8 +31,12 @@ gen(#mlfe_module{}=Mod) ->
     CompiledExports = [gen_export(E) || E <- Exports],
     {ok, cerl:c_module(
            cerl:c_atom(ModuleName),
+           [gen_export({"module_info", 0}),
+            gen_export({"module_info", 1})] ++
            CompiledExports,
            [],
+           [module_info0(ModuleName),
+            module_info1(ModuleName)] ++
            CompiledFuns)
     }.
 
@@ -220,6 +224,19 @@ gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     cerl:c_let([cerl:c_var(list_to_atom(N))], 
                gen_expr(Env, E1),
                gen_expr(Env, E2)).
+
+module_info0(ModuleName) ->
+    gen_module_info(ModuleName, []).
+
+module_info1(ModuleName) ->
+    gen_module_info(ModuleName, [cerl:c_var(item)]).
+
+gen_module_info(ModuleName, Params) ->
+    Body = cerl:c_call(cerl:c_atom(erlang),
+                       cerl:c_atom(get_module_info),
+                       [cerl:c_atom(ModuleName) | Params]),
+    NewF = cerl:c_fun(Params, Body),
+    {cerl:c_fname(module_info, length(Params)), NewF}.
     
 
 -ifdef(TEST).
@@ -413,4 +430,13 @@ multi_type_guard_test() ->
     ?assertEqual('not_int', Mod:test(1.3)),
     true = code:delete(Mod).
     
+module_info_helpers_test() ->
+    Code = "module module_info_helpers_test\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = module_info_helpers_test,
+    {module, Mod} = code:load_binary(Mod, "module_info_helpers_test.beam", Bin),
+    ?assertEqual(Mod, Mod:module_info(module)),
+    ?assert(is_list(Mod:module_info())),
+    true = code:delete(Mod).
+
 -endif.
