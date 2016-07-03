@@ -1332,15 +1332,15 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
 unify_clauses(Env, Lvl, Cs) ->
-    ClauseFolder = fun(_, {error, _}=Err) -> Err;
-                      (C, {Clauses, EnvAcc}) ->
-                           case typ_of(EnvAcc, Lvl, C) of
-                               {error, _}=Err -> Err;
-                               {TypC, NV} -> 
-                                   #mlfe_clause{line=Line} = C,
-                                   {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
-                           end
-                   end,
+     ClauseFolder = fun(_, {error, _}=Err) -> Err;
+                       (C, {Clauses, EnvAcc}) ->
+                            case typ_of(EnvAcc, Lvl, C) of
+                                {error, _}=Err -> Err;
+                                {TypC, NV} -> 
+                                    #mlfe_clause{line=Line} = C,
+                                    {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
+                            end
+                    end,
     case lists:foldl(ClauseFolder, {[], Env}, Cs) of
         {error, _}=Err -> Err;
         {TypedCs, #env{next_var=NextVar2}} ->

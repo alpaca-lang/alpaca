@@ -24,8 +24,8 @@
 %% list of parameter types, return type:
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
--record(adt, {name :: string(),
-              vars :: list({string(), typ()}),
+-record(adt, {name=undefined :: undefined|string(),
+              vars=[] :: list({string(), typ()}),
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
 
@@ -161,8 +161,8 @@
 
 -record(mlfe_cons, {type=undefined :: typ(),
                     line=0 :: integer(),
-                    head :: mlfe_expression(),
-                    tail :: mlfe_expression()
+                    head=undefined :: undefined|mlfe_expression(),
+                    tail={nil, 0} :: mlfe_expression()
                    }).
 
 -type mlfe_cons() :: #mlfe_cons{}.
@@ -172,8 +172,8 @@
 %%% ### Tuples
 
 -record(mlfe_tuple, {type=undefined :: typ(),
-                     arity :: integer(),
-                     values :: list(mlfe_expression())
+                     arity=0 :: integer(),
+                     values=[] :: list(mlfe_expression())
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
@@ -187,23 +187,23 @@
                     | is_string.
 
 %% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
--record(mlfe_type_check, {type :: type_check(),
-                          line :: integer(),
-                          expr={symbol, -1, ""} :: mlfe_symbol()}).
+-record(mlfe_type_check, {type=undefined :: undefined|type_check(),
+                          line=0 :: integer(),
+                          expr=undefined :: undefined|mlfe_symbol()}).
 -type mlfe_type_check() :: #mlfe_type_check{}.
 
 -record(mlfe_clause, {type=undefined :: typ(),
                       line=0 :: integer(),
-                      pattern :: mlfe_expression(),
+                      pattern={symbol, 0, "_"} :: mlfe_expression(),
                       guards=[] :: list(mlfe_expression()),
-                      result :: mlfe_expression()
+                      result={symbol, 0, "_"} :: mlfe_expression()
                      }).
 -type mlfe_clause() :: #mlfe_clause{}.
 
 -record(mlfe_match, {type=undefined :: typ(),
                      line=0 :: integer(),
-                     match_expr :: mlfe_expression(),
-                     clauses :: list(mlfe_clause())
+                     match_expr={symbol, 0, "_"} :: mlfe_expression(),
+                     clauses=[#mlfe_clause{}] :: nonempty_list(mlfe_clause())
                     }).
 -type mlfe_match() :: #mlfe_match{}.
 
@@ -213,10 +213,11 @@
 %%% Only the result of these calls is typed.
 -record(mlfe_ffi, {type=undefined :: typ(),
                    module={atom, 0, ""} :: mlfe_atom(),
-                   function_name :: mlfe_atom(),
-                   args :: mlfe_list(),
-                   clauses :: list(mlfe_clause())
+                   function_name=undefined :: undefined|mlfe_atom(),
+                   args={nil, 0}  :: mlfe_list(),
+                   clauses=[] :: list(mlfe_clause())
                   }).
+-type mlfe_ffi() :: #mlfe_ffi{}.
 
 %%% ### Processes
 
@@ -230,13 +231,13 @@
 
 -record(mlfe_send, {type=undefined :: typ(),
                     line=0 :: integer(),
-                    message :: mlfe_value_expression(),
-                    pid :: mlfe_expression()}).
+                    message=undefined :: undefined|mlfe_value_expression(),
+                    pid=undefined :: undefined|mlfe_expression()}).
 -type mlfe_send() :: #mlfe_send{}.
 
 -record(mlfe_receive, {type=undefined :: typ(),
                        line=0 :: integer(),
-                       clauses=[] :: list(mlfe_clause()),
+                       clauses=[#mlfe_clause{}] :: nonempty_list(mlfe_clause()),
                        timeout=infinity :: infinity | integer(),
                        timeout_action=undefined :: undefined
                                                  | mlfe_value_expression()}).
@@ -252,7 +253,11 @@
                                | mlfe_apply()
                                | mlfe_type_apply()
                                | mlfe_match()
-                               | mlfe_receive().
+                               | mlfe_receive()
+                               | mlfe_clause()
+                               | mlfe_spawn()
+                               | mlfe_send()
+                               | mlfe_ffi().
 
 -type mlfe_expression() :: mlfe_comment()
                          | mlfe_value_expression()
@@ -268,9 +273,9 @@
                      }).
                       
 -record(var_binding, {type=undefined :: typ(),
-                      name :: mlfe_symbol(),
-                      to_bind :: mlfe_expression(),
-                      expr :: mlfe_expression()
+                      name=undefined :: undefined|mlfe_symbol(),
+                      to_bind=undefined :: undefined|mlfe_expression(),
+                      expr=undefined :: undefined|mlfe_expression()
                      }).
 
 -type fun_binding() :: #fun_binding{}.
@@ -299,19 +304,20 @@
 %%% in the third.
 
 -record(mlfe_apply, {type=undefined :: typ(),
-                     name :: {mlfe_symbol(), integer()}
-                           | {atom(), mlfe_symbol(), integer()}
-                           | mlfe_symbol()
-                           | mlfe_bif_name(),
-                     args :: list(mlfe_expression())
+                     name=undefined :: undefined
+                                     | {mlfe_symbol(), integer()}
+                                     | {atom(), mlfe_symbol(), integer()}
+                                     | mlfe_symbol()
+                                     | mlfe_bif_name(),
+                     args=[] :: list(mlfe_expression())
                      }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
 -record (mlfe_fun_def, {
            type=undefined :: typ(),
-           name :: mlfe_symbol(),
+           name=undefined :: undefined|mlfe_symbol(),
            args=[] :: list(mlfe_symbol() | mlfe_unit()),
-           body :: mlfe_expression()
+           body=undefined :: undefined|mlfe_expression()
           }).
 
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
