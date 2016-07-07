@@ -177,6 +177,7 @@
 %%% For both map literals and map patterns
 
 -record(mlfe_map_pair, {type=undefined :: typ(),
+                        line=0 :: integer(),
                         key=undefined :: mlfe_value_expression(),
                         val=undefined :: mlfe_value_expression()}).
 -type mlfe_map_pair() :: #mlfe_map_pair{}.

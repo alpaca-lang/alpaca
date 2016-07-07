@@ -895,6 +895,8 @@ unwrap({t_tuple, Vs}) ->
     {t_tuple, [unwrap(V)||V <- Vs]};
 unwrap({t_list, T}) ->
     {t_list, unwrap(T)};
+unwrap({t_map, K, V}) ->
+    {t_map, unwrap(K), unwrap(V)};
 unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
     ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs],
             members=[unwrap(M) || M <- Ms]};
@@ -1055,6 +1057,8 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
+typ_of(Env, Lvl, #mlfe_map{}=M) ->
+    type_map(Env, Lvl, M);
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
@@ -1327,6 +1331,35 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
             Gen = gen(Lvl, TypE),
             Env2 = update_counter(NextVar, Env),
             typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
+    end.
+
+type_map(Env, Lvl, #mlfe_map{pairs=[]}) ->
+    {KeyVar, Env2} = new_var(Lvl, Env),
+    {ValVar, #env{next_var=NV}} = new_var(Lvl, Env2),
+    {{t_map, KeyVar, ValVar}, NV};
+type_map(Env, Lvl, #mlfe_map{pairs=Pairs}) ->
+    {MapType, NV} = type_map(Env, Lvl, #mlfe_map{}),
+    Env2 = update_counter(NV, Env),
+    case unify_map_pairs(Env2, Lvl, Pairs, MapType) of
+        {error, _}=Err -> Err;
+        {Type, #env{next_var=NV}} -> {Type, NV}
+    end.
+
+unify_map_pairs(Env, _, [], {t_map, _, _}=T) ->
+    {T, Env};
+unify_map_pairs(Env, Lvl, [#mlfe_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
+    {t_map, K, V} = T,
+    case typ_list([KE, VE], Lvl, Env, []) of
+        {error, _}=Err -> Err;
+        {[KT, VT], NV} ->
+            Env2 = update_counter(NV, Env),
+            case unify(K, KT, Env2, L) of
+                ok -> case unify(V, VT, Env2, L) of
+                          ok -> unify_map_pairs(Env2, Lvl, Rem, T);
+                          {error, _}=Err -> Err
+                      end;
+                {error, _}=Err -> Err
+            end
     end.
 
 %%% This was pulled out of typing match expressions since the exact same clause
@@ -1853,6 +1886,31 @@ list_test_() ->
                      "let l = 1 :: 2 :: 3 :: [] in\n"
                      "match l with\n"
                      " a :: b :: _ -> a +. b"))
+    ].
+
+map_test_() ->
+    [?_assertMatch({{t_map, t_atom, t_int}, _},
+                   typ_of(new_env(),
+                          #mlfe_map{
+                             pairs=[#mlfe_map_pair{
+                                       line=1,
+                                       key={atom, 1, "one"},
+                                       val={int, 1, 1}},
+                                    #mlfe_map_pair{
+                                       line=1,
+                                       key={atom, 2, "two"},
+                                       val={int, 2, 2}}]})),
+     ?_assertMatch({error, {cannot_unify, _, 2, t_atom, t_string}},
+                   typ_of(new_env(),
+                          #mlfe_map{
+                             pairs=[#mlfe_map_pair{
+                                       line=1,
+                                       key={atom, 1, "one"},
+                                       val={int, 1, 1}},
+                                    #mlfe_map_pair{
+                                       line=2,
+                                       key={string, 2, "two"},
+                                       val={int, 2, 2}}]}))
     ].
 
 module_typing_test() ->
