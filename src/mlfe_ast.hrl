@@ -39,6 +39,8 @@
 -type t_nil() :: t_nil.
 -type t_list() :: t_cons() | t_nil().
 
+-type t_map() :: {t_map, typ(), typ()}.
+
 -type t_tuple() :: {t_tuple, list(typ())}.
 
 %% pattern, optional guard, result.  Currently I'm doing nothing with 
@@ -67,6 +69,7 @@
              | t_adt_constructor()
              | t_const()
              | t_list()
+             | t_map()
              | t_tuple()
              | t_clause()
              | typer:t_cell().  % a reference cell for a type.
