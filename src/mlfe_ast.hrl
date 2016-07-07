@@ -169,6 +169,19 @@
 -type mlfe_nil() :: {nil, integer()}.
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
+%%% ### Maps
+%%% 
+%%% For both map literals and map patterns
+
+-record(mlfe_map_pair, {type=undefined :: typ(),
+                        key=undefined :: mlfe_value_expression(),
+                        val=undefined :: mlfe_value_expression()}).
+-type mlfe_map_pair() :: #mlfe_map_pair{}.
+
+-record(mlfe_map, {type=undefined :: typ(),
+                   pairs=[] :: list(mlfe_map_pair())}).
+-type mlfe_map() :: #mlfe_map{}.
+
 %%% ### Tuples
 
 -record(mlfe_tuple, {type=undefined :: typ(),
@@ -249,6 +262,7 @@
 -type mlfe_value_expression() :: mlfe_const()
                                | mlfe_symbol()
                                | mlfe_list()
+                               | mlfe_map()
                                | mlfe_tuple()
                                | mlfe_apply()
                                | mlfe_type_apply()
