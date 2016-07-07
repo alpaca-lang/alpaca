@@ -33,8 +33,6 @@ Rules.
 ,     : {token, {',', TokenLine}}.
 /     : {token, {'/', TokenLine}}.
 
-{     : {token, {'{', TokenLine}}.
-}     : {token, {'}', TokenLine}}.
 \(    : {token, {'(', TokenLine}}.
 \)    : {token, {')', TokenLine}}.
 \|    : {token, {'|', TokenLine}}.
@@ -42,6 +40,10 @@ Rules.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
 ()    : {token, {unit, TokenLine}}.
+#{    : {token, {map_open, TokenLine}}.
+{     : {token, {open_brace, TokenLine}}.
+}     : {token, {close_brace, TokenLine}}.
+=>    : {token, {map_arrow, TokenLine}}.
 
 %% Reserved words
 let         : {token, {'let', TokenLine}}.

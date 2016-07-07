@@ -23,6 +23,8 @@ type_apply
 type_import
 
 cons literal_cons_items
+map_literal map_literal_pairs map_pair
+
 term terms
 unit tuple tuple_list
 defn binding
@@ -48,6 +50,7 @@ boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
 '[' ']' ':'
+map_open close_brace map_arrow
 match with '|' '->'
 
 send
@@ -167,6 +170,16 @@ cons -> '[' literal_cons_items ']':
   F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
   lists:foldr(F, {nil, 0}, '$2').
 
+map_pair -> term map_arrow term :
+  #mlfe_map_pair{line=term_line('$1'), key='$1', val='$3'}.
+map_literal_pairs -> map_pair : ['$1'].
+map_literal_pairs -> map_pair ',' map_literal_pairs : ['$1'|'$3'].
+
+map_literal -> map_open close_brace :
+  #mlfe_map{line=term_line('$1')}.
+map_literal -> map_open map_literal_pairs close_brace :
+  #mlfe_map{line=term_line('$1'), pairs='$2'}.
+
 unit -> '(' ')':
   {_, L} = '$1',
   {unit, L}.
@@ -183,6 +196,7 @@ term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : '$1'.
 term -> cons : '$1'.
+term -> map_literal : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.

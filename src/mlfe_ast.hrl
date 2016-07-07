@@ -183,6 +183,7 @@
 -type mlfe_map_pair() :: #mlfe_map_pair{}.
 
 -record(mlfe_map, {type=undefined :: typ(),
+                   line=0 :: integer(),
                    pairs=[] :: list(mlfe_map_pair())}).
 -type mlfe_map() :: #mlfe_map{}.
 

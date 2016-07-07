@@ -1728,7 +1728,8 @@ from_code(C) ->
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
 top_typ_of(Code) ->
-    {ok, E} = mlfe_ast_gen:parse(scanner:scan(Code)),
+    Tokens = scanner:scan(Code),
+    {ok, E} = mlfe_ast_gen:parse(Tokens),
     typ_of(new_env(), E).
 
 %% Check the type of the expression in code from the "top-level" with a
@@ -1890,27 +1891,13 @@ list_test_() ->
 
 map_test_() ->
     [?_assertMatch({{t_map, t_atom, t_int}, _},
-                   typ_of(new_env(),
-                          #mlfe_map{
-                             pairs=[#mlfe_map_pair{
-                                       line=1,
-                                       key={atom, 1, "one"},
-                                       val={int, 1, 1}},
-                                    #mlfe_map_pair{
-                                       line=1,
-                                       key={atom, 2, "two"},
-                                       val={int, 2, 2}}]})),
+                   top_typ_of("#{:one => 1}")),
+     ?_assertMatch({{t_map, t_atom, t_int}, _},
+                   top_typ_of("#{:one => 1, :two => 2}")),
      ?_assertMatch({error, {cannot_unify, _, 2, t_atom, t_string}},
-                   typ_of(new_env(),
-                          #mlfe_map{
-                             pairs=[#mlfe_map_pair{
-                                       line=1,
-                                       key={atom, 1, "one"},
-                                       val={int, 1, 1}},
-                                    #mlfe_map_pair{
-                                       line=2,
-                                       key={string, 2, "two"},
-                                       val={int, 2, 2}}]}))
+                   top_typ_of(
+                     "#{:one => 1,\n"
+                     "  \"two\" => 2}"))
     ].
 
 module_typing_test() ->
