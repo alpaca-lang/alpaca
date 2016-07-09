@@ -373,6 +373,8 @@ term_line(Term) ->
         {_, L} when is_integer(L) -> L;
         {_, L, _} when is_integer(L) -> L;
         #mlfe_cons{line=L} -> L;
+        #mlfe_map_pair{line=L} -> L;
+        #mlfe_map{line=L} -> L;
         #mlfe_tuple{values=[H|_]} -> term_line(H);
         #mlfe_type_apply{name=N} -> term_line(N)
     end.

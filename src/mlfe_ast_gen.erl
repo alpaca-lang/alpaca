@@ -314,6 +314,27 @@ rename_bindings(NextVar, MN, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
                                                         tail=T2}}
                        end
     end;
+rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
+    Folder = fun(_, {error, _}=Err) -> Err;
+                (P, {NV, M, Ps}) ->
+                     case rename_bindings(NV, MN, M, P) of
+                         {error, _}=Err -> Err;
+                         {NV2, M2, P2} -> {NV2, M2, [P2|Ps]}
+                     end
+             end,
+    case lists:foldl(Folder, {NextVar, Map, []}, Pairs) of
+        {error, _}=Err -> Err;
+        {NV, M, Pairs2} -> {NV, M, ASTMap#mlfe_map{pairs=lists:reverse(Pairs2)}}
+    end;
+rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(NextVar, MN, Map, K) of
+        {error, _}=Err -> Err;
+        {NV, M, K2} ->
+            case rename_bindings(NV, MN, M, V) of
+                {error, _}=Err -> Err;
+                {NV2, M2, V2} -> {NV2, M2, P#mlfe_map_pair{key=K2, val=V2}}
+            end
+    end;
 rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
     case rename_binding_list(NextVar, MN, Map, Vs) of
         {error, _} = Err -> Err;

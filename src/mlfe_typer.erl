@@ -581,7 +581,6 @@ unify_adt(_, _, A, B, Env, L) ->
                        {cannot_unify, atom(), integer(), typ(), typ()} |
                        {bad_variable, integer(), mlfe_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
-    io:format("Covering for ~w ~w ~w ~w~n", [T1, unwrap(T1), T2, unwrap(T2)]),
     %% Convert all the available types to actual ADT types with
     %% which to attempt unions:
     TypeFolder = fun(_ ,{error, _}=Err) ->
@@ -1169,31 +1168,38 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
     end;
 
 typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R, line=L}) ->
-    {PTyp, _, NewEnv, _} = add_bindings(P, Env, Lvl, 0),
-    F = fun(_, {error, _}=Err) -> Err;
-           (G, {Typs, AccEnv}) -> 
-                case typ_of(AccEnv, Lvl, G) of
-                    {error, _}=Err -> Err;
-                    {GTyp, NV} -> {[GTyp|Typs], update_counter(NV, AccEnv)}
-                end
-        end,
-    {GTyps, Env2} = lists:foldl(F, {[], NewEnv}, Gs),
-    UnifyFolder = fun(_, {error, _}=Err) -> Err;
-                     (N, Acc) ->
-                          case unify(N, Acc, Env, L) of
-                              {error, _}=Err -> Err;
-                              ok -> Acc
-                          end
-                  end,
-
-    case lists:foldl(UnifyFolder, new_cell(t_bool), GTyps) of
+    case add_bindings(P, Env, Lvl, 0) of
         {error, _}=Err -> Err;
-        _ ->
-            case typ_of(Env2, Lvl, R) of
-                {error, _} = E   -> E;
-                {RTyp, NextVar2} -> {{t_clause, PTyp, none, RTyp}, NextVar2}
+        {PTyp, _, NewEnv, _} ->
+            F = fun(_, {error, _}=Err) -> Err;
+                   (G, {Typs, AccEnv}) -> 
+                        case typ_of(AccEnv, Lvl, G) of
+                            {error, _}=Err -> Err;
+                            {GTyp, NV} -> {[GTyp|Typs], update_counter(NV, AccEnv)}
+                        end
+                end,
+            case lists:foldl(F, {[], NewEnv}, Gs) of
+                {error, _}=Err -> Err;
+                {GTyps, Env2} ->
+                    UnifyFolder = fun(_, {error, _}=Err) -> Err;
+                                     (N, Acc) ->
+                                          case unify(N, Acc, Env, L) of
+                                              {error, _}=Err -> Err;
+                                              ok -> Acc
+                                          end
+                                  end,
+                    
+                    case lists:foldl(UnifyFolder, new_cell(t_bool), GTyps) of
+                        {error, _}=Err -> Err;
+                        _ ->
+                            case typ_of(Env2, Lvl, R) of
+                                {error, _} = E   -> E;
+                                {RTyp, NextVar2} -> 
+                                    {{t_clause, PTyp, none, RTyp}, NextVar2}
+                            end
+                    end
             end
-        end;
+    end;
 
 %%% Pattern match guards that both check the type of an argument and cause
 %%% it's type to be fixed.
@@ -1607,7 +1613,8 @@ args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
         mlfe_expression(), 
         env(), 
         Lvl::integer(),
-        NameNum::integer()) -> {typ(), mlfe_expression(), env(), integer()}.
+        NameNum::integer()) -> {typ(), mlfe_expression(), env(), integer()} |
+                               {error, term()}.
 add_bindings({symbol, _, Name}=S, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
     {Typ, S, update_binding(Name, Typ, Env2), NameNum};
@@ -1632,20 +1639,47 @@ add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
                     end, 
                     {Env, NN2}, 
                     Vs),
-    {Typ, NextVar} = typ_of(Env2, Lvl, Tup2),
-    
-    {Typ, Tup2, update_counter(NextVar, Env2), NN3};
+    case typ_of(Env2, Lvl, Tup2) of
+        {error, _}=Err -> Err;
+        {Typ, NextVar} -> {Typ, Tup2, update_counter(NextVar, Env2), NN3}
+    end;
 
 add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
     {#mlfe_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
     {_, _, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
     {_, _, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
-    {Typ, NextVar} = typ_of(Env3, Lvl, RenCons),
-    {Typ, RenCons, update_counter(NextVar, Env3), NN4};
+    case typ_of(Env3, Lvl, RenCons) of
+        {error, _}=Err -> Err;
+        {Typ, NextVar} -> {Typ, RenCons, update_counter(NextVar, Env3), NN4}
+    end;
+
+add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
+    {M2, NN2} = rename_wildcards(M, NN),
+    Folder = fun(_, {error, _}=Err) -> Err;
+                (#mlfe_map_pair{key=K, val=V}, {E, N}) ->
+                     case add_bindings(K, E, Lvl, N) of
+                         {error, _}=Err -> Err;
+                         {_, _, E2, N2} ->
+                             case add_bindings(V, E2, Lvl, N2) of
+                                 {error, _}=Err -> Err;
+                                 {_, _, E3, N3} -> {E3, N3}
+                             end
+                     end
+             end,
+    case lists:foldl(Folder, {Env, NN}, M2#mlfe_map.pairs) of
+        {error, _}=Err -> Err;
+        {Env2, NN2} ->
+            case typ_of(Env2, Lvl, M2) of
+                {error, _}=Err -> Err;
+                {Typ, NV} -> {Typ, M2, update_counter(NV, Env2), NN2}
+            end
+    end;
 
 add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
-    {Typ, NextVar} = typ_of(Env, Lvl, T),
-    {Typ, T, update_counter(NextVar, Env), NameNum};
+    case typ_of(Env, Lvl, T) of
+        {error, _}=Err -> Err;
+        {Typ, NextVar} -> {Typ, T, update_counter(NextVar, Env), NameNum}
+    end;
 add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
     {RenamedArg, NN} = rename_wildcards(Arg, NameNum),
     {_, _, Env2, NextNameNum} = add_bindings(RenamedArg, Env, Lvl, NN),
@@ -1656,8 +1690,10 @@ add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
     end;
 
 add_bindings(Exp, Env, Lvl, NameNum) ->
-    {Typ, NextVar} = typ_of(Env, Lvl, Exp),
-    {Typ, Exp, update_counter(NextVar, Env), NameNum}.
+    case typ_of(Env, Lvl, Exp) of
+        {error, _}=Err -> Err;
+        {Typ, NextVar} -> {Typ, Exp, update_counter(NextVar, Env), NameNum}
+    end.
 
 %%% Tuples may have multiple instances of the '_' wildcard/"don't care"
 %%% symbol.  Each instance needs a unique name for unification purposes
@@ -1675,6 +1711,17 @@ rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
     {RenH, N1} = rename_wildcards(H, NameNum),
     {RenT, N2} = rename_wildcards(T, N1),
     {#mlfe_cons{head=RenH, tail=RenT}, N2};
+rename_wildcards(#mlfe_map{pairs=Pairs}=M, NameNum) ->
+    Folder = fun(P, {Ps, NN}) -> 
+                     {P2, NN2} = rename_wildcards(P, NN),
+                     {[P2|Ps], NN2}
+             end,
+    {Pairs2, NN} = lists:foldl(Folder, {[], NameNum}, Pairs),
+    {M#mlfe_map{pairs=lists:reverse(Pairs2)}, NN};
+rename_wildcards(#mlfe_map_pair{key=K, val=V}=P, NameNum) ->
+    {K2, N1} = rename_wildcards(K, NameNum),
+    {V2, N2} = rename_wildcards(V, N1),
+    {P#mlfe_map_pair{key=K2, val=V2}, N2};
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
                      {NewOther, NewN} = rename_wildcards(V, N),
@@ -1897,7 +1944,12 @@ map_test_() ->
      ?_assertMatch({error, {cannot_unify, _, 2, t_atom, t_string}},
                    top_typ_of(
                      "#{:one => 1,\n"
-                     "  \"two\" => 2}"))
+                     "  \"two\" => 2}")),
+     ?_assertMatch({{t_arrow, [{t_map, t_atom, t_int}], t_string}, _},
+                   top_typ_of(
+                     "f x = match x with\n"
+                     "    #{:one => i}, is_integer i -> \"has one\"\n"
+                     "  | _ -> \"doesn't have one\""))
     ].
 
 module_typing_test() ->
