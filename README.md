@@ -75,10 +75,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-# Contributions
+# Contributions and Help
 Please note that this project is released with a Contributor Code of
 Conduct, version 1.4. By participating in this project you agree to abide by its
 terms.  See `code_of_conduct.md` for details.
+
+You can join `#mlfe` on [freenode](http://freenode.net) to discuss the
+language (directions, improvement) or get help.  This IRC channel is
+governed by the same code of conduct detailed in this repository.
 
 Pull requests with improvements and bug reports with accompanying
 tests welcome.  I'm not particularly set on syntax just yet,
