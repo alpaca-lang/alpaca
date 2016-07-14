@@ -1,10 +1,13 @@
 module basic_map_test
 
-export get/2, test_map/1
+export get/2, test_map/1, test_tuple_key_map/1
 
 type map_result 'x = Ok 'x | NotFound
 
 test_map () = #{:one => 1, :two => 2}
+
+test_tuple_key_map () =
+  #{(:one, 1) => "a", (:two, 2) => "b"}
 
 get k m = match m with
     #{k => v} -> Ok v
