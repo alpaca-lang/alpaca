@@ -86,6 +86,17 @@ gen_expr(_, {nil, _}) ->
     cerl:c_nil();
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
+gen_expr(Env, #mlfe_map{is_pattern=true, pairs=Pairs}) ->
+    cerl:c_map_pattern([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map{pairs=Pairs}) ->
+    cerl:c_map([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
+    %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
+    %% the following but that doesn't work for 18.2 nor 18.3.
+    %% The LFE source put me on to the following:
+    cerl:ann_c_map_pair([], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
+gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
+    cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
@@ -307,7 +318,6 @@ parser_nested_letrec_test() ->
 module_with_match_test() ->
     Name = compile_module_with_match,
     FN = atom_to_list(Name) ++ ".beam",
-    io:format("Fake name is ~s~n", [FN]),
     Code = 
         "module compile_module_with_match\n\n"
         "export test/1, first/1, compare/2\n\n"

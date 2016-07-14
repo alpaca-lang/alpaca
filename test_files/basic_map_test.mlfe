@@ -1,0 +1,12 @@
+module basic_map_test
+
+export get/2, test_map/1
+
+type map_result 'x = Ok 'x | NotFound
+
+test_map () = #{:one => 1, :two => 2}
+
+get k m = match m with
+    #{k => v} -> Ok v
+  | _ -> NotFound
+

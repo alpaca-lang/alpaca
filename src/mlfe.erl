@@ -152,6 +152,13 @@ basic_pid_test() ->
     ?assertEqual(5, ShouldBe5),
     code:delete(M).
 
+basic_map_test() ->
+    Files =["test_files/basic_map_test.mlfe"],
+    [M] = compile_and_load(Files),
+    ?assertEqual({'Ok', 1}, M:get('one', M:test_map(unit))),
+    ?assertEqual('NotFound', M:get('four', M:test_map(unit))),
+    code:delete(M).
+
 simple_example_module_test() ->
     [M] = compile_and_load(["test_files/simple_example.mlfe"]),
     code:delete(M).

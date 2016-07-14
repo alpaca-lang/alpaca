@@ -332,7 +332,8 @@ rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
         {NV, M, K2} ->
             case rename_bindings(NV, MN, M, V) of
                 {error, _}=Err -> Err;
-                {NV2, M2, V2} -> {NV2, M2, P#mlfe_map_pair{key=K2, val=V2}}
+                {NV2, M2, V2} -> 
+                    {NV2, M2, P#mlfe_map_pair{key=K2, val=V2}}
             end
     end;
 rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
@@ -378,7 +379,7 @@ rename_bindings(NV, MN, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) 
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
-    case make_bindings(NV, M, P) of
+    case make_bindings(NV, MN, M, P) of
         {error, _} = Err -> Err;
         {NV2, M2, P2} -> 
             case rename_bindings(NV2, MN, M2, R) of
@@ -432,11 +433,11 @@ rename_clause_list(NV, MN, M, Cs) ->
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
-make_bindings(NV, M, #mlfe_tuple{values=Vs}=Tup) ->
+make_bindings(NV, MN, M, #mlfe_tuple{values=Vs}=Tup) ->
     F = fun
             (_, {error, _}=E) -> E;
             (V, {NextVar, Map, Memo}) ->
-                case make_bindings(NextVar, Map, V) of
+                case make_bindings(NextVar, MN, Map, V) of
                     {error, _} = Err -> Err;
                     {NV2, M2, V2} -> {NV2, M2, [V2|Memo]}
                 end
@@ -445,17 +446,50 @@ make_bindings(NV, M, #mlfe_tuple{values=Vs}=Tup) ->
         {error, _} = Err -> Err;
         {NV2, M2, Vs2}   -> {NV2, M2, Tup#mlfe_tuple{values=lists:reverse(Vs2)}}
     end;
-make_bindings(NV, M, #mlfe_cons{head=H, tail=T}=Cons) ->
-    case make_bindings(NV, M, H) of
+make_bindings(NV, MN, M, #mlfe_cons{head=H, tail=T}=Cons) ->
+    case make_bindings(NV, MN, M, H) of
         {error, _} = Err -> Err;
-        {NV2, M2, H2} -> case make_bindings(NV2, M2, T) of
+        {NV2, M2, H2} -> case make_bindings(NV2, MN, M2, T) of
                              {error, _} = Err -> 
                                  Err;
                              {NV3, M3, T2} -> 
                                  {NV3, M3, Cons#mlfe_cons{head=H2, tail=T2}}
                          end
     end;
-make_bindings(NV, M, {symbol, L, Name}) ->
+%%% Map patterns need to rename variables used for keys and create new bindings
+%%% for variables used for values.  We want to rename for keys because we want
+%%% the following to work:
+%%% 
+%%%     get my_key my_map = match my_map with
+%%%       #{my_key => v} => v
+%%% 
+%%% Map patterns require the key to be something exact already.
+make_bindings(NextVar, MN, BindingMap, #mlfe_map{pairs=Ps}=Map) ->
+    Folder = fun(_, {error, _}=Err) -> Err;
+                (P, {NV, M, Acc}) ->
+                     case make_bindings(NV, MN, M, P) of
+                         {error, _}=Err -> Err;
+                         {NV2, M2, P2} -> {NV2, M2, [P2|Acc]}
+                     end
+             end,
+    case lists:foldl(Folder, {NextVar, BindingMap, []}, Ps) of
+        {error, _}=Err -> Err;
+        {NV, M, Pairs} -> 
+            Map2 = Map#mlfe_map{is_pattern=true, pairs=lists:reverse(Pairs)},
+            {NV, M, Map2}
+    end;
+make_bindings(NV, MN, M, #mlfe_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(NV, MN, M, K) of
+        {error, _}=Err -> Err;
+        {NV2, M2, K2} ->
+            case make_bindings(NV2, MN, M2, V) of
+                {error, _}=Err -> Err;
+                {NV3, M3, V2} -> 
+                    {NV3, M3, P#mlfe_map_pair{is_pattern=true, key=K2, val=V2}}
+            end
+    end;
+
+make_bindings(NV, _MN, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of
         undefined ->
             Synth = next_var(NV),
@@ -463,7 +497,7 @@ make_bindings(NV, M, {symbol, L, Name}) ->
         _ ->
             {error, {duplicate_definition, Name, L}}
     end;
-make_bindings(NV, M, Expression) ->
+make_bindings(NV, _MN, M, Expression) ->
     {NV, M, Expression}.
                                 
 -define(base_var_name, "svar_").
