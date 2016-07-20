@@ -881,6 +881,24 @@ list_test_() ->
                            "| h :: t -> h\n")))
     ].
 
+binary_test_() ->
+    [?_assertMatch({ok, #mlfe_binary{
+                           line=1,
+                           segments=[#mlfe_bits{line=1, value={int, 1, 1}}]}},
+                    parse(scanner:scan("<<1>>"))),
+     ?_assertMatch({ok, #mlfe_binary{
+                          line=1,
+                          segments=[#mlfe_bits{value={int, 1, 1},
+                                               size=8,
+                                               unit=1},
+                                    #mlfe_bits{value={int, 1, 2},
+                                               size=16,
+                                               unit=1}]}},
+                   parse(scanner:scan("<<1 size=8 unit=1, 2 size=16 unit=1>>"))),
+     ?_assertMatch({ok, #mlfe_binary{}},
+                   parse(scanner:scan("<<255 size=16 unit=1 signed little>>")))
+    ].
+
 string_test_() ->
     [?_assertMatch({ok, {string, 1, "Hello world"}}, test_parse("\"Hello world\""))%,
 %     ?_assertMatch({ok, {string, 1, "Nested \" quotes"}},

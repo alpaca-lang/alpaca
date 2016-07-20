@@ -81,6 +81,14 @@ after       : {token, {'after', TokenLine}}.
 %% Float
 [-]?{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 
+%% Binaries
+<< : {token, {bin_open, TokenLine}}.
+>> : {token, {bin_close, TokenLine}}.
+unit : {token, {bin_unit, TokenLine}}.
+size : {token, {bin_size, TokenLine}}.
+big|little|native : {token, {bin_endian, TokenLine, TokenChars}}.
+signed|unsigned : {token, {bin_sign, TokenLine, TokenChars}}.
+
 %% Symbol
 {SYM}  : {token, {symbol, TokenLine, TokenChars}}.
 

@@ -23,6 +23,7 @@ type_apply
 type_import
 
 cons literal_cons_items
+binary bin_segments bin_segment bin_qualifier
 map_literal map_literal_pairs map_pair
 
 term terms
@@ -50,6 +51,7 @@ boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
 '[' ']' ':'
+bin_open bin_close bin_unit bin_size bin_endian bin_sign
 map_open close_brace map_arrow
 match with '|' '->'
 
@@ -156,6 +158,7 @@ const -> string : '$1'.
 const -> '_' : '$1'.
 const -> unit : '$1'.
 
+%% ----- Lists  ------------------------
 literal_cons_items -> term : ['$1'].
 literal_cons_items -> term ',' literal_cons_items: ['$1' | '$3'].
 
@@ -170,6 +173,29 @@ cons -> '[' literal_cons_items ']':
   F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
   lists:foldr(F, {nil, 0}, '$2').
 
+%% -----  Binaries  --------------------
+bin_qualifier -> base_type : '$1'.
+bin_qualifier -> bin_unit assign int : {unit, '$3'}.
+bin_qualifier -> bin_size assign int : {size, '$3'}.
+bin_qualifier -> bin_endian : '$1'.
+bin_qualifier -> bin_sign : '$1'.
+
+bin_segment -> float : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
+bin_segment -> int : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
+bin_segment -> symbol : #mlfe_bits{value='$1', line=term_line('$1')}.
+bin_segment -> binary : #mlfe_bits{value='$1', line=term_line('$1'), type=binary}.
+%% TODO:  string bin_segment
+
+bin_segment -> bin_segment bin_qualifier : add_qualifier('$1', '$2').
+
+bin_segments -> bin_segment : ['$1'].
+bin_segments -> bin_segment ',' bin_segments : ['$1'|'$3'].
+
+binary -> bin_open bin_close : #mlfe_binary{line=term_line('$1'), segments=[]}.
+binary -> bin_open bin_segments bin_close : 
+  #mlfe_binary{line=term_line('$1'), segments='$2'}.
+
+%% ----- Maps --------------------------
 map_pair -> term map_arrow term :
   #mlfe_map_pair{line=term_line('$1'), key='$1', val='$3'}.
 map_literal_pairs -> map_pair : ['$1'].
@@ -196,6 +222,7 @@ term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : '$1'.
 term -> cons : '$1'.
+term -> binary : '$1'.
 term -> map_literal : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
@@ -383,3 +410,16 @@ cons_to_list({nil, _}) ->
     [];
 cons_to_list(#mlfe_cons{head=H, tail=T}) ->
     [H|cons_to_list(T)].
+
+add_qualifier(#mlfe_bits{}=B, {size, {int, _, I}}) ->
+    B#mlfe_bits{size=I};
+add_qualifier(#mlfe_bits{}=B, {unit, {int, _, I}}) ->
+    B#mlfe_bits{unit=I};
+add_qualifier(#mlfe_bits{}=B, {bin_endian, _, E}) ->
+    B#mlfe_bits{endian=list_to_atom(E)};
+add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float" ->
+    B#mlfe_bits{type=list_to_atom(T)};
+add_qualifier(#mlfe_bits{}=B, {bin_sign, _, S}) ->
+    B#mlfe_bits{sign=list_to_atom(S)}.
+
+

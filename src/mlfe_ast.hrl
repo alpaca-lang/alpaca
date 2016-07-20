@@ -68,6 +68,7 @@
              | t_adt()
              | t_adt_constructor()
              | t_const()
+             | t_binary
              | t_list()
              | t_map()
              | t_tuple()
@@ -104,6 +105,23 @@
                     | mlfe_atom()
                     | mlfe_string()
                       .
+
+%%% ### Binaries
+
+-record(mlfe_binary, {line=0 :: integer(),
+                      segments=[] :: list(mlfe_bits())}).
+-type mlfe_binary() :: #mlfe_binary{}.
+
+-type mlfe_bits_type() :: integer | float | binary | utf8.
+
+-record(mlfe_bits, {line=0 :: integer(),
+                    value={symbol, 0, ""} :: mlfe_value_expression(),
+                    size=8 :: non_neg_integer(),
+                    unit=1 :: non_neg_integer(),
+                    type=integer :: mlfe_bits_type(),
+                    sign=unsigned :: signed | unsigned,
+                    endian=big :: big | little | native}).
+-type mlfe_bits() :: #mlfe_bits{}.
 
 %%% ### AST Nodes For Types
 %%% 
