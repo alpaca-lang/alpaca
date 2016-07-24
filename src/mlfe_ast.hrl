@@ -115,7 +115,7 @@
 -type mlfe_bits_type() :: int | float | binary. % | utf8.
 
 -record(mlfe_bits, {line=0 :: integer(),
-                    value={symbol, 0, ""} :: mlfe_value_expression(),
+                    value={symbol, 0, ""} :: mlfe_symbol()|mlfe_number(),
                     size=8 :: non_neg_integer(),
                     unit=1 :: non_neg_integer(),
                     type=int :: mlfe_bits_type(),
@@ -287,6 +287,7 @@
 -type mlfe_value_expression() :: mlfe_const()
                                | mlfe_symbol()
                                | mlfe_list()
+                               | mlfe_binary()
                                | mlfe_map()
                                | mlfe_tuple()
                                | mlfe_apply()
