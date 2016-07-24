@@ -22,9 +22,9 @@ TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
-TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_pid
+TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_pid|is_binary
 
-BASE_TYPE = atom|int|float|string|bool
+BASE_TYPE = atom|int|float|string|bool|binary
 BASE_LIST = list
 BASE_PID = pid
 
@@ -36,7 +36,8 @@ Rules.
 \(    : {token, {'(', TokenLine}}.
 \)    : {token, {')', TokenLine}}.
 \|    : {token, {'|', TokenLine}}.
-\:\:    : {token, {':', TokenLine}}.
+\:\:  : {token, {cons_infix, TokenLine}}.
+\:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
 ()    : {token, {unit, TokenLine}}.
@@ -59,6 +60,8 @@ spawn       : {token, {spawn, TokenLine}}.
 send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
+
+true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 
 %% Base types are the fundamental types available on the Erlang VM.
 {BASE_TYPE} : {token, {base_type, TokenLine, TokenChars}}.
@@ -86,8 +89,10 @@ after       : {token, {'after', TokenLine}}.
 >> : {token, {bin_close, TokenLine}}.
 unit : {token, {bin_unit, TokenLine}}.
 size : {token, {bin_size, TokenLine}}.
+end : {token, {bin_end, TokenLine}}.
+sign : {token, {bin_sign, TokenLine}}.
 big|little|native : {token, {bin_endian, TokenLine, TokenChars}}.
-signed|unsigned : {token, {bin_sign, TokenLine, TokenChars}}.
+
 
 %% Symbol
 {SYM}  : {token, {symbol, TokenLine, TokenChars}}.
@@ -128,19 +133,6 @@ _    : {token, {'_', TokenLine}}.
   {token, {comment_line, TokenLine, Text}}.
 (/\*([^*]|(\*+[^*/]))*\*+/)|(//.*) : {token, {comment_lines, TokenLine, TokenChars}}.
 
-%% Separators
-,     : {token, {',', TokenLine}}.
-/     : {token, {'/', TokenLine}}.
-
-{     : {token, {'{', TokenLine}}.
-}     : {token, {'}', TokenLine}}.
-\(    : {token, {'(', TokenLine}}.
-\)    : {token, {')', TokenLine}}.
-\|    : {token, {'|', TokenLine}}.
-\:\:    : {token, {':', TokenLine}}.
-\[    : {token, {'[', TokenLine}}.
-\]    : {token, {']', TokenLine}}.
-()    : {token, {unit, TokenLine}}.
 
 
 Erlang code.

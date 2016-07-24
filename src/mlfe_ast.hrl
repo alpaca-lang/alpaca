@@ -112,13 +112,13 @@
                       segments=[] :: list(mlfe_bits())}).
 -type mlfe_binary() :: #mlfe_binary{}.
 
--type mlfe_bits_type() :: integer | float | binary | utf8.
+-type mlfe_bits_type() :: int | float | binary. % | utf8.
 
 -record(mlfe_bits, {line=0 :: integer(),
                     value={symbol, 0, ""} :: mlfe_value_expression(),
                     size=8 :: non_neg_integer(),
                     unit=1 :: non_neg_integer(),
-                    type=integer :: mlfe_bits_type(),
+                    type=int :: mlfe_bits_type(),
                     sign=unsigned :: signed | unsigned,
                     endian=big :: big | little | native}).
 -type mlfe_bits() :: #mlfe_bits{}.

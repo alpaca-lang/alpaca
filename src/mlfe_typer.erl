@@ -1056,6 +1056,12 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
+typ_of(Env, Lvl, #mlfe_binary{segments=Segs}) ->
+    case type_bin_segments(Env, Lvl, Segs) of
+        {error, _}=Err -> Err;
+        {ok, NV} -> {new_cell(t_binary), NV}
+    end;
+        
 typ_of(Env, Lvl, #mlfe_map{}=M) ->
     type_map(Env, Lvl, M);
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
@@ -1338,6 +1344,37 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
             Env2 = update_counter(NextVar, Env),
             typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
     end.
+
+type_bin_segments(#env{next_var=NV}, _Lvl, []) ->
+    {ok, NV};
+type_bin_segments(
+  Env, 
+  Level, 
+  [#mlfe_bits{value=V, type=T, line=L}|Rem]) when T == int; T == float; T == binary ->
+    VTyp = typ_of(Env, Level, V),
+    map_typ_of(Env, VTyp, 
+               fun(Env2, BitsTyp) -> 
+                       U = unify(BitsTyp, bin_type_to_type(T), Env, L),
+                       map_unify(U, fun() -> type_bin_segments(Env2, Level, Rem) end)
+               end).
+
+bin_type_to_type(int) -> new_cell(t_int);
+bin_type_to_type(float) -> new_cell(t_float);
+bin_type_to_type(binary) -> new_cell(t_binary).
+
+%% 2016-07-23 trying this "map" function out instead of littering
+%% code with yet more case statements to check errors from typ_of.
+%% Just using with type_bin_segments for now.
+map_typ_of(_Env, {error, _}=Err, _) ->
+    Err;
+map_typ_of(Env, {Typ, NV}, NextStep) ->
+    Env2 = update_counter(NV, Env),
+    NextStep(Env2, Typ).
+
+map_unify({error, _}=Err, _) ->
+    Err;
+map_unify(ok, NextStep) ->
+    NextStep().
 
 type_map(Env, Lvl, #mlfe_map{pairs=[]}) ->
     {KeyVar, Env2} = new_var(Lvl, Env),
@@ -1653,6 +1690,22 @@ add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
         {Typ, NextVar} -> {Typ, RenCons, update_counter(NextVar, Env3), NN4}
     end;
 
+add_bindings(#mlfe_binary{}=Bin, Env, Lvl, NameNum) ->
+    {Bin2, NN2} = rename_wildcards(Bin, NameNum),
+    F = fun(_, {error, _}=Err) -> Err;
+           (#mlfe_bits{value=V}, {E, N}) ->
+                case add_bindings(V, E, Lvl, N) of
+                    {_, _, E2, N2} -> {E2, N2};
+                    {error, _}=Err -> Err
+                end
+        end,
+    case lists:foldl(F, {Env, NN2}, Bin2#mlfe_binary.segments) of
+        {error, _}=Err -> Err;
+        {Env2, NN3} ->
+            T = typ_of(Env2, Lvl, Bin2),
+            map_typ_of(Env2, T, fun(Env3, Typ) -> {Typ, Bin2, Env3, NN3} end)
+    end;
+
 add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
     {M2, NN2} = rename_wildcards(M, NN),
     Folder = fun(_, {error, _}=Err) -> Err;
@@ -1711,6 +1764,16 @@ rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
     {RenH, N1} = rename_wildcards(H, NameNum),
     {RenT, N2} = rename_wildcards(T, N1),
     {#mlfe_cons{head=RenH, tail=RenT}, N2};
+rename_wildcards(#mlfe_binary{segments=Segs}=B, NameNum) ->
+    F = fun(S, {Memo, NN}) ->
+                {S2, NN2} = rename_wildcards(S, NN),
+                {[S2|Memo], NN2}
+        end,
+    {Segs2, NN2} = lists:foldl(F, {[], NameNum}, Segs),
+    {B#mlfe_binary{segments=lists:reverse(Segs2)}, NN2};
+rename_wildcards(#mlfe_bits{value=V}=Bits, NameNum) ->
+    {V2, NN} = rename_wildcards(V, NameNum),
+    {Bits#mlfe_bits{value=V2}, NN};
 rename_wildcards(#mlfe_map{pairs=Pairs}=M, NameNum) ->
     Folder = fun(P, {Ps, NN}) -> 
                      {P2, NN2} = rename_wildcards(P, NN),
@@ -1934,6 +1997,17 @@ list_test_() ->
                      "let l = 1 :: 2 :: 3 :: [] in\n"
                      "match l with\n"
                      " a :: b :: _ -> a +. b"))
+    ].
+
+binary_test_() ->
+    [?_assertMatch({t_binary, _},
+                   top_typ_of("<<1>>")),
+     ?_assertMatch({{t_arrow, [t_binary], t_binary}, _},
+                   top_typ_of(
+                     "f x = match x with "
+                     "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
+     ?_assertMatch({error, {cannot_unify, _, 1, t_float, t_int}},
+                   top_typ_of("f () = let x = 1.0 in <<x: type=int>>"))
     ].
 
 map_test_() ->

@@ -23,7 +23,7 @@ type_apply
 type_import
 
 cons literal_cons_items
-binary bin_segments bin_segment bin_qualifier
+binary bin_segments bin_segment bin_qualifier bin_qualifiers
 map_literal map_literal_pairs map_pair
 
 term terms
@@ -46,12 +46,13 @@ comment_line comment_lines
 
 module export 
 type_declare type_constructor type_var base_type base_list base_pid
+':'
 use
 boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
-'[' ']' ':'
-bin_open bin_close bin_unit bin_size bin_endian bin_sign
+'[' ']' cons_infix
+bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign
 map_open close_brace map_arrow
 match with '|' '->'
 
@@ -168,25 +169,33 @@ cons -> '[' ']' :
 cons -> '[' term ']' : 
   {_, L} = '$3',
   #mlfe_cons{head='$2', tail={nil, L}, line=L}.
-cons -> term ':' term : #mlfe_cons{head='$1', tail='$3'}.
+cons -> term cons_infix term : #mlfe_cons{head='$1', tail='$3'}.
 cons -> '[' literal_cons_items ']':
   F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
   lists:foldr(F, {nil, 0}, '$2').
 
 %% -----  Binaries  --------------------
-bin_qualifier -> base_type : '$1'.
+bin_qualifier -> type_declare assign base_type : '$3'.
 bin_qualifier -> bin_unit assign int : {unit, '$3'}.
 bin_qualifier -> bin_size assign int : {size, '$3'}.
-bin_qualifier -> bin_endian : '$1'.
-bin_qualifier -> bin_sign : '$1'.
+bin_qualifier -> bin_end assign bin_endian : '$3'.
+bin_qualifier -> bin_sign assign boolean : 
+  case '$3' of
+      {boolean, L, true} -> {bin_sign, L, "signed"};
+      {boolean, L, false} -> {bin_sign, L, "unsigned"}
+  end.
+
+bin_qualifiers -> bin_qualifier : ['$1'].
+bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
 
 bin_segment -> float : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
-bin_segment -> int : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
+bin_segment -> int : #mlfe_bits{value='$1', type=int, line=term_line('$1')}.
 bin_segment -> symbol : #mlfe_bits{value='$1', line=term_line('$1')}.
 bin_segment -> binary : #mlfe_bits{value='$1', line=term_line('$1'), type=binary}.
 %% TODO:  string bin_segment
 
-bin_segment -> bin_segment bin_qualifier : add_qualifier('$1', '$2').
+bin_segment -> bin_segment ':' bin_qualifiers : 
+  lists:foldl(fun(Q, S) -> add_qualifier(S, Q) end, '$1', '$3').
 
 bin_segments -> bin_segment : ['$1'].
 bin_segments -> bin_segment ',' bin_segments : ['$1'|'$3'].
@@ -417,7 +426,7 @@ add_qualifier(#mlfe_bits{}=B, {unit, {int, _, I}}) ->
     B#mlfe_bits{unit=I};
 add_qualifier(#mlfe_bits{}=B, {bin_endian, _, E}) ->
     B#mlfe_bits{endian=list_to_atom(E)};
-add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float" ->
+add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float"; T =:= "binary" ->
     B#mlfe_bits{type=list_to_atom(T)};
 add_qualifier(#mlfe_bits{}=B, {bin_sign, _, S}) ->
     B#mlfe_bits{sign=list_to_atom(S)}.

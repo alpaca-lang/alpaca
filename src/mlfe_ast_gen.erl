@@ -314,6 +314,19 @@ rename_bindings(NextVar, MN, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
                                                         tail=T2}}
                        end
     end;
+rename_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+    %% fold to account for errors.
+    F = fun(_, {error, _}=Err) -> Err;
+           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+                case rename_bindings(NV, MN, M, V) of
+                    {NV2, M2, V2} -> {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                    {error, _}=Err -> Err
+                end
+        end,
+    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+        {error, _}=Err -> Err;
+        {NV2, M2, Segs2} -> {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+    end;
 rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
     Folder = fun(_, {error, _}=Err) -> Err;
                 (P, {NV, M, Ps}) ->
@@ -456,6 +469,22 @@ make_bindings(NV, MN, M, #mlfe_cons{head=H, tail=T}=Cons) ->
                                  {NV3, M3, Cons#mlfe_cons{head=H2, tail=T2}}
                          end
     end;
+%% TODO:  this is identical to rename_bindings but for the internal call
+%% to make_bindings vs rename_bindings.  How much else in here is like this?
+%% Probably loads of abstracting/de-duping potential.
+make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+    F = fun(_, {error, _}=Err) -> Err;
+           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+                case make_bindings(NV, MN, M, V) of
+                    {NV2, M2, V2} -> {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                    {error, _}=Err -> Err
+                end
+        end,
+    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+        {error, _}=Err -> Err;
+        {NV2, M2, Segs2} -> {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+    end;
+    
 %%% Map patterns need to rename variables used for keys and create new bindings
 %%% for variables used for values.  We want to rename for keys because we want
 %%% the following to work:
@@ -894,9 +923,13 @@ binary_test_() ->
                                     #mlfe_bits{value={int, 1, 2},
                                                size=16,
                                                unit=1}]}},
-                   parse(scanner:scan("<<1 size=8 unit=1, 2 size=16 unit=1>>"))),
+                   parse(scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
      ?_assertMatch({ok, #mlfe_binary{}},
-                   parse(scanner:scan("<<255 size=16 unit=1 signed little>>")))
+                   parse(scanner:scan("<<255: size=16 unit=1 sign=true end=little>>"))),
+     ?_assertMatch({ok, #mlfe_binary{
+                          segments=[#mlfe_bits{value={symbol, 1, "a"}}, 
+                                    #mlfe_bits{value={symbol, 1, "b"}}]}},
+                   parse(scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
     ].
 
 string_test_() ->
