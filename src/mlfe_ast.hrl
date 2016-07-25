@@ -115,8 +115,16 @@
 -type mlfe_bits_type() :: int | float | binary. % | utf8.
 
 -record(mlfe_bits, {line=0 :: integer(),
+                    %% Used to signal whether or not the bitstring is simply
+                    %% using default size and unit values.  If it is *not*
+                    %% and the `type` is `binary` *and* the bitstring is the
+                    %% last segment in a binary, it's size must be set to 
+                    %% `'all'` with unit 8 to capture all remaining bits.
+                    %% This is in keeping with how Erlang compiles to Core
+                    %% Erlang.
+                    default_sizes=true :: boolean(),
                     value={symbol, 0, ""} :: mlfe_symbol()|mlfe_number(),
-                    size=8 :: non_neg_integer(),
+                    size=8 :: non_neg_integer()|all,
                     unit=1 :: non_neg_integer(),
                     type=int :: mlfe_bits_type(),
                     sign=unsigned :: signed | unsigned,

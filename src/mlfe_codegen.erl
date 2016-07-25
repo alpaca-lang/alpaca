@@ -86,6 +86,8 @@ gen_expr(_, {nil, _}) ->
     cerl:c_nil();
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
+gen_expr(Env, #mlfe_binary{segments=Segs}) ->
+    cerl:c_binary(gen_bits(Env, Segs));
 gen_expr(Env, #mlfe_map{is_pattern=true, pairs=Pairs}) ->
     cerl:c_map_pattern([gen_expr(Env, P) || P <- Pairs]);
 gen_expr(Env, #mlfe_map{pairs=Pairs}) ->
@@ -248,7 +250,28 @@ gen_module_info(ModuleName, Params) ->
                        [cerl:c_atom(ModuleName) | Params]),
     NewF = cerl:c_fun(Params, Body),
     {cerl:c_fname(module_info, length(Params)), NewF}.
-    
+
+gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
+
+gen_bits(_Env, [], AllSegs) ->
+    lists:reverse(AllSegs);
+gen_bits(Env, [#mlfe_bits{type=binary, default_sizes=true}=TailBits], Segs) ->
+    #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8), 
+                      get_bits_type(T), bits_flags(Sign, E)),
+    lists:reverse([B|Segs]);
+gen_bits(Env, [Bits|Rem], Memo) ->
+    #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U), 
+                      get_bits_type(T), bits_flags(Sign, E)),
+    gen_bits(Env, Rem, [B|Memo]).
+
+get_bits_type(int) -> cerl:c_atom(integer);
+get_bits_type(float) -> cerl:c_atom(float);
+get_bits_type(binary) -> cerl:c_atom(binary).
+
+bits_flags(Sign, Endian) -> 
+    cerl:c_cons(cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
 
 -ifdef(TEST).
 

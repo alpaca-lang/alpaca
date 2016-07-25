@@ -162,6 +162,18 @@ basic_map_test() ->
     ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map(unit))),
     code:delete(M).
 
+basic_binary_test() ->
+    Files =["test_files/basic_binary.mlfe"],
+    [M] = compile_and_load(Files),
+    ?assertEqual(1, M:count_one_twos(<<1, 2>>)),
+    ?assertEqual(2, M:count_one_twos(<<1, 2, 1, 2, 3, 1, 2>>)),
+    ?assertEqual(0, M:count_one_twos(<<2, 1, 0>>)),
+
+    ?assertEqual(1, M:first_three_bits(<<2#00100000>>)),
+    ?assertEqual(3, M:first_three_bits(<<2#01100000>>)),
+
+    code:delete(M).
+
 simple_example_module_test() ->
     [M] = compile_and_load(["test_files/simple_example.mlfe"]),
     code:delete(M).

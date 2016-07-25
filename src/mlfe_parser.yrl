@@ -421,9 +421,9 @@ cons_to_list(#mlfe_cons{head=H, tail=T}) ->
     [H|cons_to_list(T)].
 
 add_qualifier(#mlfe_bits{}=B, {size, {int, _, I}}) ->
-    B#mlfe_bits{size=I};
+    B#mlfe_bits{size=I, default_sizes=false};
 add_qualifier(#mlfe_bits{}=B, {unit, {int, _, I}}) ->
-    B#mlfe_bits{unit=I};
+    B#mlfe_bits{unit=I, default_sizes=false};
 add_qualifier(#mlfe_bits{}=B, {bin_endian, _, E}) ->
     B#mlfe_bits{endian=list_to_atom(E)};
 add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float"; T =:= "binary" ->
