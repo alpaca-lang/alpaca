@@ -52,7 +52,7 @@ boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math
 '[' ']' cons_infix
-bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign
+bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
 map_open close_brace map_arrow
 match with '|' '->'
 
@@ -176,6 +176,7 @@ cons -> '[' literal_cons_items ']':
 
 %% -----  Binaries  --------------------
 bin_qualifier -> type_declare assign base_type : '$3'.
+bin_qualifier -> type_declare assign bin_text_encoding : '$3'.
 bin_qualifier -> bin_unit assign int : {unit, '$3'}.
 bin_qualifier -> bin_size assign int : {size, '$3'}.
 bin_qualifier -> bin_end assign bin_endian : '$3'.
@@ -192,6 +193,7 @@ bin_segment -> float : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
 bin_segment -> int : #mlfe_bits{value='$1', type=int, line=term_line('$1')}.
 bin_segment -> symbol : #mlfe_bits{value='$1', line=term_line('$1')}.
 bin_segment -> binary : #mlfe_bits{value='$1', line=term_line('$1'), type=binary}.
+bin_segment -> string : #mlfe_bits{value='$1', line=term_line('$1'), type=utf8}.
 %% TODO:  string bin_segment
 
 bin_segment -> bin_segment ':' bin_qualifiers : 
@@ -426,8 +428,10 @@ add_qualifier(#mlfe_bits{}=B, {unit, {int, _, I}}) ->
     B#mlfe_bits{unit=I, default_sizes=false};
 add_qualifier(#mlfe_bits{}=B, {bin_endian, _, E}) ->
     B#mlfe_bits{endian=list_to_atom(E)};
-add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float"; T =:= "binary" ->
+add_qualifier(#mlfe_bits{}=B, {base_type, _, T}) when T =:= "int"; T =:= "float"; T =:= "binary"; T =:= "utf8" ->
     B#mlfe_bits{type=list_to_atom(T)};
+add_qualifier(#mlfe_bits{}=B, {bin_text_encoding, Enc}) ->
+    B#mlfe_bits{type=list_to_atom(Enc)};
 add_qualifier(#mlfe_bits{}=B, {bin_sign, _, S}) ->
     B#mlfe_bits{sign=list_to_atom(S)}.
 

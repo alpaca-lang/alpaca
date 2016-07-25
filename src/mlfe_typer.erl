@@ -1352,7 +1352,7 @@ type_bin_segments(#env{next_var=NV}, _Lvl, []) ->
 type_bin_segments(
   Env, 
   Level, 
-  [#mlfe_bits{value=V, type=T, line=L}|Rem]) when T == int; T == float; T == binary ->
+  [#mlfe_bits{value=V, type=T, line=L}|Rem]) when T == int; T == float; T == binary; T == utf8; T == latin1 ->
     VTyp = typ_of(Env, Level, V),
     map_typ_of(Env, VTyp, 
                fun(Env2, BitsTyp) ->
@@ -1362,6 +1362,7 @@ type_bin_segments(
 
 bin_type_to_type(int) -> new_cell(t_int);
 bin_type_to_type(float) -> new_cell(t_float);
+bin_type_to_type(utf8) -> new_cell(t_string);
 bin_type_to_type(binary) -> new_cell(t_binary).
 
 %% 2016-07-24 trying this "map" function out instead of littering

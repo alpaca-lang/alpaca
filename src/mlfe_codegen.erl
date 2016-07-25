@@ -75,14 +75,7 @@ gen_expr(_, {atom, _, A}) ->
 gen_expr(_, {chars, _, Cs}) ->
     cerl:c_string(Cs);
 gen_expr(_, {string, _, S}) ->
-    Bin = unicode:characters_to_binary(S, utf8),
-    io:format("Bin is ~w~n", [Bin]),
-    F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
-                                cerl:c_atom(integer),
-                                cerl:c_cons(cerl:c_atom(unsigned),
-                                            cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
-        end,
-    cerl:c_binary([F(I) || I <- binary_to_list(Bin)]);
+    cerl:c_binary(literal_binary(S, utf8));
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
 gen_expr(_Env, [{symbol, _, V}]) ->
@@ -272,6 +265,11 @@ gen_bits(Env, [#mlfe_bits{type=binary, default_sizes=true}=TailBits], Segs) ->
     B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8), 
                       get_bits_type(T), bits_flags(Sign, E)),
     lists:reverse([B|Segs]);
+
+gen_bits(Env, [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem], Segs) ->
+    Lit = lists:reverse(literal_binary(S, utf8)),
+    gen_bits(Env, Rem, Lit ++ Segs);
+
 gen_bits(Env, [Bits|Rem], Memo) ->
     #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
     B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U), 
@@ -284,6 +282,17 @@ get_bits_type(binary) -> cerl:c_atom(binary).
 
 bits_flags(Sign, Endian) -> 
     cerl:c_cons(cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
+
+literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
+    Bin = unicode:characters_to_binary(Chars, Encoding),
+    io:format("Bin is ~w~n", [Bin]),
+    F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
+                                cerl:c_atom(integer),
+                                cerl:c_cons(cerl:c_atom(unsigned),
+                                            cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
+        end,
+    [F(I) || I <- binary_to_list(Bin)].
+
 
 -ifdef(TEST).
 

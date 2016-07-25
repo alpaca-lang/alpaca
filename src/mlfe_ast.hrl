@@ -113,7 +113,7 @@
                       segments=[] :: list(mlfe_bits())}).
 -type mlfe_binary() :: #mlfe_binary{}.
 
--type mlfe_bits_type() :: int | float | binary. % | utf8.
+-type mlfe_bits_type() :: int | float | binary | utf8.
 
 -record(mlfe_bits, {line=0 :: integer(),
                     %% Used to signal whether or not the bitstring is simply
@@ -124,7 +124,7 @@
                     %% This is in keeping with how Erlang compiles to Core
                     %% Erlang.
                     default_sizes=true :: boolean(),
-                    value={symbol, 0, ""} :: mlfe_symbol()|mlfe_number(),
+                    value={symbol, 0, ""} :: mlfe_symbol()|mlfe_number()|mlfe_string(),
                     size=8 :: non_neg_integer()|all,
                     unit=1 :: non_neg_integer(),
                     type=int :: mlfe_bits_type(),

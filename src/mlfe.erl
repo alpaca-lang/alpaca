@@ -44,8 +44,10 @@ compile({text, Code}) ->
 
 compile({files, Filenames}) ->
     Code = lists:foldl(fun(FN, Acc) ->
-                               {ok, Bin} = file:read_file(FN),
-                               [binary_to_list(Bin)|Acc]
+                               {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
+                               Res = read_file(Device, []),
+                               ok = file:close(Device),
+                               [Res|Acc]
                        end, [], Filenames),
     {ok, _, Mods} = type_modules(parse_modules(Code)),
     Compiled = lists:foldl(fun(M, Acc) -> [compile_module(M)|Acc] end, [], Mods),
@@ -60,6 +62,11 @@ compile_module(#mlfe_module{name=N}=Mod) ->
        name=N,
        filename=atom_to_list(N) ++ ".beam",
        bytes=Bin}.
+
+read_file(_, [eof|Memo]) ->
+    lists:flatten(lists:reverse(Memo));
+read_file(Device, Memo) ->
+    read_file(Device, [io:get_line(Device, '')|Memo]).
 
 parse_modules(Mods) ->
     F = fun
@@ -172,6 +179,8 @@ basic_binary_test() ->
     ?assertEqual(1, M:first_three_bits(<<2#00100000>>)),
     ?assertEqual(3, M:first_three_bits(<<2#01100000>>)),
 
+    ?assertEqual(<<"안녕"/utf8>>, M:utf8_bins(unit)),
+    
     code:delete(M).
 
 simple_example_module_test() ->
