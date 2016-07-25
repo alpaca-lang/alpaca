@@ -59,6 +59,7 @@
                  | t_atom
                  | t_bool
                  | t_string
+                 | t_chars
                  | t_unit.
 
 -type typ() :: undefined
@@ -230,7 +231,9 @@
                     | is_atom
                     | is_bool
                     | is_list
-                    | is_string.
+                    | is_string
+                    | is_chars
+                    | is_binary.
 
 %% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
 -record(mlfe_type_check, {type=undefined :: undefined|type_check(),

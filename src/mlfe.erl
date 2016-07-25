@@ -158,7 +158,7 @@ basic_map_test() ->
     ?assertEqual({'Ok', 1}, M:get('one', M:test_map(unit))),
     ?assertEqual('NotFound', M:get('four', M:test_map(unit))),
 
-    ?assertEqual({'Ok', "b"}, M:get({'two', 2}, M:test_tuple_key_map(unit))),
+    ?assertEqual({'Ok', <<"b">>}, M:get({'two', 2}, M:test_tuple_key_map(unit))),
     ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map(unit))),
     code:delete(M).
 

@@ -75,7 +75,14 @@ gen_expr(_, {atom, _, A}) ->
 gen_expr(_, {chars, _, Cs}) ->
     cerl:c_string(Cs);
 gen_expr(_, {string, _, S}) ->
-    cerl:c_string(S);
+    Bin = unicode:characters_to_binary(S, utf8),
+    io:format("Bin is ~w~n", [Bin]),
+    F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
+                                cerl:c_atom(integer),
+                                cerl:c_cons(cerl:c_atom(unsigned),
+                                            cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
+        end,
+    cerl:c_binary([F(I) || I <- binary_to_list(Bin)]);
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
 gen_expr(_Env, [{symbol, _, V}]) ->
@@ -100,6 +107,11 @@ gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
 gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
     cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom('is_binary'),
+      [gen_expr(Env, S)]);
+gen_expr(Env, #mlfe_type_check{type=is_chars, expr={symbol, _, _}=S}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
       cerl:c_atom('is_list'),

@@ -997,6 +997,8 @@ typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {new_cell(t_atom), VarNum};
 typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->
     {new_cell(t_string), VN};
+typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
+    {new_cell(t_chars), VN};
 typ_of(Env, Lvl, {symbol, _, N}) ->
     case inst(N, Lvl, Env) of
         {error, _} = E -> E;

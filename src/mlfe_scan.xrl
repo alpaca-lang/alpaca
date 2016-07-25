@@ -22,7 +22,7 @@ TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
-TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_pid|is_binary
+TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_chars|is_pid|is_binary
 
 BASE_TYPE = atom|int|float|string|bool|binary
 BASE_LIST = list
@@ -107,6 +107,12 @@ big|little|native : {token, {bin_endian, TokenLine, TokenChars}}.
 "(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
   {token, {string, TokenLine, S}}.
+
+%% Chars
+c"(\\"*|\\.|[^"\\])*" :
+  S = string:substr(TokenChars, 3, TokenLen - 3),
+  {token, {chars, TokenLine, S}}.
+
 
 %% Operators
 =    : {token, {assign, TokenLine}}.
