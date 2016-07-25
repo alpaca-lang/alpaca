@@ -1353,28 +1353,25 @@ type_bin_segments(
   [#mlfe_bits{value=V, type=T, line=L}|Rem]) when T == int; T == float; T == binary ->
     VTyp = typ_of(Env, Level, V),
     map_typ_of(Env, VTyp, 
-               fun(Env2, BitsTyp) -> 
-                       U = unify(BitsTyp, bin_type_to_type(T), Env, L),
-                       map_unify(U, fun() -> type_bin_segments(Env2, Level, Rem) end)
+               fun(Env2, BitsTyp) ->
+                       U = unify(BitsTyp, bin_type_to_type(T), Env2, L),
+                       map_err(U, fun(_) -> type_bin_segments(Env2, Level, Rem) end)
                end).
 
 bin_type_to_type(int) -> new_cell(t_int);
 bin_type_to_type(float) -> new_cell(t_float);
 bin_type_to_type(binary) -> new_cell(t_binary).
 
-%% 2016-07-23 trying this "map" function out instead of littering
+%% 2016-07-24 trying this "map" function out instead of littering
 %% code with yet more case statements to check errors from typ_of.
-%% Just using with type_bin_segments for now.
-map_typ_of(_Env, {error, _}=Err, _) ->
-    Err;
-map_typ_of(Env, {Typ, NV}, NextStep) ->
-    Env2 = update_counter(NV, Env),
-    NextStep(Env2, Typ).
+map_typ_of(Env, Res, NextStep) ->
+    map_err(Res, fun({Typ, NV}) ->
+                         Env2 = update_counter(NV, Env),
+                         NextStep(Env2, Typ)
+                 end).
 
-map_unify({error, _}=Err, _) ->
-    Err;
-map_unify(ok, NextStep) ->
-    NextStep().
+map_err({error, _}=Err, _NextStep) -> Err;
+map_err(Ok, NextStep) -> NextStep(Ok).
 
 type_map(Env, Lvl, #mlfe_map{pairs=[]}) ->
     {KeyVar, Env2} = new_var(Lvl, Env),
