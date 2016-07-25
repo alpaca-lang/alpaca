@@ -260,7 +260,7 @@ gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 
 gen_bits(_Env, [], AllSegs) ->
     lists:reverse(AllSegs);
-gen_bits(Env, [#mlfe_bits{type=binary, default_sizes=true}=TailBits], Segs) ->
+gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs) when T == binary; T == utf8 ->
     #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
     B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8), 
                       get_bits_type(T), bits_flags(Sign, E)),
@@ -278,6 +278,7 @@ gen_bits(Env, [Bits|Rem], Memo) ->
 
 get_bits_type(int) -> cerl:c_atom(integer);
 get_bits_type(float) -> cerl:c_atom(float);
+get_bits_type(utf8) -> cerl:c_atom(binary);
 get_bits_type(binary) -> cerl:c_atom(binary).
 
 bits_flags(Sign, Endian) -> 

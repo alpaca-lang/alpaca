@@ -181,6 +181,8 @@ basic_binary_test() ->
 
     ?assertEqual(<<"안녕"/utf8>>, M:utf8_bins(unit)),
     
+    ?assertEqual(<<" world">>, M:drop_hello(<<"hello world">>)),
+    
     code:delete(M).
 
 simple_example_module_test() ->

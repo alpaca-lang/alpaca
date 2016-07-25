@@ -2007,7 +2007,12 @@ binary_test_() ->
                      "f x = match x with "
                      "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
      ?_assertMatch({error, {cannot_unify, _, 1, t_float, t_int}},
-                   top_typ_of("f () = let x = 1.0 in <<x: type=int>>"))
+                   top_typ_of("f () = let x = 1.0 in <<x: type=int>>")),
+     ?_assertMatch({{t_arrow, [t_binary], t_string}, _},
+                   top_typ_of(
+                     "drop_hello bin = "
+                     "  match bin with"
+                     "    <<\"hello\": type=utf8, rest: type=utf8>> -> rest"))
     ].
 
 map_test_() ->

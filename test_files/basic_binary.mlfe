@@ -1,6 +1,6 @@
 module basic_binary
 
-export count_one_twos/1, first_three_bits/1, utf8_bins/1
+export count_one_twos/1, first_three_bits/1, utf8_bins/1, drop_hello/1
 
 count_one_twos bin =
   match bin with
@@ -14,3 +14,7 @@ first_three_bits bin =
 
 utf8_bins () =
   <<"안녕": type=utf8>>
+
+drop_hello bin =
+  match bin with
+    <<"hello": type=utf8, rest: type=utf8>> -> rest
