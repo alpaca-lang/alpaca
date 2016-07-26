@@ -339,6 +339,16 @@ rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
         {error, _}=Err -> Err;
         {NV, M, Pairs2} -> {NV, M, ASTMap#mlfe_map{pairs=lists:reverse(Pairs2)}}
     end;
+rename_bindings(NextVar, MN, Map, #mlfe_map_add{to_add=A, existing=B}=ASTMap) ->
+    case rename_bindings(NextVar, MN, Map, A) of
+        {error, _}=Err -> Err;
+        {NV, M, A2} ->
+            case rename_bindings(NV, MN, M, B) of
+                {error, _}=Err -> Err;
+                {NV2, M2, B2} -> 
+                    {NV2, M2, ASTMap#mlfe_map_add{to_add=A2, existing=B2}}
+            end
+    end;
 rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
     case rename_bindings(NextVar, MN, Map, K) of
         {error, _}=Err -> Err;

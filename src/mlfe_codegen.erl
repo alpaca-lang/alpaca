@@ -92,6 +92,15 @@ gen_expr(Env, #mlfe_map{is_pattern=true, pairs=Pairs}) ->
     cerl:c_map_pattern([gen_expr(Env, P) || P <- Pairs]);
 gen_expr(Env, #mlfe_map{pairs=Pairs}) ->
     cerl:c_map([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
+    %% In R19 creating map expression like core erlang's parser does
+    %% doesn't seem to work for me, neither with ann_c_map nor a simple
+    %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
+    %% a convenience:
+    M = gen_expr(Env, B),
+    cerl:c_call(cerl:c_atom(maps), 
+                cerl:c_atom(put),
+                [gen_expr(Env, K), gen_expr(Env, V), M]);
 gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
     %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
     %% the following but that doesn't work for 18.2 nor 18.3.

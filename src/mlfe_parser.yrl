@@ -24,7 +24,7 @@ type_import
 
 cons literal_cons_items
 binary bin_segments bin_segment bin_qualifier bin_qualifiers
-map_literal map_literal_pairs map_pair
+map_literal map_add map_literal_pairs map_pair
 
 term terms
 unit tuple tuple_list
@@ -217,6 +217,10 @@ map_literal -> map_open close_brace :
 map_literal -> map_open map_literal_pairs close_brace :
   #mlfe_map{line=term_line('$1'), pairs='$2'}.
 
+%% Adding a pair to a map, e.g. #{:a => "b" :: existing_map}
+map_add -> map_open map_pair '|' term close_brace:
+  #mlfe_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
+
 unit -> '(' ')':
   {_, L} = '$1',
   {unit, L}.
@@ -235,6 +239,7 @@ term -> symbol : '$1'.
 term -> cons : '$1'.
 term -> binary : '$1'.
 term -> map_literal : '$1'.
+term -> map_add : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.

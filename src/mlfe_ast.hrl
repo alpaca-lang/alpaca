@@ -216,6 +216,12 @@
                    pairs=[] :: list(mlfe_map_pair())}).
 -type mlfe_map() :: #mlfe_map{}.
 
+-record(mlfe_map_add, {type=undefined :: typ(),
+                       line=0 :: integer(),
+                       to_add=#mlfe_map_pair{} :: mlfe_map_pair(),
+                       existing=#mlfe_map{} :: mlfe_value_expression()}).
+-type mlfe_map_add() :: #mlfe_map_add{}.
+
 %%% ### Tuples
 
 -record(mlfe_tuple, {type=undefined :: typ(),
@@ -300,6 +306,7 @@
                                | mlfe_list()
                                | mlfe_binary()
                                | mlfe_map()
+                               | mlfe_map_add()
                                | mlfe_tuple()
                                | mlfe_apply()
                                | mlfe_type_apply()

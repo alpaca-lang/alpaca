@@ -1,6 +1,6 @@
 module basic_map_test
 
-export get/2, test_map/1, test_tuple_key_map/1
+export get/2, add/3, test_map/1, test_tuple_key_map/1
 
 type map_result 'x = Ok 'x | NotFound
 
@@ -13,3 +13,4 @@ get k m = match m with
     #{k => v} -> Ok v
   | _ -> NotFound
 
+add k v m = #{k => v | m}

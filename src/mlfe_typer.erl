@@ -416,6 +416,12 @@ unify(T1, T2, Env, Line) ->
             unify(A, B, Env, Line);
         {A, {t_list, B}} ->
             unify(A, B, Env, Line);
+        {{t_map, A1, B1}, {t_map, A2, B2}} ->
+            map_err(unify(A1, A2, Env, Line),
+                    fun(_) ->
+                            map_err(unify(B1, B2, Env, Line),
+                                    fun(_) -> T1 end)
+                    end);
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
 
@@ -1066,6 +1072,23 @@ typ_of(Env, Lvl, #mlfe_binary{segments=Segs}) ->
         
 typ_of(Env, Lvl, #mlfe_map{}=M) ->
     type_map(Env, Lvl, M);
+typ_of(Env, Lvl, #mlfe_map_add{line=L, to_add=A, existing=B}) ->
+    #mlfe_map_pair{key=KE, val=VE} = A,
+    TypA = typ_list([KE, VE], Lvl, Env, []),
+    TypB = typ_of(Env, Lvl, B),
+
+    map_typ_of(
+      Env, TypA,
+      fun(Env2, [KT, VT]) ->
+              AMap = new_cell({t_map, KT, VT}),
+              map_typ_of(
+                Env2, TypB,
+                fun(Env3, MTyp) ->
+                        map_err(unify(AMap, MTyp, Env3, L),
+                                fun(_) -> {MTyp, Env3#env.next_var} end)
+                end)
+      end);
+
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
@@ -2028,7 +2051,11 @@ map_test_() ->
                    top_typ_of(
                      "f x = match x with\n"
                      "    #{:one => i}, is_integer i -> \"has one\"\n"
-                     "  | _ -> \"doesn't have one\""))
+                     "  | _ -> \"doesn't have one\"")),
+     ?_assertMatch({{t_map, t_atom, t_int}, _},
+                   top_typ_of("#{:a => 1 | #{:b => 2}}")),
+     ?_assertMatch({error, {cannot_unify, undefined, 1, t_atom, t_string}},
+                   top_typ_of("#{:a => 1 | #{\"b\" => 2}}"))
     ].
 
 module_typing_test() ->

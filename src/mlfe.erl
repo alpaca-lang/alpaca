@@ -167,6 +167,8 @@ basic_map_test() ->
 
     ?assertEqual({'Ok', <<"b">>}, M:get({'two', 2}, M:test_tuple_key_map(unit))),
     ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map(unit))),
+    ?assertEqual(#{one => 1, two => 2}, M:add(one, 1, #{two => 2})),
+
     code:delete(M).
 
 basic_binary_test() ->
