@@ -374,8 +374,8 @@ module_with_match_test() ->
     FN = atom_to_list(Name) ++ ".beam",
     Code = 
         "module compile_module_with_match\n\n"
-        "export test/1, first/1, compare/2\n\n"
-        "test x = match x with\n"
+        "export check/1, first/1, compare/2\n\n"
+        "check x = match x with\n"
         "  0 -> :zero\n"
         "| 1 -> :one\n"
         "| _ -> :more_than_one\n\n"
@@ -389,7 +389,7 @@ module_with_match_test() ->
         "| _ -> :not_matched",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
-    ?assertEqual(one, Name:test(1)),
+    ?assertEqual(one, Name:check(1)),
     ?assertEqual(1, Name:first({1, a})),
     ?assertEqual(not_a_2_tuple, Name:first(an_atom)),
     ?assertEqual('matched', Name:compare(1, 1)),
@@ -459,8 +459,8 @@ ffi_test() ->
 type_guard_test() ->
     Code = 
         "module type_guard_test\n\n"
-        "export test/1\n\n"
-        "test x = \n"
+        "export check/1\n\n"
+        "check x = \n"
         "call_erlang :erlang :* [x, x] with\n"
         "   i, is_integer i -> i\n"
         " | f -> 0",
@@ -470,15 +470,15 @@ type_guard_test() ->
     
     %% Checking that when the result is NOT an integer we're falling back
     %% to integer 0 as expected in the code above:
-    ?assertEqual(4, Mod:test(2)),
-    ?assertEqual(0, Mod:test(1.3)),
+    ?assertEqual(4, Mod:check(2)),
+    ?assertEqual(0, Mod:check(1.3)),
     true = code:delete(Mod).
 
 multi_type_guard_test() ->
     Code = 
         "module multi_type_guard_test\n\n"
-        "export test/1\n\n"
-        "test x = \n"
+        "export check/1\n\n"
+        "check x = \n"
         "call_erlang :erlang :* [x, x] with\n"
         "   i, is_integer i, i == 4 -> :got_four\n"
         " | i, is_integer i, i > 5, i < 20 -> :middle\n"
@@ -488,10 +488,10 @@ multi_type_guard_test() ->
     Mod = multi_type_guard_test,
     {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),
     
-    ?assertEqual('got_four', Mod:test(2)),
-    ?assertEqual('middle', Mod:test(4)),
-    ?assertEqual('just_int', Mod:test(5)),
-    ?assertEqual('not_int', Mod:test(1.3)),
+    ?assertEqual('got_four', Mod:check(2)),
+    ?assertEqual('middle', Mod:check(4)),
+    ?assertEqual('just_int', Mod:check(5)),
+    ?assertEqual('not_int', Mod:check(1.3)),
     true = code:delete(Mod).
     
 module_info_helpers_test() ->

@@ -300,6 +300,12 @@
 
 %%% ### Module Building Blocks
 
+-record(mlfe_test, {type=undefined :: typ(),
+                    line=0 :: integer(),
+                    name={string, 0, ""} :: mlfe_string(),
+                    expression={unit, 0} :: mlfe_expression()}).
+-type mlfe_test() :: #mlfe_test{}.
+
 %%% Expressions that result in values:
 -type mlfe_value_expression() :: mlfe_const()
                                | mlfe_symbol()
@@ -390,6 +396,7 @@
           types=[] :: list(mlfe_type()),
           type_imports=[] :: list(mlfe_type_import()),
           type_exports=[] :: list(string()),
-          functions=[] :: list(mlfe_fun_def())
+          functions=[] :: list(mlfe_fun_def()),
+          tests=[] :: list(mlfe_test())
          }).
 -type mlfe_module() :: #mlfe_module{}.

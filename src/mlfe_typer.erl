@@ -930,7 +930,8 @@ retrieve_type(SM, M, T, [_|Rem]) ->
 typ_module(#mlfe_module{functions=Fs, 
                         name=Name, 
                         types=Ts,
-                        type_imports=Imports}=M, 
+                        type_imports=Imports,
+                        tests=Tests}=M, 
            #env{modules=Modules}=Env) ->
 
     %% Fold function to yield all the imported types or report a missing one.
@@ -964,7 +965,8 @@ typ_module(#mlfe_module{functions=Fs,
                              current_types=AllTypes,
                              type_constructors=constructors(AllTypes),
                              entered_modules=[Name]},
-                    case typ_module_funs(Fs, Env3, []) of
+                    FunRes = typ_module_funs(Fs, Env3, []),
+                    case type_module_tests(Tests, Env, ok, FunRes) of
                         {error, _} = E -> E;
                         [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
                     end
@@ -982,6 +984,15 @@ typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
             Env3 = update_binding(Name, Typ, Env2),
             typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=unwrap(Typ)}|Memo])
     end.
+
+type_module_tests([], _, _, Funs) ->
+    Funs;
+type_module_tests(_, Env, {error, _}=Err, _) ->
+    Err;
+type_module_tests(_, Env, _, {error, _}=Err) ->
+    Err;
+type_module_tests([#mlfe_test{expression=E}|Rem], Env, Memo, Funs) ->
+    type_module_tests(Rem, Env, typ_of(Env, 0, E), Funs).
 
 %% In the past I returned the environment entirely but this contained mutations
 %% beyond just the counter for new type variable names.  The integer in the

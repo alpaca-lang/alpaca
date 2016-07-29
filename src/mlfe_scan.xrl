@@ -60,6 +60,7 @@ spawn       : {token, {spawn, TokenLine}}.
 send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
+test        : {token, {'test', TokenLine}}.
 
 true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 

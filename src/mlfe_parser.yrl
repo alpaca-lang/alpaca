@@ -22,6 +22,8 @@ type_tuple type_tuple_list
 type_apply
 type_import
 
+test_case
+
 cons literal_cons_items
 binary bin_segments bin_segment bin_qualifier bin_qualifiers
 map_literal map_add map_literal_pairs map_pair
@@ -46,6 +48,7 @@ comment_line comment_lines
 
 module export 
 type_declare type_constructor type_var base_type base_list base_pid
+test
 ':'
 use
 boolean int float atom string chars '_'
@@ -146,6 +149,9 @@ type -> type_declare symbol assign type_members :
 
 type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
 type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
+
+test_case -> test string simple_expr :
+  #mlfe_test{line=term_line('$1'), name='$2', expression='$3'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.
@@ -349,6 +355,7 @@ simple_expr -> spawn_pid : '$1'.
 expr -> comment : '$1'.
 expr -> simple_expr : '$1'.
 expr -> type : '$1'.
+expr -> test_case : '$1'.
 expr -> module_def : '$1'.
 expr -> export_def : '$1'.
 expr -> type_import : '$1'.
