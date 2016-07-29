@@ -966,7 +966,7 @@ typ_module(#mlfe_module{functions=Fs,
                              type_constructors=constructors(AllTypes),
                              entered_modules=[Name]},
                     FunRes = typ_module_funs(Fs, Env3, []),
-                    case type_module_tests(Tests, Env, ok, FunRes) of
+                    case type_module_tests(Tests, Env3, ok, FunRes) of
                         {error, _} = E -> E;
                         [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
                     end
@@ -985,13 +985,13 @@ typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
             typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=unwrap(Typ)}|Memo])
     end.
 
+type_module_tests(_, _Env, {error, _}=Err, _) ->
+    Err;
+type_module_tests(_, _Env, _, {error, _}=Err) ->
+    Err;
 type_module_tests([], _, _, Funs) ->
     Funs;
-type_module_tests(_, Env, {error, _}=Err, _) ->
-    Err;
-type_module_tests(_, Env, _, {error, _}=Err) ->
-    Err;
-type_module_tests([#mlfe_test{expression=E}|Rem], Env, Memo, Funs) ->
+type_module_tests([#mlfe_test{expression=E}|Rem], Env, _, Funs) ->
     type_module_tests(Rem, Env, typ_of(Env, 0, E), Funs).
 
 %% In the past I returned the environment entirely but this contained mutations
@@ -2649,6 +2649,27 @@ type_var_protection_fail_unify_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Res = typ_module(M, Env),
     ?assertMatch({error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
+
+type_error_in_test_test() ->
+    Code = 
+        "module type_error_in_test\n\n"
+        "add x y = x + y\n\n"
+        "test \"add floats\" add 1.0 2.0",
+    Res = module_typ_and_parse(Code),
+    ?assertEqual({error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
+
+%% At the moment we don't care what the type of the test expression is,
+%% only that it type checks.
+typed_tests_test() ->
+    Code = 
+        "module type_error_in_test\n\n"
+        "add x y = x + y\n\n"
+        "test \"add floats\" add 1 2",
+    Res = module_typ_and_parse(Code),
+    ?assertMatch({ok, #mlfe_module{
+                        tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
+                 Res).
+    
     
 %%% ### Process Interaction Typing Tests
 %%% 

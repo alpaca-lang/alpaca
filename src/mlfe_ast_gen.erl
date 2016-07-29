@@ -131,6 +131,8 @@ update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{} = Def) ->
     {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
     {ok, M#mlfe_module{types=[T|Ts]}};
+update_memo(#mlfe_module{tests=Tests}=M, #mlfe_test{}=T) ->
+    {ok, M#mlfe_module{tests=[T|Tests]}};
 update_memo(M, #mlfe_comment{}) ->
     {ok, M};
 update_memo(_, Bad) ->
