@@ -61,12 +61,10 @@ gen_test_exports(Tests, [_|Rem], Memo) ->
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
 gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
-    io:format("Env is ~w~n", [Env]),
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
-    io:format("~nCompiling unit function ~s~n", [N]),
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     B = gen_expr(Env, Body),
@@ -169,18 +167,13 @@ gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
     
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env) of
-                undefined ->
-                    io:format("Undefined arity for ~s~n", [Name]),
-                    cerl:c_var(list_to_atom(Name));
-                1 ->
-                    cerl:c_fname(list_to_atom(Name), 1)
+                undefined -> cerl:c_var(list_to_atom(Name));
+                1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     cerl:c_apply(FName, [cerl:c_atom(unit)]);
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
-    io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
-                    io:format("Undefined arity for ~s~n", [Name]),
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
                     cerl:c_fname(list_to_atom(Name), Arity)
@@ -327,7 +320,6 @@ bits_flags(Sign, Endian) ->
 
 literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
     Bin = unicode:characters_to_binary(Chars, Encoding),
-    io:format("Bin is ~w~n", [Bin]),
     F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
                                 cerl:c_atom(integer),
                                 cerl:c_cons(cerl:c_atom(unsigned),

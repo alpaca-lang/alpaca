@@ -59,7 +59,6 @@ compile({files, Filenames}, Opts) ->
 
 compile_module(#mlfe_module{name=N}=Mod, Opts) ->
     {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
-    io:format("~nFORMS~n~w~n", [Forms]),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
     #compiled_module{
        name=N,
