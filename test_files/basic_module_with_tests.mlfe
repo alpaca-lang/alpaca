@@ -1,0 +1,11 @@
+module basic_module_with_tests
+
+export add/2, sub/2
+
+add x y = x + y
+
+sub x y = x - y
+
+test "add 2 and 2" = add 2 2
+
+test "subtract 2 from 4" = sub 4 2

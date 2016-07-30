@@ -150,8 +150,8 @@ type -> type_declare symbol assign type_members :
 type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
 type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
 
-test_case -> test string simple_expr :
-  #mlfe_test{line=term_line('$1'), name='$2', expression='$3'}.
+test_case -> test string assign simple_expr :
+  #mlfe_test{line=term_line('$1'), name='$2', expression='$4'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.

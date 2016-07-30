@@ -2654,7 +2654,7 @@ type_error_in_test_test() ->
     Code = 
         "module type_error_in_test\n\n"
         "add x y = x + y\n\n"
-        "test \"add floats\" add 1.0 2.0",
+        "test \"add floats\" = add 1.0 2.0",
     Res = module_typ_and_parse(Code),
     ?assertEqual({error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
 
@@ -2664,7 +2664,7 @@ typed_tests_test() ->
     Code = 
         "module type_error_in_test\n\n"
         "add x y = x + y\n\n"
-        "test \"add floats\" add 1 2",
+        "test \"add floats\" = add 1 2",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, #mlfe_module{
                         tests=[#mlfe_test{name={string, 5, "add floats"}}]}},

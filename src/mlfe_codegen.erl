@@ -13,7 +13,7 @@
 % limitations under the License.
 
 -module(mlfe_codegen).
--export([gen/1]).
+-export([gen/1, gen/2]).
 
 -include("mlfe_ast.hrl").
 
@@ -22,13 +22,19 @@
 -endif.
 
 gen(#mlfe_module{}=Mod) ->
+    gen(Mod, []).
+
+gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
        name=ModuleName, 
        function_exports=Exports, 
-       functions=Funs} = Mod,
+       functions=Funs,
+       tests=Tests} = Mod,
     Env = [{N, length(Args)}||#mlfe_fun_def{name={symbol, _, N}, args=Args}<-Funs],
-    {_Env, CompiledFuns} = gen_funs(Env, [], Funs),
-    CompiledExports = [gen_export(E) || E <- Exports],
+    {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
+    CompiledTests = gen_tests(Env2, Tests),
+
+    CompiledExports = [gen_export(E) || E <- Exports] ++ gen_test_exports(Tests, Opts, []),
     {ok, cerl:c_module(
            cerl:c_atom(ModuleName),
            [gen_export({"module_info", 0}),
@@ -37,11 +43,21 @@ gen(#mlfe_module{}=Mod) ->
            [],
            [module_info0(ModuleName),
             module_info1(ModuleName)] ++
-           CompiledFuns)
+           CompiledFuns ++ CompiledTests)
     }.
 
 gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
+
+
+gen_test_exports([], _, Memo) ->
+    Memo;
+gen_test_exports(_, [], Memo) ->
+    Memo;
+gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts, Memo) ->
+    gen_test_exports(RemTests, Opts, [gen_export({N, 0})|Memo]);
+gen_test_exports(Tests, [_|Rem], Memo) ->
+    gen_test_exports(Tests, Rem, Memo).
 
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
@@ -61,6 +77,17 @@ gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
     B = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)}.
+
+gen_tests(Env, Tests) ->
+    gen_tests(Env, Tests, []).
+
+gen_tests(Env, [], Memo) ->
+    Memo;
+gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
+    FName = cerl:c_fname(list_to_atom(N), 0),
+    Body = gen_expr(Env, E),
+    TestFun = {FName, cerl:c_fun([], Body)},
+    gen_tests(Env, Rem, [TestFun|Memo]).
 
 gen_expr(_, {add, _}) ->
     cerl:c_atom('+');

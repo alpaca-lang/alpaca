@@ -13,7 +13,7 @@
 % limitations under the License.
 -module(mlfe).
 
--export([compile/1]).
+-export([compile/1, compile/2]).
 
 % Can be safely ignored, it is meant to be called by external OTP-apps and part
 % of the public API.
@@ -33,16 +33,19 @@
 -spec compile({text, list(binary())}
               |{files, list(string())}) -> {ok, list(#compiled_module{})} | 
                                          {error, term()}.
-compile({text, Code}) ->
+compile(What) ->
+    compile(What, []).
+
+compile({text, Code}, Opts) ->
     {ok, _, _, Mods} = parse_modules([Code]),
      case type_modules(Mods) of
          {error, _}=Err -> Err;
          {ok, _, [TypedMod]} ->
-             {ok, Forms} = mlfe_codegen:gen(TypedMod),
+             {ok, Forms} = mlfe_codegen:gen(TypedMod, Opts),
              compile:forms(Forms, [report, verbose, from_core])
      end;
 
-compile({files, Filenames}) ->
+compile({files, Filenames}, Opts) ->
     Code = lists:foldl(fun(FN, Acc) ->
                                {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
                                Res = read_file(Device, []),
@@ -50,12 +53,12 @@ compile({files, Filenames}) ->
                                [Res|Acc]
                        end, [], Filenames),
     {ok, _, Mods} = type_modules(parse_modules(Code)),
-    Compiled = lists:foldl(fun(M, Acc) -> [compile_module(M)|Acc] end, [], Mods),
+    Compiled = lists:foldl(fun(M, Acc) -> [compile_module(M, Opts)|Acc] end, [], Mods),
     Compiled.
     
 
-compile_module(#mlfe_module{name=N}=Mod) ->
-    {ok, Forms} = mlfe_codegen:gen(Mod),
+compile_module(#mlfe_module{name=N}=Mod, Opts) ->
+    {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
     io:format("~nFORMS~n~w~n", [Forms]),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
     #compiled_module{
@@ -125,8 +128,8 @@ basic_concat_compile_test() ->
     ?assertEqual("Hello, world", N:hello("world")),
     true = code:delete(N).
 
-compile_and_load(Files) ->
-    Compiled = compile({files, Files}),
+compile_and_load(Files, Opts) ->
+    Compiled = compile({files, Files}, Opts),
     LoadFolder = fun(#compiled_module{name=N, filename=FN, bytes=Bin}, Acc) ->
                          {module, N} = code:load_binary(N, FN, Bin),
                          io:format("Loaded ~w ~s~n", [N, FN]),
@@ -136,7 +139,7 @@ compile_and_load(Files) ->
 
 type_import_test() ->
     Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"],
-    ModuleNames = compile_and_load(Files),
+    ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     M = type_import,
     ?assertEqual(2, M:test_output(unit)),
@@ -144,7 +147,7 @@ type_import_test() ->
 
 basic_pid_test() ->
     Files = ["test_files/basic_pid_test.mlfe"],
-    [M] = compile_and_load(Files),
+    [M] = compile_and_load(Files, []),
     Pid = M:start_pid_fun(0),
     Pid ! {'Fetch', self()},
     X = receive
@@ -161,7 +164,7 @@ basic_pid_test() ->
 
 basic_map_test() ->
     Files =["test_files/basic_map_test.mlfe"],
-    [M] = compile_and_load(Files),
+    [M] = compile_and_load(Files, []),
     ?assertEqual({'Ok', 1}, M:get('one', M:test_map(unit))),
     ?assertEqual('NotFound', M:get('four', M:test_map(unit))),
 
@@ -173,7 +176,7 @@ basic_map_test() ->
 
 basic_binary_test() ->
     Files =["test_files/basic_binary.mlfe"],
-    [M] = compile_and_load(Files),
+    [M] = compile_and_load(Files, []),
     ?assertEqual(1, M:count_one_twos(<<1, 2>>)),
     ?assertEqual(2, M:count_one_twos(<<1, 2, 1, 2, 3, 1, 2>>)),
     ?assertEqual(0, M:count_one_twos(<<2, 1, 0>>)),
@@ -187,7 +190,14 @@ basic_binary_test() ->
     
     code:delete(M).
 
+basic_unit_tests_test() ->
+    Files = ["test_files/basic_module_with_tests.mlfe"],
+    [M] = compile_and_load(Files, [test]),
+    %% Checking that the synthesized test functions are exported:
+    ?assertEqual(4, M:'add 2 and 2'()),
+    ?assertEqual(2, M:'subtract 2 from 4'()).
+
 simple_example_module_test() ->
-    [M] = compile_and_load(["test_files/simple_example.mlfe"]),
+    [M] = compile_and_load(["test_files/simple_example.mlfe"], []),
     code:delete(M).
 -endif.
