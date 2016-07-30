@@ -49,13 +49,13 @@ gen(#mlfe_module{}=Mod, Opts) ->
 gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
-
 gen_test_exports([], _, Memo) ->
     Memo;
 gen_test_exports(_, [], Memo) ->
     Memo;
 gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts, Memo) ->
-    gen_test_exports(RemTests, Opts, [gen_export({N, 0})|Memo]);
+    FullName = N ++ "_test",
+    gen_test_exports(RemTests, Opts, [gen_export({FullName, 0})|Memo]);
 gen_test_exports(Tests, [_|Rem], Memo) ->
     gen_test_exports(Tests, Rem, Memo).
 
@@ -81,10 +81,11 @@ gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
 gen_tests(Env, Tests) ->
     gen_tests(Env, Tests, []).
 
-gen_tests(Env, [], Memo) ->
+gen_tests(_Env, [], Memo) ->
     Memo;
 gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
-    FName = cerl:c_fname(list_to_atom(N), 0),
+    FullName = N ++ "_test",
+    FName = cerl:c_fname(list_to_atom(FullName), 0),
     Body = gen_expr(Env, E),
     TestFun = {FName, cerl:c_fun([], Body)},
     gen_tests(Env, Rem, [TestFun|Memo]).
