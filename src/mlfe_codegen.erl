@@ -13,16 +13,13 @@
 % limitations under the License.
 
 -module(mlfe_codegen).
--export([gen/1, gen/2]).
+-export([gen/2]).
 
 -include("mlfe_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
-gen(#mlfe_module{}=Mod) ->
-    gen(Mod, []).
 
 gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
@@ -332,7 +329,7 @@ literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
 
 parse_and_gen(Code) ->
     {ok, _, _, Mod} = mlfe_ast_gen:parse_module(0, Code),
-    {ok, Forms} = mlfe_codegen:gen(Mod),
+    {ok, Forms} = mlfe_codegen:gen(Mod, []),
     compile:forms(Forms, [report, verbose, from_core]).
 
 simple_compile_test() ->

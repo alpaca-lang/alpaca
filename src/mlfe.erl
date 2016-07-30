@@ -17,7 +17,7 @@
 
 % Can be safely ignored, it is meant to be called by external OTP-apps and part
 % of the public API.
--ignore_xref([compile/1]).
+-ignore_xref([compile/1, compile/2]).
 
 -include("mlfe_ast.hrl").
 
