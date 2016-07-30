@@ -97,7 +97,7 @@
 %%% The variable _, meaning "don't care":
 -type mlfe_any() :: {any, integer()}.
 
--type mlfe_string() :: {string, integer(), binary()}.
+-type mlfe_string() :: {string, integer(), string()}.
 
 -type mlfe_const() :: mlfe_unit()
                     | mlfe_any()
