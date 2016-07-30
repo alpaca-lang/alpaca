@@ -54,8 +54,7 @@ gen_test_exports([], _, Memo) ->
 gen_test_exports(_, [], Memo) ->
     Memo;
 gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts, Memo) ->
-    FullName = N ++ "_test",
-    gen_test_exports(RemTests, Opts, [gen_export({FullName, 0})|Memo]);
+    gen_test_exports(RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
 gen_test_exports(Tests, [_|Rem], Memo) ->
     gen_test_exports(Tests, Rem, Memo).
 
@@ -84,11 +83,16 @@ gen_tests(Env, Tests) ->
 gen_tests(_Env, [], Memo) ->
     Memo;
 gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
-    FullName = N ++ "_test",
-    FName = cerl:c_fname(list_to_atom(FullName), 0),
+    FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
     Body = gen_expr(Env, E),
     TestFun = {FName, cerl:c_fun([], Body)},
     gen_tests(Env, Rem, [TestFun|Memo]).
+
+%% eunit will skip tests with spaces in the name, this may not be the best
+%% way to handle it though:
+clean_test_name(N) ->
+    Base = lists:map(fun(32) -> 95; (C) -> C end, N),
+    Base ++ "_test".
 
 gen_expr(_, {add, _}) ->
     cerl:c_atom('+');

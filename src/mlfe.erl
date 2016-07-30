@@ -194,8 +194,8 @@ basic_unit_tests_test() ->
     Files = ["test_files/basic_module_with_tests.mlfe"],
     [M] = compile_and_load(Files, [test]),
     %% Checking that the synthesized test functions are exported:
-    ?assertEqual(4, M:'add 2 and 2_test'()),
-    ?assertEqual(2, M:'subtract 2 from 4_test'()).
+    ?assertEqual(4, M:'add_2_and_2_test'()),
+    ?assertEqual(2, M:'subtract_2_from_4_test'()).
 
 simple_example_module_test() ->
     [M] = compile_and_load(["test_files/simple_example.mlfe"], []),
