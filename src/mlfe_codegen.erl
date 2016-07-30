@@ -425,21 +425,21 @@ cons_test() ->
     FN = atom_to_list(Name) ++ ".beam",
     Code = 
         "module compiler_cons_test\n\n"
-        "export make_list/2, map/2\n\n"
+        "export make_list/2, my_map/2\n\n"
         "make_list h t =\n"
         "  match t with\n"
         "    a :: b -> h :: t\n"
         "  | term -> h :: term :: []\n\n"
-        "map f x =\n"
+        "my_map f x =\n"
         "  match x with\n"
         "    [] -> []\n"
-        "  | h :: t -> (f h) :: (map f t)",
+        "  | h :: t -> (f h) :: (my_map f t)",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual([1, 2], Name:make_list(1, 2)),
     ?assertEqual([1, 2, 3], Name:make_list(1, [2, 3])),
-    ?assertEqual([2, 3], Name:map(fun(X) -> X+1 end, [1, 2])),
-    ?assertEqual([3, 4], Name:map(fun(X) -> X+1 end, Name:make_list(2, 3))),
+    ?assertEqual([2, 3], Name:my_map(fun(X) -> X+1 end, [1, 2])),
+    ?assertEqual([3, 4], Name:my_map(fun(X) -> X+1 end, Name:make_list(2, 3))),
     true = code:delete(Name).
 
 call_test() ->

@@ -60,7 +60,8 @@ cell(TypVal) ->
         {get, Pid} -> 
             Pid ! TypVal,
             cell(TypVal);
-        {set, NewVal} -> cell(NewVal);
+        {set, NewVal} -> 
+            cell(NewVal);
         stop ->
             ok
     end.
@@ -265,7 +266,6 @@ module_name(_) ->
 %% construction here:
 -spec unify_error(Env::env(), Line::integer(), typ(), typ()) -> unification_error().
 unify_error(Env, Line, Typ1, Typ2) ->
-    io:format("Failed on ~w ~w~n", [unwrap(Typ1), unwrap(Typ2)]),
     {error, {cannot_unify, module_name(Env), Line, Typ1, Typ2}}.
 
 %%% Unify now requires the environment not in order to make changes to it but
@@ -412,16 +412,16 @@ unify(T1, T2, Env, Line) ->
             ok;
         {{t_list, A}, {t_list, B}} ->
             unify(A, B, Env, Line);
-        {{t_list, A}, B} ->
-            unify(A, B, Env, Line);
-        {A, {t_list, B}} ->
-            unify(A, B, Env, Line);
         {{t_map, A1, B1}, {t_map, A2, B2}} ->
-            map_err(unify(A1, A2, Env, Line),
-                    fun(_) ->
-                            map_err(unify(B1, B2, Env, Line),
-                                    fun(_) -> T1 end)
-                    end);
+            case unify(A1, A2, Env, Line) of
+                {error, _}=Err -> Err;
+                ok ->
+                    case unify(B1, B2, Env, Line) of
+                        {error, _}=Err -> Err;
+                        ok -> ok
+                    end
+            end;
+
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
 
@@ -558,8 +558,18 @@ unify_adt(_C1, _C2,
             end
     end;
 
-unify_adt(C1, C2, #adt{members=Ms}=A, {t_tuple, _}=ToCheck, Env, L) ->
-    %% Try to find an ADT member that will unify with the passed in tuple:
+unify_adt(C1, C2, #adt{}=A, {t_tuple, _}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, {t_list, _LType}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, {t_map, _, _}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(_, _, A, B, Env, L) ->
+    unify_error(Env, L, A, B).
+
+unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
+    %% Try to find an ADT member that will unify with the passed in
+    %% polymorphic type:
     F = fun(_, ok) -> ok;
            (T, Res) -> 
                 case unify(ToCheck, T, Env, L) of
@@ -571,10 +581,7 @@ unify_adt(C1, C2, #adt{members=Ms}=A, {t_tuple, _}=ToCheck, Env, L) ->
                 end
         end,
     Seed = unify_error(Env, L, A, ToCheck),
-    lists:foldl(F, Seed, Ms);
-
-unify_adt(_, _, A, B, Env, L) ->
-    unify_error(Env, L, A, B).
+    lists:foldl(F, Seed, Ms).
 
 %%% Given two different types, find a type in the set of currently available
 %%% types that can unify them or fail.
@@ -699,6 +706,18 @@ inst_type_members(ADT, [{mlfe_list, TExp}|Rem], Env, Memo) ->
         {ok, Env2, _, [InstMem]} ->
             inst_type_members(ADT, Rem, Env2, [new_cell({t_list, InstMem})|Memo])
     end;
+inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
+    case inst_type_members(ADT, [KExp], Env, []) of
+        {error, _}=Err -> Err;
+        {ok, Env2, _, [InstK]} ->
+            case inst_type_members(ADT, [VExp], Env2, []) of
+                {error, _}=Err -> Err;
+                {ok, Env3, _, [InstV]} ->
+                    NewT = new_cell({t_map, InstK, InstV}),
+                    inst_type_members(ADT, Rem, Env3, [NewT|Memo])
+            end
+    end;
+                    
 inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err -> Err;
@@ -965,7 +984,9 @@ typ_module(#mlfe_module{functions=Fs,
                              current_types=AllTypes,
                              type_constructors=constructors(AllTypes),
                              entered_modules=[Name]},
+
                     FunRes = typ_module_funs(Fs, Env3, []),
+
                     case type_module_tests(Tests, Env3, ok, FunRes) of
                         {error, _} = E -> E;
                         [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
@@ -1036,7 +1057,7 @@ typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
 typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
     {HTyp, NV1} = typ_of(Env, Lvl, H),
     {TTyp, NV2} = case T of
-                      {nil, _} -> {{t_list, HTyp}, NV1};
+                      {nil, _} -> {new_cell({t_list, HTyp}), NV1};
                       #mlfe_cons{}=Cons ->
                           typ_of(update_counter(NV1, Env), Lvl, Cons);
                       {symbol, L, _} = S -> 
@@ -1044,13 +1065,13 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
                               typ_of(update_counter(NV1, Env), Lvl, S),
                           {TL, #env{next_var=Next2}} = 
                               new_var(Lvl, update_counter(Next, Env)),
-                          case unify({t_list, TL}, STyp, Env, L) of
+                          case unify(new_cell({t_list, TL}), STyp, Env, L) of
                               {error, _} = E -> E;
                               ok -> {STyp, Next2}
                           end;
                       #mlfe_apply{}=Apply ->
                           {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
-                          case unify({t_list, HTyp}, TApp, Env, apply_line(Apply)) of
+                          case unify(new_cell({t_list, HTyp}), TApp, Env, apply_line(Apply)) of
                               {error, _} = E -> E;
                               ok -> {TApp, Next}
                           end;
@@ -1061,8 +1082,16 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
     %% TODO:  there's no error check here:
     ListType = case TTyp of
                    P when is_pid(P) ->
+                       %% TODO:  this is kind of a gross tree but previously
+                       %% there were cases above that would instantiate list
+                       %% types that were not celled, leading to some badarg
+                       %% exceptions when unifying with ADTs:
                        case get_cell(TTyp) of
                            {link, {t_list, LT}} -> LT;
+                           {link, C} when is_pid(C) ->
+                               case get_cell(C) of
+                                   {t_list, LT} -> LT
+                               end;
                            {t_list, LT} -> LT
                        end;
                    {t_list, LT} ->
@@ -1413,7 +1442,7 @@ map_err(Ok, NextStep) -> NextStep(Ok).
 type_map(Env, Lvl, #mlfe_map{pairs=[]}) ->
     {KeyVar, Env2} = new_var(Lvl, Env),
     {ValVar, #env{next_var=NV}} = new_var(Lvl, Env2),
-    {{t_map, KeyVar, ValVar}, NV};
+    {new_cell({t_map, KeyVar, ValVar}), NV};
 type_map(Env, Lvl, #mlfe_map{pairs=Pairs}) ->
     {MapType, NV} = type_map(Env, Lvl, #mlfe_map{}),
     Env2 = update_counter(NV, Env),
@@ -1421,11 +1450,10 @@ type_map(Env, Lvl, #mlfe_map{pairs=Pairs}) ->
         {error, _}=Err -> Err;
         {Type, #env{next_var=NV}} -> {Type, NV}
     end.
-
-unify_map_pairs(Env, _, [], {t_map, _, _}=T) ->
-    {T, Env};
+unify_map_pairs(Env, _, [], T) ->
+    {new_cell(T), Env};
 unify_map_pairs(Env, Lvl, [#mlfe_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
-    {t_map, K, V} = T,
+    {t_map, K, V} = unwrap_cell(T),
     case typ_list([KE, VE], Lvl, Env, []) of
         {error, _}=Err -> Err;
         {[KT, VT], NV} ->
@@ -2171,9 +2199,9 @@ recursive_fun_test_() ->
                               {t_arrow, [{unbound, A, _}], {unbound, B, _}}],
                     {t_list, {unbound, B, _}}}, _} when A =/= B,
                    top_typ_of(
-                     "map l f = match l with\n"
+                     "my_map l f = match l with\n"
                      "  [] -> []\n"
-                     "| h :: t -> (f h) :: (map t f)"))
+                     "| h :: t -> (f h) :: (my_map t f)"))
     ].
 
 infinite_mutual_recursion_test() ->
@@ -2502,6 +2530,30 @@ rename_constructor_wildcard_test() ->
                                                           t_int]}],
                                              t_atom}}]}}, 
                  Res).    
+
+module_with_map_in_adt_test() ->
+    Code =
+        "module module_with_map_in_adt_test\n\n"
+        "type t 'v = list 'v | map atom 'v\n\n"
+        "a x = match x with\n"
+        "    h :: t -> h"
+        "  | #{:key => v} -> v",
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, #mlfe_module{}}, Res).
+
+module_with_adt_map_error_test() ->
+    Code =
+        "module module_with_map_in_adt_test\n\n"
+        "type t 'v = list 'v | map atom 'v\n\n"
+        "a x = match x with\n"
+        "    h :: t, is_string h -> h"
+        "  | #{:key => v}, is_chars v -> v",
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
 
 json_union_type_test() ->
     Code =

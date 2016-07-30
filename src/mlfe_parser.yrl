@@ -47,7 +47,7 @@ Terminals
 comment_line comment_lines
 
 module export 
-type_declare type_constructor type_var base_type base_list base_pid
+type_declare type_constructor type_var base_type base_list base_map base_pid
 test
 ':'
 use
@@ -114,6 +114,7 @@ type_expr -> base_type :
   list_to_atom("t_" ++ T).
 type_expr -> base_list type_expr: 
   {mlfe_list, '$2'}.
+type_expr -> base_map type_expr type_expr : {mlfe_map, '$2', '$3'}.
 type_expr -> base_pid type_expr :
   {mlfe_pid, '$2'}.
 

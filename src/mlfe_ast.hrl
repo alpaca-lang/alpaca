@@ -148,16 +148,24 @@
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
 -record(mlfe_type_tuple, {
-                         members=[] :: list(mlfe_type_var() | mlfe_type())
+                         members=[] :: list(mlfe_base_type() 
+                                            | mlfe_type_var() 
+                                            | mlfe_poly_type())
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
 %% Explicit built-in list type for use in ADT definitions.
 -type mlfe_list_type() :: {mlfe_list, 
-                           mlfe_type()
-                           | mlfe_type_tuple()
-                           | mlfe_type_var()
-                           | mlfe_base_type()}.
+                           mlfe_base_type()|mlfe_poly_type()}.
+
+-type mlfe_map_type() :: {mlfe_map,
+                          mlfe_base_type()|mlfe_poly_type(),
+                          mlfe_base_type()|mlfe_poly_type()}.
+
+-type mlfe_poly_type() :: mlfe_type()
+                        | mlfe_type_tuple()
+                        | mlfe_list_type()
+                        | mlfe_map_type().
 
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ(),
@@ -178,7 +186,8 @@
                                            | mlfe_type()
                                            | mlfe_type_tuple()
                                            | mlfe_base_type()
-                                           | mlfe_list_type())
+                                           | mlfe_list_type()
+                                           | mlfe_map_type())
          }).
 -type mlfe_type() :: #mlfe_type{}.
 

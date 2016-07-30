@@ -26,6 +26,7 @@ TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_chars|is_p
 
 BASE_TYPE = atom|int|float|string|bool|binary
 BASE_LIST = list
+BASE_MAP = map
 BASE_PID = pid
 
 Rules.
@@ -67,6 +68,7 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 %% Base types are the fundamental types available on the Erlang VM.
 {BASE_TYPE} : {token, {base_type, TokenLine, TokenChars}}.
 {BASE_LIST} : {token, {base_list, TokenLine}}.
+{BASE_MAP}  : {token, {base_map, TokenLine}}.
 {BASE_PID}  : {token, {base_pid, TokenLine}}.
 
 %% Type variables (nicked from OCaml):
