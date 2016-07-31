@@ -6,6 +6,17 @@ add x y = x + y
 
 sub x y = x - y
 
-test "add 2 and 2" = add 2 2
+test "add 2 and 2" = test_equal (add 2 2) 4
 
-test "subtract 2 from 4" = sub 4 2
+test "subtract 2 from 4" = test_equal (sub 4 2) 3
+
+format_msg base x y =
+  let m = call_erlang :io_lib :format [base, [x, y]] with msg -> msg in
+  call_erlang :lists :flatten [m] with msg, is_chars msg -> msg
+
+test_equal x y =
+  match (x == y) with
+      true -> :passed
+    | false ->
+        let msg = format_msg "Not equal:  ~w and ~w" x y in
+        call_erlang :erlang :error [msg] with _ -> :failed
