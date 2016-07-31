@@ -26,7 +26,8 @@ suggest possible union types if there isn't an appropriate one in scope.
 
 ## What Works Already
 
-- type inferencer with ADTs.  Tuples for product types and unions for sum.
+- type inferencer with ADTs.  Tuples and maps for product types and
+  unions for sum.
 - compile type-checked source to `.beam` binaries
 - simple FFI to Erlang
 - type-safe message flows for processes defined inside MLFE
@@ -92,16 +93,23 @@ especially with respect to comments.
 It's not very usable yet but the tests should give a relatively clear picture as to
 where I'm going.  `test_files` contains some example source files used
 in unit tests.  You can call `mlfe:compile({files,
-[List, Of, File, Names, As, Strings]})` or `mlfe:compile({text,
-CodeAsAString})` for now.  Errors from the compiler (e.g. type errors)
+[List, Of, File, Names, As, Strings]}, [list, of, options])` or `mlfe:compile({text,
+CodeAsAString}, [options, again])` for now.
+
+`'test'` is the only currently recognized option that can be  passed
+to compile/2.  This option will cause all tests in a module to be type
+checked and exported as functions that  [EUnit](http://erlang.org/doc/apps/eunit/chapter.html) should pick up.
+
+Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
 tests in `mlfe_typer.erl`.
 
 ## Prerequisites
 You will generally want the following two things installed:
 
-- Erlang R18 (I currently use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-and haven't tested R19 yet)
+- Erlang R18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+but mostly use R19 locally from [kerl](https://github.com/kerl/kerl)
+of late)
 - [Rebar3](https://rebar3.org)
 
 ## Writing MLFE with Rebar3
@@ -124,10 +132,10 @@ following (borrowed from @tsloughter's docs):
 
     {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
 
-Now any files in `src` that end with the extension `.mlfe` will be
-compiled and included in Rebar3's output folders (provided they
-type-check and compile successfully of course).  For a simple module,
-open `src/example.mlfe` and add the following:
+Now any files in the project's source folders that end with the
+extension `.mlfe` will be compiled and included in Rebar3's output
+folders (provided they type-check and compile successfully of course).
+For a simple module, open `src/example.mlfe` and add the following:
 
     module example
 
@@ -159,14 +167,14 @@ repository and run tests and dialyzer with:
 
 There's no command line front-end for the compiler so unless you use
 @tsloughter's Rebar3 plugin detailed in the previous section, you will
-need to boot the erlang shell and then run `mlfe:compile/1` to build
+need to boot the erlang shell and then run `mlfe:compile/2` to build
 and type-check things written in MLFE.  For example, if you wanted to
 compile the type import test file in the `test_files` folder:
 
     rebar3 shell
     ...
     1> Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"].
-    2> mlfe:compile({files, Files}).
+    2> mlfe:compile({files, Files}, []).
 
 This will result in either an error or a list of tuples of the following form:
 
@@ -174,7 +182,8 @@ This will result in either an error or a list of tuples of the following form:
 
 The files will not actually be written by the compiler so the binaries
 described by the tuples can either be loaded directly into the running
-VM (see the tests in `mlfe.erl`) or written manually for now.
+VM (see the tests in `mlfe.erl`) or written manually for now unless of
+course you're using the aforementioned rebar3 plugin/
 
 ## Built-In Stuff
 Most of the basic Erlang data types are supported:
@@ -183,18 +192,23 @@ Most of the basic Erlang data types are supported:
 - atoms, `:atom`
 - floats, `1.0`
 - integers, `1`
-- strings, "A string"
+- strings, `"A string"`.  These are encoded as UTF-8 binaries.
+- character lists, like default Erlang strings, `c"characters here"`
 - lists, `[1, 2, 3]` or `1 :: 2 :: [3]`
+- binaries, `<<"안녕, this is some UTF-8 text": type=utf8>>`, `<<1, 2,
+  32798: type=int, size=16, signed=false>>`, etc
 - tuples, `("a", :tuple, "of arity", 4)`
-- pids, these are parametric (like lists, "generics").  If you're
+- maps (basic support), e.g. `#{:atom_key => "string value"}`.  These
+  are statically typed as lists are (generics, parametric polymorphism).
+- pids, these are also parametric (like lists, "generics").  If you're
   including them in a type you can do something like `type t = int |
   pid int` for a type that covers integers and processes that receive integers.
 
 In addition there is a unit type, expressed as `()`.
 
-No binaries yet, see below in "What's Missing".  Note that the tuple
-example above is typed as a tuple of arity 4 that requires its members
-to have the types `string`, `atom`, `string`, `integer` in that order.
+Note that the tuple example above is typed as a tuple of arity 4 that
+requires its members to have the types `string`, `atom`, `string`,
+`integer` in that order.
 
 On top of that you can define ADTs, e.g.
 
@@ -266,10 +280,26 @@ constructors in tuples led by atoms, e.g.
 become `{'Cons', {1, 'Nil'}}`.  Exercise caution with the order of
 your pattern match clauses accordingly.
 
+### Maps
+No distinction is made syntactically between map literals and map
+patterns (`=>` vs `:=` in Erlang), e.g
+
+    match my_map with
+      #{:a_key => some_val} -> some_val
+
+You can of course use variables to match into a map so you could write
+a simple get-by-key function as follows:
+
+    type my_opt 'a = Some 'a | None
+
+    get_by_key m k =
+      match m with
+          #{k => v} -> Some v
+        | _ -> None
+
 ## Modules (The Erlang Kind)
-ML-style modules aren't implemented and I'm leaning somewhat more
-towards type classes and traits.  Modules in MLFE are the same as
-modules in Erlang, top-level entities including:
+ML-style modules aren't implemented at present.  For now modules in MLFE are the same as
+modules in Erlang with top-level entities including:
 
 - a module name (required)
 - function exports (with arity, as in Erlang)
@@ -277,6 +307,7 @@ modules in Erlang, top-level entities including:
 - type declarations (ADTs)
 - functions which can contain other functions and variables via `let`
 bindings.
+- simple test definitions
 
 An example:
 
@@ -291,6 +322,30 @@ An example:
     map e f = match e with
         Error _ -> e
       | Success ok -> Success (f ok)
+
+### Tests
+Tests are expressed in an extremely bare-bones manner right now and
+there aren't even proper assertions available.  If the compiler is
+invoked with options `[test]`, the following will synthesize and
+export a function called `add_2_and_2_test`:
+
+    add x y = x + y
+
+    test "add 2 and 2" =
+      let res = add 2 2 in
+      match res with
+          4 -> :ok
+        | _ -> call_erlang :erlang :error [no_match] with _ -> meaningless_return
+
+Any test that throws an exception will fail so the above would work
+but if we replaced `add/2` with `add x y = x + (y + 1)` we'd get a
+failing test.  If you use the rebar3 plugin mentioned above, `rebar3
+eunit` should run the tests you've written.  There's a bug currently
+where the very first test run _won't_ execute the tests but all runs
+after will (not sure why yet).
+
+The expression that makes up a test's body is type inferenced and
+checked.  Type errors in a test will always cause a compilation error.
 
 ## Processes
 An example:
@@ -367,11 +422,6 @@ A very incomplete list:
 - any sort of standard library.  Biggest missing things to me right
   now are things like basic string manipulation functions and
   adapters for `gen_server`, etc.
-- binaries (at all).  I'm mostly thinking of just reimplementing the
-  basic Erlang syntax, probably not very difficult.
-- maps
-- binary strings vs lists of characters, like Elixir.  I suspect
-  default UTF-8 is a good decision.
 - anything like behaviours or things that would support them.  Traits,
   type classes, ML modules, etc all smell like supersets to me but I'm
   not sure which way to jump yet.
@@ -381,7 +431,6 @@ A very incomplete list:
   checks the results of the patterns, not the existence of the module
   and function being called, nor the arity, nor that the types of the
   provided arguments could ever ever match.
-- anything for unit testing
 - annotations in the BEAM file output (source line numbers, etc).  Not
   hard based on what I've seen in the [LFE](https://github.com/lfe)
   code base.
