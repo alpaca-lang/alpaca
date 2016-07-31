@@ -1031,6 +1031,8 @@ typ_of(#env{next_var=VarNum}, _Lvl, {int, _, _}) ->
     {new_cell(t_int), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
     {new_cell(t_float), VarNum};
+typ_of(#env{next_var=VarNum}, _Lvl, {boolean, _, _}) ->
+    {new_cell(t_bool), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {new_cell(t_atom), VarNum};
 typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->

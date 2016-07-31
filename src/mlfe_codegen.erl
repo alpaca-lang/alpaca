@@ -97,6 +97,8 @@ gen_expr(_, {int, _, I}) ->
     cerl:c_int(I);
 gen_expr(_, {float, _, F}) ->
     cerl:c_float(F);
+gen_expr(_, {boolean, _, B}) ->
+    cerl:c_atom(B);
 gen_expr(_, {atom, _, A}) ->
     cerl:c_atom(list_to_atom(A));
 gen_expr(_, {chars, _, Cs}) ->
