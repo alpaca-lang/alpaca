@@ -262,7 +262,9 @@ While functions with no arguments aren't supported ("nullary" or arity of zero) 
 
 ## The Foreign Function Interface<a id="sec-4-1" name="sec-4-1"></a>
 
-The FFI is how we call any non-MLFE code.  Since the compiler can't type-check other languages, we use a set of pattern match clauses to figure out what the actual type is that we're returning.  Here we're using a simple guard function so that we know the FFI expression is returning characters (an Erlang string):
+The FFI is how we call any non-MLFE code in the Erlang VM (e.g. Erlang, [Elixir](http://elixir-lang.org/), [LFE](http://lfe.io/), and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
+
+Here we're using a simple guard function so that we know the FFI expression is returning characters (an Erlang string):
 
     call_erlang :io_lib :format ["This will contain the integer 3:  ~w", [3]] with
       cs, is_chars cs -> cs

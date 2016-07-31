@@ -4,6 +4,19 @@ mlfe
 
 ML-flavoured Erlang.
 
+# TLDR; How Do I Use It?
+Make sure the following are installed:
+
+- Erlang R18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+but mostly use R19 locally from [kerl](https://github.com/kerl/kerl)
+of late)
+- [Rebar3](https://rebar3.org)
+
+Check out
+[the tour for the language basics](https://github.com/j14159/mlfe/blob/v0.2.0-WIP/Tour.md),
+put source files ending in `.mlfe` in your source folders, run `rebar3
+compile` and/or `rebar3 eunit`.
+
 # Intentions/Goals
 I want something that looks and operates a little bit like an ML on the Erlang VM with:
 
