@@ -43,11 +43,13 @@ module my_module
 export double/1
 
 /* Our double function defines an "add" function inside of itself.
- * Comments for now are C-style.
+   Comments for now are C-style.
  */
 double x =
   let add a b = a + b in
   add x x
+
+test "doubling 2 is 4" = some_test_checker (double 2) 4
 #+END_SRC
 Note that variables and function names follow the same format, beginning with a lower-case character.
 * Included Data Types
