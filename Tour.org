@@ -50,6 +50,16 @@ double x =
   add x x
 
 test "doubling 2 is 4" = some_test_checker (double 2) 4
+
+// Basic ADT with type constructors:
+type even_or_odd = Even int | Odd int
+
+// A function from integers to our ADT:
+even_or_odd x =
+  let rem = x % 2 in
+  match rem with
+      0 -> Even x
+    | _ -> Odd x 
 #+END_SRC
 Note that variables and function names follow the same format, beginning with a lower-case character.
 * Included Data Types
