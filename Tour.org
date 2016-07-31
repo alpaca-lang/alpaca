@@ -203,8 +203,51 @@ call_erlang :io_lib :format ["This will contain the integer 3:  ~w", [3]] with
   cs, is_chars cs -> cs
 #+END_SRC
 The FFI ~call_erlang~ expects the external module and function as atoms and then a list of arguments to send.  The arguments sent are *not* type checked but the return value in the pattern matching clauses *is* checked.
+
+** Built-In Functions
+The basic infix comparisons are all available and can be used in pattern matching guards:
+
+- ~==~ for equality, compiles to ~=:=~
+- ~!=~ for inequality
+- ~>~, ~<~, ~>=~, and ~<=~
+
+Some simple examples:
+#+BEGIN_SRC
+1 == 1     // true
+1 == 2     // false
+1 == 1.0   // type error
+#+END_SRC
+
+The basic arithmetic functions also exist, ~+~, ~-~, ~*~, ~/~, and ~%~ for modulo.  The base forms are all for integers, just add ~.~ to them for the float versions except for modulo (e.g. ~+.~ or ~/.~).
+
+Some other simple type checking functions are also usable in pattern match guards:
+
+- ~is_integer~
+- ~is_float~
+- ~is_atom~
+- ~is_bool~
+- ~is_list~
+- ~is_string~
+- ~is_chars~
+- ~is_pid~
+- ~is_binary~
+
+A word of caution:  strings are encoded as binaries, and chars as lists so if we call the following example ~f/1~ with a string, we will *always* get a binary back (assuming there's an ADT covering both):
+#+BEGIN_SRC
+f x =
+  match x with
+      b, is_binary b -> b
+    | s, is_string s -> s
+#+END_SRC
+And here we will always get a list instead of a character list (same ADT restriction):
+#+BEGIN_SRC
+g x =
+  match x with
+      l, is_list l -> l
+    | c, is_chars c -> c
+#+END_SRC
 * User Defined Types:  ADTs
-While there isn't yet a way to specify the type of a variable or a function (it's coming soon), we can specify new types as ADTs and they will also be inferred correctly.  Here's a simple polymorphic option type:
+Explicit type specifications for variables and functions is a planned feature for version 0.3.0.  Specifying new types as ADTs is an existing feature and they will also be inferred correctly.  Here's a simple polymorphic option type:
 
 #+BEGIN_SRC
 type opt 'a = Some 'a | None
@@ -233,7 +276,20 @@ f x =
     | f, is_float f -> :float
 #+END_SRC
 
-If the inferencer has more than one ADT unifying integers and floats in scope, it will choose the one that occurs first.
+If the inferencer has more than one ADT unifying integers and floats in scope, it will choose the one that occurs first.  In the following example, ~f/1~ will type to accepting ~int_or_float~ rather than ~json~.
+
+#+BEGIN_SRC
+type int_or_float = int | float
+
+type json = int | float | string | bool
+          | list json
+          | list (string, json)
+
+f x =
+  match x with
+      i, is_integer i -> :integer
+    | f, is_float f -> :float
+#+END_SRC
 * Tests
 Support for tests inside source files is currently at its most basic with the goal of keeping unit tests alongside the functions they're testing directly rather than in a separate file.  
 

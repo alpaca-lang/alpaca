@@ -37,6 +37,7 @@
 <li><a href="#sec-4">4. Functions</a>
 <ul>
 <li><a href="#sec-4-1">4.1. The Foreign Function Interface</a></li>
+<li><a href="#sec-4-2">4.2. Built-In Functions</a></li>
 </ul>
 </li>
 <li><a href="#sec-5">5. User Defined Types:  ADTs</a></li>
@@ -271,9 +272,51 @@ Here we're using a simple guard function so that we know the FFI expression is r
 
 The FFI `call_erlang` expects the external module and function as atoms and then a list of arguments to send.  The arguments sent are **not** type checked but the return value in the pattern matching clauses **is** checked.
 
+## Built-In Functions<a id="sec-4-2" name="sec-4-2"></a>
+
+The basic infix comparisons are all available and can be used in pattern matching guards:
+
+-   `==` for equality, compiles to `=:=`
+-   `!=` for inequality
+-   `>`, `<`, `>=`, and `<=`
+
+Some simple examples:
+
+    1 == 1     // true
+    1 == 2     // false
+    1 == 1.0   // type error
+
+The basic arithmetic functions also exist, `+`, `-`, `*`, `/`, and `%` for modulo.  The base forms are all for integers, just add `.` to them for the float versions except for modulo (e.g. `+.` or `/.`).
+
+Some other simple type checking functions are also usable in pattern match guards:
+
+-   `is_integer`
+-   `is_float`
+-   `is_atom`
+-   `is_bool`
+-   `is_list`
+-   `is_string`
+-   `is_chars`
+-   `is_pid`
+-   `is_binary`
+
+A word of caution:  strings are encoded as binaries, and chars as lists so if we call the following example `f/1` with a string, we will **always** get a binary back (assuming there's an ADT covering both):
+
+    f x =
+      match x with
+          b, is_binary b -> b
+        | s, is_string s -> s
+
+And here we will always get a list instead of a character list (same ADT restriction):
+
+    g x =
+      match x with
+          l, is_list l -> l
+        | c, is_chars c -> c
+
 # User Defined Types:  ADTs<a id="sec-5" name="sec-5"></a>
 
-While there isn't yet a way to specify the type of a variable or a function (it's coming soon), we can specify new types as ADTs and they will also be inferred correctly.  Here's a simple polymorphic option type:
+Explicit type specifications for variables and functions is a planned feature for version 0.3.0.  Specifying new types as ADTs is an existing feature and they will also be inferred correctly.  Here's a simple polymorphic option type:
 
     type opt 'a = Some 'a | None
     
@@ -296,7 +339,18 @@ If the above type is in scope (in the module, or imported), the following functi
           i, is_integer i -> :integer
         | f, is_float f -> :float
 
-If the inferencer has more than one ADT unifying integers and floats in scope, it will choose the one that occurs first.
+If the inferencer has more than one ADT unifying integers and floats in scope, it will choose the one that occurs first.  In the following example, `f/1` will type to accepting `int_or_float` rather than `json`.
+
+    type int_or_float = int | float
+    
+    type json = int | float | string | bool
+              | list json
+              | list (string, json)
+    
+    f x =
+      match x with
+          i, is_integer i -> :integer
+        | f, is_float f -> :float
 
 # Tests<a id="sec-6" name="sec-6"></a>
 
