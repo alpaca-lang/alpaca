@@ -307,16 +307,19 @@ add x y = x + y
 test "add 2 2 should result in 4" =
   add 2 2
 #+END_SRC
-While the above test is type checked and will happily be compiled, we lack assertions to actually validate the test expression.  They can be built relatively simply for now, here's an example from one of the test files, ~basic_module_with_tests.mlfe~:
+While the above test is type checked and will happily be compiled, we lack assertions to actually *test* the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, ~basic_module_with_tests.mlfe~:
 #+BEGIN_SRC
-// formats a failure message:
-format_msg base x y =
-  let m = call_erlang :io_lib :format [base, [x, y]] with msg -> msg in
-  call_erlang :lists :flatten [m] with msg, is_chars msg -> msg
+module add_and_a_test
+
+export add/2
+
+add x y = x + y
+
+test "add 2 2 should result in 4" = test_equal (add 2 2) 4
 
 /* Test the equality of two terms, throwing an exception if they're
- * not equal.  The two terms will need to be the same type for any
- * call to this to succeed:
+   not equal.  The two terms will need to be the same type for any
+   call to this to succeed:
  */
 test_equal x y =
   match (x == y) with
@@ -324,6 +327,11 @@ test_equal x y =
     | false ->
         let msg = format_msg "Not equal:  ~w and ~w" x y in
         call_erlang :erlang :error [msg] with _ -> :failed
+
+// formats a failure message:
+format_msg base x y =
+  let m = call_erlang :io_lib :format [base, [x, y]] with msg -> msg in
+  call_erlang :lists :flatten [m] with msg, is_chars msg -> msg
 #+END_SRC
 
 It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in MLFE.

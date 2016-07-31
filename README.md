@@ -12,6 +12,16 @@ but mostly use R19 locally from [kerl](https://github.com/kerl/kerl)
 of late)
 - [Rebar3](https://rebar3.org)
 
+Make a new project with `rebar3 new app your_app_name` and in the
+`rebar.config` file in your project's root folder
+(e.g. `your_app_name/rebar.config`) add the following:
+
+    {plugins, [
+        {rebar_prv_mlfe, ".*", {git, "https://github.com/tsloughter/rebar_prv_mlfe.git", {branch, "master"}}}
+    ]}.
+
+    {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
+
 Check out
 [the tour for the language basics](https://github.com/j14159/mlfe/blob/v0.2.0-WIP/Tour.md),
 put source files ending in `.mlfe` in your source folders, run `rebar3
