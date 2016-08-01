@@ -161,7 +161,7 @@ If you're not familiar with binaries, there's some [good coverage](http://learny
      */
     <<SomeInteger: type=int, size=8, unit=4, end=big, sign=false>>
     
-    // of course you we just list off integers and floats too:
+    // of course we can just list off integers and floats too:
     <<1, 2, 3.14, 4, 5, 6.0>>
 
 Endian settings can be `big`, `little`, or `native` as in Erlang.
@@ -340,9 +340,9 @@ We can also use "type constructors" and type variables to be a bit more expressi
     type opt 'a = Some 'a | None
     
     /* Here's a map "get value by key" function that uses the new `opt` type.
-       It's polymorphic in that if you give this function a `map string int`
-       and a string for `key`, the return type will be an `opt int`.  If you 
-       instead give it a `map atom (list string)` and an atome for the key, 
+       It's polymorphic in that if we give this function a `map string int`
+       and a string for `key`, the return type will be an `opt int`.  If we 
+       instead give it a `map atom (list string)` and an atom for the key, 
        the return type will be `opt list string`.
     */
     map_get key the_map =
@@ -350,7 +350,7 @@ We can also use "type constructors" and type variables to be a bit more expressi
           #{key => value} -> Some value
         | _ -> None
 
-You can use the basic MLFE types as well, here's a type that describes parsed JSON data based on how the [JSX](https://github.com/talentdeficit/jsx) library represents it:
+We can use the basic MLFE types as well, here's a type that describes parsed JSON data based on how the [JSX](https://github.com/talentdeficit/jsx) library represents it:
 
     type json = int | float | string | bool
               | list json
@@ -430,7 +430,7 @@ Process support in MLFE is still pretty basic but the following are all supporte
 -   receive messages in a function with `receive`
 -   send messages to process with `send`
 
-A basic example will probable help:
+A basic example will probably help:
 
     a_counting_function x =
       receive with
@@ -442,7 +442,7 @@ A basic example will probable help:
      * strings".  Note that this is not a valid top-level entry for a module,
      * we just want a few simple examples.
      */
-    my_pid = spawn a_counting_function [0]
+    my_pid = spawn a_counting_function 0
     
     // send "add" to `my_pid`:
     send "add" my_pid
