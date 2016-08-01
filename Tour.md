@@ -136,7 +136,7 @@ MLFE has integers and floats which can't mix with each other at all.  They have 
 
 ### Atoms<a id="sec-3-1-3" name="sec-3-1-3"></a>
 
-Atoms in MLFE are just text prefixed with `:`, e.g. `:this_is_an_atom` and `soIsThis1`.
+Atoms in MLFE are just text prefixed with `:`, e.g. `:this_is_an_atom` and `:soIsThis1`.
 
 ### Strings<a id="sec-3-1-4" name="sec-3-1-4"></a>
 
@@ -254,7 +254,17 @@ Inside of a function we can define both immutable variables and new functions:
       let doubled_x = double x in  // a variable named "double_x"
       doubled_x + x                // the expression returned as a result
 
-As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.
+As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
+
+    /* Because the body of this function multiplies the parameter by a float,
+       the compiler knows that this function takes floats and returns floats
+       (float -> float).  If we were to call this function with something other
+       than a float (e.g. an integer or string), the compiler would fail with
+       a type error.
+    */
+    double x = x *. 2.0
+
+Explicit type specifications for variables and functions is a planned feature for version 0.3.0.
 
 While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
 
@@ -316,11 +326,25 @@ And here we will always get a list instead of a character list (same ADT restric
 
 # User Defined Types:  ADTs<a id="sec-5" name="sec-5"></a>
 
-Explicit type specifications for variables and functions is a planned feature for version 0.3.0.  Specifying new types as ADTs is an existing feature and they will also be inferred correctly.  Here's a simple polymorphic option type:
+We can currently specify new types by combining existing ones, creating [algebraic data types (ADTs)](https://en.wikipedia.org/wiki/Algebraic_data_type).  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 
+    // a union:
+    type number = int | float
+
+We can also use "type constructors" and type variables to be a bit more expressive.  Type constructors start with an uppercase letter (e.g. `Like` `These`) and can have a single associated value.  Type variables start with a single apostrophe like 'this.  Here's a simple example of an option type that's also polymorphic/generic (like lists and maps):
+
+    /* `Some` has a single associated value, `None` stands alone.  Note that
+       we have the type variable 'a here that lets us be particular about which
+       items in the type's members are polymorphic.
+    */
     type opt 'a = Some 'a | None
     
-    //here's a map "get value by key" function that uses the new `opt` type:
+    /* Here's a map "get value by key" function that uses the new `opt` type.
+       It's polymorphic in that if you give this function a `map string int`
+       and a string for `key`, the return type will be an `opt int`.  If you 
+       instead give it a `map atom (list string)` and an atome for the key, 
+       the return type will be `opt list string`.
+    */
     map_get key the_map =
       match the_map with
           #{key => value} -> Some value
