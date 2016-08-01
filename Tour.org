@@ -277,7 +277,7 @@ type opt 'a = Some 'a | None
 /* Here's a map "get value by key" function that uses the new `opt` type.
    It's polymorphic in that if you give this function a `map string int`
    and a string for `key`, the return type will be an `opt int`.  If you 
-   instead give it a `map atom (list string)` and an atome for the key, 
+   instead give it a `map atom (list string)` and an atom for the key, 
    the return type will be `opt list string`.
 */
 map_get key the_map =
