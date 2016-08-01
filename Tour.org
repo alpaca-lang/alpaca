@@ -227,6 +227,7 @@ Some simple examples:
 1 == 1     // true
 1 == 2     // false
 1 == 1.0   // type error
+:a == :a   // true
 #+END_SRC
 
 The basic arithmetic functions also exist, ~+~, ~-~, ~*~, ~/~, and ~%~ for modulo.  The base forms are all for integers, just add ~.~ to them for the float versions except for modulo (e.g. ~+.~ or ~/.~).
@@ -278,7 +279,7 @@ type opt 'a = Some 'a | None
    It's polymorphic in that if we give this function a `map string int`
    and a string for `key`, the return type will be an `opt int`.  If we 
    instead give it a `map atom (list string)` and an atom for the key, 
-   the return type will be `opt list string`.
+   the return type will be `opt (list string)`.
 */
 map_get key the_map =
   match the_map with
@@ -382,7 +383,7 @@ a_counting_function x =
  * strings".  Note that this is not a valid top-level entry for a module,
  * we just want a few simple examples.
  */
-my_pid = spawn a_counting_function 0
+let my_pid = spawn a_counting_function 0
 
 // send "add" to `my_pid`:
 send "add" my_pid
