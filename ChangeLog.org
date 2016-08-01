@@ -1,0 +1,12 @@
+* v0.2.0
+- dialyzer and xref fixes, Travis CI integration, courtesy of https://github.com/NobbZ
+- module_info synthesized by the compiler, courtesy of https://github.com/erszcz
+- typos and clarifications from https://github.com/tjweir, https://github.com/saem, https://github.com/ypaq, https://github.com/omarkj, https://github.com/yurrriq
+- binaries, thanks to https://github.com/yurrriq and https://github.com/talentdeficit for feedback and ideas
+- basic map support
+- change to `spawn` syntax, it now takes a (syntactic) function application instead of function and arg list, thanks to https://github.com/ypaq for feedback
+- a "language tour" document, thanks to https://github.com/ypaq and https://github.com/saem for initial feedback and corrections
+- a simple unit test form/hook for creating basic EUnit-compatible tests
+- UTF-8 strings, compiled as binaries
+- character lists for Erlang string support
+- lots of little type inferencer/checker fixes

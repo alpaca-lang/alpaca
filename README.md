@@ -23,7 +23,7 @@ Make a new project with `rebar3 new app your_app_name` and in the
     {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
 
 Check out
-[the tour for the language basics](https://github.com/j14159/mlfe/blob/v0.2.0-WIP/Tour.md),
+[the tour for the language basics](https://github.com/j14159/mlfe/Tour.md),
 put source files ending in `.mlfe` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
 
@@ -37,7 +37,7 @@ I want something that looks and operates a little bit like an ML on the Erlang V
 looping on receive.
 - recursive data types
 - syntax somewhere between [OCaml](https://ocaml.org/) and
-[Elm](http://elm-lang.org/), likely favouring Elm's for new data types
+[Elm](http://elm-lang.org/)
 - FFI to erlang code that does not allow the return of values typed as `term()` or `any()`
 - simple test annotations for something like
   [eunit](http://erlang.org/doc/apps/eunit/chapter.html), tests live beside the
@@ -85,6 +85,8 @@ Here's an example module:
     start_a_process init = spawn will_be_a_process init
 
 # Licensing
+MLFE is released under the terms of the Apache License, Version 2.0
+
 Copyright 2016 Jeremy Pierre
 
 Licensed under the Apache License, Version 2.0 (the "License");
