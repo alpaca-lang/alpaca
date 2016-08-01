@@ -296,13 +296,12 @@ receive_block -> receive_block after int simple_expr :
 
 %% Only supporting spawning functions inside the current module
 %% for now:
-spawn_pid -> spawn symbol cons:
+spawn_pid -> spawn symbol terms:
   {_, L} = '$1',
-  Args = cons_to_list('$3'),
   #mlfe_spawn{line=L,
               module=undefined,
               function='$2',
-              args=Args}.
+              args='$3'}.
 
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
@@ -429,11 +428,6 @@ term_line(Term) ->
         #mlfe_tuple{values=[H|_]} -> term_line(H);
         #mlfe_type_apply{name=N} -> term_line(N)
     end.
-
-cons_to_list({nil, _}) ->
-    [];
-cons_to_list(#mlfe_cons{head=H, tail=T}) ->
-    [H|cons_to_list(T)].
 
 add_qualifier(#mlfe_bits{}=B, {size, {int, _, I}}) ->
     B#mlfe_bits{size=I, default_sizes=false};

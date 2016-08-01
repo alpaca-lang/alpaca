@@ -82,7 +82,7 @@ Here's an example module:
         let sent = send x sender in
         will_be_a_process x
 
-    start_a_process init = spawn will_be_a_process [init]
+    start_a_process init = spawn will_be_a_process init
 
 # Licensing
 Copyright 2016 Jeremy Pierre
@@ -379,7 +379,7 @@ An example:
         let sent = send z sender in
       f z
 
-    start_f init = spawn f [init]
+    start_f init = spawn f init
 
 All of the above is type checked, including the spawn and message sends.
 Any expression that contains a `receive` block becomes a "receiver"

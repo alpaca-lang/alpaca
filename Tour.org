@@ -382,7 +382,7 @@ a_counting_function x =
  * strings".  Note that this is not a valid top-level entry for a module,
  * we just want a few simple examples.
  */
-my_pid = spawn a_counting_function [0]
+my_pid = spawn a_counting_function 0
 
 // send "add" to `my_pid`:
 send "add" my_pid

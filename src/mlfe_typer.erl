@@ -2860,7 +2860,7 @@ spawn_test_() ->
                  "export f/1, start_f/1\n\n"
                  "f x = receive with "
                  " i -> f (x + i)\n\n"
-                 "start_f init = spawn f [init]",
+                 "start_f init = spawn f init",
              ?assertMatch({ok, #mlfe_module{
                                  functions=[#mlfe_fun_def{
                                                name={symbol, 5, "f"},
@@ -2911,7 +2911,7 @@ spawn_test_() ->
                   "b x = receive with "
                   "    A xx -> a (x + xx)\n"
                   "  | B xx -> b (xx + x)\n\n"
-                  "start_a init = spawn a [init]",
+                  "start_a init = spawn a init",
               ?assertMatch({ok, #mlfe_module{
                                    functions=[#mlfe_fun_def{
                                                  name={symbol, _, "a"},
@@ -2956,7 +2956,7 @@ spawn_test_() ->
                    "module non_receiver_pid\n\n"
                    "export f/1, start_f/1\n\n"
                    "f x = f (x + 1)\n\n"
-                   "start_f () = spawn f [0]",
+                   "start_f () = spawn f 0",
                ?assertMatch(
                   {ok, #mlfe_module{
                           functions=[#mlfe_fun_def{
@@ -2974,7 +2974,7 @@ send_message_test_() ->
                  "f x = receive with "
                  "  i -> f (i + x)\n\n"
                  "spawn_and_message_f = "
-                 "  let p = spawn f [0] in "
+                 "  let p = spawn f 0 in "
                  "  send 1 p",
              ?assertMatch(
                 {ok, #mlfe_module{}},
@@ -2986,7 +2986,7 @@ send_message_test_() ->
                   "f x = receive with "
                   "  i -> f (i + x)\n\n"
                   "spawn_and_message_f = "
-                  "  let p = spawn f [0] in "
+                  "  let p = spawn f 0 in "
                   "  send 1.0 p",
               ?assertMatch(
                  {error, {cannot_unify, _, _, t_int, t_float}},
@@ -3005,7 +3005,7 @@ send_message_test_() ->
                   "module send_to_non_receiver\n\n"
                   "f x = f (x+1)\n\n"
                   "start_f x = "
-                  "  let p = spawn f [x] in "
+                  "  let p = spawn f x in "
                   "  send 1 p",
               ?assertMatch(
                  {error, {cannot_unify, _, _, undefined, t_int}},
