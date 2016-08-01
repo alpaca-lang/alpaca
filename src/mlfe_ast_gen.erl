@@ -131,6 +131,8 @@ update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{} = Def) ->
     {ok, M#mlfe_module{functions=[Def|Funs]}};
 update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
     {ok, M#mlfe_module{types=[T|Ts]}};
+update_memo(#mlfe_module{tests=Tests}=M, #mlfe_test{}=T) ->
+    {ok, M#mlfe_module{tests=[T|Tests]}};
 update_memo(M, #mlfe_comment{}) ->
     {ok, M};
 update_memo(_, Bad) ->
@@ -314,6 +316,51 @@ rename_bindings(NextVar, MN, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
                                                         tail=T2}}
                        end
     end;
+rename_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+    %% fold to account for errors.
+    F = fun(_, {error, _}=Err) -> Err;
+           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+                case rename_bindings(NV, MN, M, V) of
+                    {NV2, M2, V2} -> {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                    {error, _}=Err -> Err
+                end
+        end,
+    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+        {error, _}=Err -> Err;
+        {NV2, M2, Segs2} -> {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+    end;
+rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
+    Folder = fun(_, {error, _}=Err) -> Err;
+                (P, {NV, M, Ps}) ->
+                     case rename_bindings(NV, MN, M, P) of
+                         {error, _}=Err -> Err;
+                         {NV2, M2, P2} -> {NV2, M2, [P2|Ps]}
+                     end
+             end,
+    case lists:foldl(Folder, {NextVar, Map, []}, Pairs) of
+        {error, _}=Err -> Err;
+        {NV, M, Pairs2} -> {NV, M, ASTMap#mlfe_map{pairs=lists:reverse(Pairs2)}}
+    end;
+rename_bindings(NextVar, MN, Map, #mlfe_map_add{to_add=A, existing=B}=ASTMap) ->
+    case rename_bindings(NextVar, MN, Map, A) of
+        {error, _}=Err -> Err;
+        {NV, M, A2} ->
+            case rename_bindings(NV, MN, M, B) of
+                {error, _}=Err -> Err;
+                {NV2, M2, B2} -> 
+                    {NV2, M2, ASTMap#mlfe_map_add{to_add=A2, existing=B2}}
+            end
+    end;
+rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(NextVar, MN, Map, K) of
+        {error, _}=Err -> Err;
+        {NV, M, K2} ->
+            case rename_bindings(NV, MN, M, V) of
+                {error, _}=Err -> Err;
+                {NV2, M2, V2} -> 
+                    {NV2, M2, P#mlfe_map_pair{key=K2, val=V2}}
+            end
+    end;
 rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
     case rename_binding_list(NextVar, MN, Map, Vs) of
         {error, _} = Err -> Err;
@@ -357,7 +404,7 @@ rename_bindings(NV, MN, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) 
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
-    case make_bindings(NV, M, P) of
+    case make_bindings(NV, MN, M, P) of
         {error, _} = Err -> Err;
         {NV2, M2, P2} -> 
             case rename_bindings(NV2, MN, M2, R) of
@@ -411,11 +458,11 @@ rename_clause_list(NV, MN, M, Cs) ->
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
-make_bindings(NV, M, #mlfe_tuple{values=Vs}=Tup) ->
+make_bindings(NV, MN, M, #mlfe_tuple{values=Vs}=Tup) ->
     F = fun
             (_, {error, _}=E) -> E;
             (V, {NextVar, Map, Memo}) ->
-                case make_bindings(NextVar, Map, V) of
+                case make_bindings(NextVar, MN, Map, V) of
                     {error, _} = Err -> Err;
                     {NV2, M2, V2} -> {NV2, M2, [V2|Memo]}
                 end
@@ -424,17 +471,66 @@ make_bindings(NV, M, #mlfe_tuple{values=Vs}=Tup) ->
         {error, _} = Err -> Err;
         {NV2, M2, Vs2}   -> {NV2, M2, Tup#mlfe_tuple{values=lists:reverse(Vs2)}}
     end;
-make_bindings(NV, M, #mlfe_cons{head=H, tail=T}=Cons) ->
-    case make_bindings(NV, M, H) of
+make_bindings(NV, MN, M, #mlfe_cons{head=H, tail=T}=Cons) ->
+    case make_bindings(NV, MN, M, H) of
         {error, _} = Err -> Err;
-        {NV2, M2, H2} -> case make_bindings(NV2, M2, T) of
+        {NV2, M2, H2} -> case make_bindings(NV2, MN, M2, T) of
                              {error, _} = Err -> 
                                  Err;
                              {NV3, M3, T2} -> 
                                  {NV3, M3, Cons#mlfe_cons{head=H2, tail=T2}}
                          end
     end;
-make_bindings(NV, M, {symbol, L, Name}) ->
+%% TODO:  this is identical to rename_bindings but for the internal call
+%% to make_bindings vs rename_bindings.  How much else in here is like this?
+%% Probably loads of abstracting/de-duping potential.
+make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+    F = fun(_, {error, _}=Err) -> Err;
+           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+                case make_bindings(NV, MN, M, V) of
+                    {NV2, M2, V2} -> {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                    {error, _}=Err -> Err
+                end
+        end,
+    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+        {error, _}=Err -> Err;
+        {NV2, M2, Segs2} -> {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+    end;
+    
+%%% Map patterns need to rename variables used for keys and create new bindings
+%%% for variables used for values.  We want to rename for keys because we want
+%%% the following to work:
+%%% 
+%%%     get my_key my_map = match my_map with
+%%%       #{my_key => v} => v
+%%% 
+%%% Map patterns require the key to be something exact already.
+make_bindings(NextVar, MN, BindingMap, #mlfe_map{pairs=Ps}=Map) ->
+    Folder = fun(_, {error, _}=Err) -> Err;
+                (P, {NV, M, Acc}) ->
+                     case make_bindings(NV, MN, M, P) of
+                         {error, _}=Err -> Err;
+                         {NV2, M2, P2} -> {NV2, M2, [P2|Acc]}
+                     end
+             end,
+    case lists:foldl(Folder, {NextVar, BindingMap, []}, Ps) of
+        {error, _}=Err -> Err;
+        {NV, M, Pairs} -> 
+            Map2 = Map#mlfe_map{is_pattern=true, pairs=lists:reverse(Pairs)},
+            {NV, M, Map2}
+    end;
+make_bindings(NV, MN, M, #mlfe_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(NV, MN, M, K) of
+        {error, _}=Err -> Err;
+        {NV2, M2, K2} ->
+            case make_bindings(NV2, MN, M2, V) of
+                {error, _}=Err -> Err;
+                {NV3, M3, V2} -> 
+                    {NV3, M3, P#mlfe_map_pair{is_pattern=true, key=K2, val=V2}}
+            end
+    end;
+
+make_bindings(NV, _MN, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of
         undefined ->
             Synth = next_var(NV),
@@ -442,7 +538,7 @@ make_bindings(NV, M, {symbol, L, Name}) ->
         _ ->
             {error, {duplicate_definition, Name, L}}
     end;
-make_bindings(NV, M, Expression) ->
+make_bindings(NV, _MN, M, Expression) ->
     {NV, M, Expression}.
                                 
 -define(base_var_name, "svar_").
@@ -824,6 +920,28 @@ list_test_() ->
                            "match x with\n"
                            "  [] -> []\n"
                            "| h :: t -> h\n")))
+    ].
+
+binary_test_() ->
+    [?_assertMatch({ok, #mlfe_binary{
+                           line=1,
+                           segments=[#mlfe_bits{line=1, value={int, 1, 1}}]}},
+                    parse(scanner:scan("<<1>>"))),
+     ?_assertMatch({ok, #mlfe_binary{
+                          line=1,
+                          segments=[#mlfe_bits{value={int, 1, 1},
+                                               size=8,
+                                               unit=1},
+                                    #mlfe_bits{value={int, 1, 2},
+                                               size=16,
+                                               unit=1}]}},
+                   parse(scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
+     ?_assertMatch({ok, #mlfe_binary{}},
+                   parse(scanner:scan("<<255: size=16 unit=1 sign=true end=little>>"))),
+     ?_assertMatch({ok, #mlfe_binary{
+                          segments=[#mlfe_bits{value={symbol, 1, "a"}}, 
+                                    #mlfe_bits{value={symbol, 1, "b"}}]}},
+                   parse(scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
     ].
 
 string_test_() ->

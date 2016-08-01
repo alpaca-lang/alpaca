@@ -13,7 +13,7 @@
 % limitations under the License.
 
 -module(mlfe_codegen).
--export([gen/1]).
+-export([gen/2]).
 
 -include("mlfe_ast.hrl").
 
@@ -21,14 +21,17 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-gen(#mlfe_module{}=Mod) ->
+gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
        name=ModuleName, 
        function_exports=Exports, 
-       functions=Funs} = Mod,
+       functions=Funs,
+       tests=Tests} = Mod,
     Env = [{N, length(Args)}||#mlfe_fun_def{name={symbol, _, N}, args=Args}<-Funs],
-    {_Env, CompiledFuns} = gen_funs(Env, [], Funs),
-    CompiledExports = [gen_export(E) || E <- Exports],
+    {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
+    CompiledTests = gen_tests(Env2, Tests),
+
+    CompiledExports = [gen_export(E) || E <- Exports] ++ gen_test_exports(Tests, Opts, []),
     {ok, cerl:c_module(
            cerl:c_atom(ModuleName),
            [gen_export({"module_info", 0}),
@@ -37,21 +40,28 @@ gen(#mlfe_module{}=Mod) ->
            [],
            [module_info0(ModuleName),
             module_info1(ModuleName)] ++
-           CompiledFuns)
+           CompiledFuns ++ CompiledTests)
     }.
 
 gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
+gen_test_exports([], _, Memo) ->
+    Memo;
+gen_test_exports(_, [], Memo) ->
+    Memo;
+gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts, Memo) ->
+    gen_test_exports(RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
+gen_test_exports(Tests, [_|Rem], Memo) ->
+    gen_test_exports(Tests, Rem, Memo).
+
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
 gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
-    io:format("Env is ~w~n", [Env]),
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
-    io:format("~nCompiling unit function ~s~n", [N]),
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     B = gen_expr(Env, Body),
@@ -62,6 +72,23 @@ gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     B = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)}.
 
+gen_tests(Env, Tests) ->
+    gen_tests(Env, Tests, []).
+
+gen_tests(_Env, [], Memo) ->
+    Memo;
+gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
+    FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
+    Body = gen_expr(Env, E),
+    TestFun = {FName, cerl:c_fun([], Body)},
+    gen_tests(Env, Rem, [TestFun|Memo]).
+
+%% eunit will skip tests with spaces in the name, this may not be the best
+%% way to handle it though:
+clean_test_name(N) ->
+    Base = lists:map(fun(32) -> 95; (C) -> C end, N),
+    Base ++ "_test".
+
 gen_expr(_, {add, _}) ->
     cerl:c_atom('+');
 gen_expr(_, {minus, _}) ->
@@ -70,12 +97,14 @@ gen_expr(_, {int, _, I}) ->
     cerl:c_int(I);
 gen_expr(_, {float, _, F}) ->
     cerl:c_float(F);
+gen_expr(_, {boolean, _, B}) ->
+    cerl:c_atom(B);
 gen_expr(_, {atom, _, A}) ->
     cerl:c_atom(list_to_atom(A));
 gen_expr(_, {chars, _, Cs}) ->
     cerl:c_string(Cs);
 gen_expr(_, {string, _, S}) ->
-    cerl:c_string(S);
+    cerl:c_binary(literal_binary(S, utf8));
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
 gen_expr(_Env, [{symbol, _, V}]) ->
@@ -86,7 +115,34 @@ gen_expr(_, {nil, _}) ->
     cerl:c_nil();
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
+gen_expr(Env, #mlfe_binary{segments=Segs}) ->
+    cerl:c_binary(gen_bits(Env, Segs));
+gen_expr(Env, #mlfe_map{is_pattern=true, pairs=Pairs}) ->
+    cerl:c_map_pattern([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map{pairs=Pairs}) ->
+    cerl:c_map([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
+    %% In R19 creating map expression like core erlang's parser does
+    %% doesn't seem to work for me, neither with ann_c_map nor a simple
+    %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
+    %% a convenience:
+    M = gen_expr(Env, B),
+    cerl:c_call(cerl:c_atom(maps), 
+                cerl:c_atom(put),
+                [gen_expr(Env, K), gen_expr(Env, V), M]);
+gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
+    %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
+    %% the following but that doesn't work for 18.2 nor 18.3.
+    %% The LFE source put me on to the following:
+    cerl:ann_c_map_pair([], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
+gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
+    cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
+    cerl:c_call(
+      cerl:c_atom('erlang'),
+      cerl:c_atom('is_binary'),
+      [gen_expr(Env, S)]);
+gen_expr(Env, #mlfe_type_check{type=is_chars, expr={symbol, _, _}=S}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
       cerl:c_atom('is_list'),
@@ -110,18 +166,13 @@ gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
     
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env) of
-                undefined ->
-                    io:format("Undefined arity for ~s~n", [Name]),
-                    cerl:c_var(list_to_atom(Name));
-                1 ->
-                    cerl:c_fname(list_to_atom(Name), 1)
+                undefined -> cerl:c_var(list_to_atom(Name));
+                1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     cerl:c_apply(FName, [cerl:c_atom(unit)]);
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
-    io:format("~nCompiling apply for ~s env is ~w~n", [Name, Env]),
     FName = case proplists:get_value(Name, Env) of
                 undefined ->
-                    io:format("Undefined arity for ~s~n", [Name]),
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
                     cerl:c_fname(list_to_atom(Name), Arity)
@@ -237,13 +288,50 @@ gen_module_info(ModuleName, Params) ->
                        [cerl:c_atom(ModuleName) | Params]),
     NewF = cerl:c_fun(Params, Body),
     {cerl:c_fname(module_info, length(Params)), NewF}.
-    
+
+gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
+
+gen_bits(_Env, [], AllSegs) ->
+    lists:reverse(AllSegs);
+gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs) when T == binary; T == utf8 ->
+    #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8), 
+                      get_bits_type(T), bits_flags(Sign, E)),
+    lists:reverse([B|Segs]);
+
+gen_bits(Env, [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem], Segs) ->
+    Lit = lists:reverse(literal_binary(S, utf8)),
+    gen_bits(Env, Rem, Lit ++ Segs);
+
+gen_bits(Env, [Bits|Rem], Memo) ->
+    #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U), 
+                      get_bits_type(T), bits_flags(Sign, E)),
+    gen_bits(Env, Rem, [B|Memo]).
+
+get_bits_type(int) -> cerl:c_atom(integer);
+get_bits_type(float) -> cerl:c_atom(float);
+get_bits_type(utf8) -> cerl:c_atom(binary);
+get_bits_type(binary) -> cerl:c_atom(binary).
+
+bits_flags(Sign, Endian) -> 
+    cerl:c_cons(cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
+
+literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
+    Bin = unicode:characters_to_binary(Chars, Encoding),
+    F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
+                                cerl:c_atom(integer),
+                                cerl:c_cons(cerl:c_atom(unsigned),
+                                            cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
+        end,
+    [F(I) || I <- binary_to_list(Bin)].
+
 
 -ifdef(TEST).
 
 parse_and_gen(Code) ->
     {ok, _, _, Mod} = mlfe_ast_gen:parse_module(0, Code),
-    {ok, Forms} = mlfe_codegen:gen(Mod),
+    {ok, Forms} = mlfe_codegen:gen(Mod, []),
     compile:forms(Forms, [report, verbose, from_core]).
 
 simple_compile_test() ->
@@ -307,11 +395,10 @@ parser_nested_letrec_test() ->
 module_with_match_test() ->
     Name = compile_module_with_match,
     FN = atom_to_list(Name) ++ ".beam",
-    io:format("Fake name is ~s~n", [FN]),
     Code = 
         "module compile_module_with_match\n\n"
-        "export test/1, first/1, compare/2\n\n"
-        "test x = match x with\n"
+        "export check/1, first/1, compare/2\n\n"
+        "check x = match x with\n"
         "  0 -> :zero\n"
         "| 1 -> :one\n"
         "| _ -> :more_than_one\n\n"
@@ -325,7 +412,7 @@ module_with_match_test() ->
         "| _ -> :not_matched",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
-    ?assertEqual(one, Name:test(1)),
+    ?assertEqual(one, Name:check(1)),
     ?assertEqual(1, Name:first({1, a})),
     ?assertEqual(not_a_2_tuple, Name:first(an_atom)),
     ?assertEqual('matched', Name:compare(1, 1)),
@@ -337,21 +424,21 @@ cons_test() ->
     FN = atom_to_list(Name) ++ ".beam",
     Code = 
         "module compiler_cons_test\n\n"
-        "export make_list/2, map/2\n\n"
+        "export make_list/2, my_map/2\n\n"
         "make_list h t =\n"
         "  match t with\n"
         "    a :: b -> h :: t\n"
         "  | term -> h :: term :: []\n\n"
-        "map f x =\n"
+        "my_map f x =\n"
         "  match x with\n"
         "    [] -> []\n"
-        "  | h :: t -> (f h) :: (map f t)",
+        "  | h :: t -> (f h) :: (my_map f t)",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual([1, 2], Name:make_list(1, 2)),
     ?assertEqual([1, 2, 3], Name:make_list(1, [2, 3])),
-    ?assertEqual([2, 3], Name:map(fun(X) -> X+1 end, [1, 2])),
-    ?assertEqual([3, 4], Name:map(fun(X) -> X+1 end, Name:make_list(2, 3))),
+    ?assertEqual([2, 3], Name:my_map(fun(X) -> X+1 end, [1, 2])),
+    ?assertEqual([3, 4], Name:my_map(fun(X) -> X+1 end, Name:make_list(2, 3))),
     true = code:delete(Name).
 
 call_test() ->
@@ -395,8 +482,8 @@ ffi_test() ->
 type_guard_test() ->
     Code = 
         "module type_guard_test\n\n"
-        "export test/1\n\n"
-        "test x = \n"
+        "export check/1\n\n"
+        "check x = \n"
         "call_erlang :erlang :* [x, x] with\n"
         "   i, is_integer i -> i\n"
         " | f -> 0",
@@ -406,15 +493,15 @@ type_guard_test() ->
     
     %% Checking that when the result is NOT an integer we're falling back
     %% to integer 0 as expected in the code above:
-    ?assertEqual(4, Mod:test(2)),
-    ?assertEqual(0, Mod:test(1.3)),
+    ?assertEqual(4, Mod:check(2)),
+    ?assertEqual(0, Mod:check(1.3)),
     true = code:delete(Mod).
 
 multi_type_guard_test() ->
     Code = 
         "module multi_type_guard_test\n\n"
-        "export test/1\n\n"
-        "test x = \n"
+        "export check/1\n\n"
+        "check x = \n"
         "call_erlang :erlang :* [x, x] with\n"
         "   i, is_integer i, i == 4 -> :got_four\n"
         " | i, is_integer i, i > 5, i < 20 -> :middle\n"
@@ -424,10 +511,10 @@ multi_type_guard_test() ->
     Mod = multi_type_guard_test,
     {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),
     
-    ?assertEqual('got_four', Mod:test(2)),
-    ?assertEqual('middle', Mod:test(4)),
-    ?assertEqual('just_int', Mod:test(5)),
-    ?assertEqual('not_int', Mod:test(1.3)),
+    ?assertEqual('got_four', Mod:check(2)),
+    ?assertEqual('middle', Mod:check(4)),
+    ?assertEqual('just_int', Mod:check(5)),
+    ?assertEqual('not_int', Mod:check(1.3)),
     true = code:delete(Mod).
     
 module_info_helpers_test() ->

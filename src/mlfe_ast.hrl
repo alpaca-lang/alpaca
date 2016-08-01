@@ -39,6 +39,8 @@
 -type t_nil() :: t_nil.
 -type t_list() :: t_cons() | t_nil().
 
+-type t_map() :: {t_map, typ(), typ()}.
+
 -type t_tuple() :: {t_tuple, list(typ())}.
 
 %% pattern, optional guard, result.  Currently I'm doing nothing with 
@@ -57,6 +59,7 @@
                  | t_atom
                  | t_bool
                  | t_string
+                 | t_chars
                  | t_unit.
 
 -type typ() :: undefined
@@ -66,7 +69,9 @@
              | t_adt()
              | t_adt_constructor()
              | t_const()
+             | t_binary
              | t_list()
+             | t_map()
              | t_tuple()
              | t_clause()
              | typer:t_cell().  % a reference cell for a type.
@@ -92,7 +97,7 @@
 %%% The variable _, meaning "don't care":
 -type mlfe_any() :: {any, integer()}.
 
--type mlfe_string() :: {string, integer(), binary()}.
+-type mlfe_string() :: {string, integer(), string()}.
 
 -type mlfe_const() :: mlfe_unit()
                     | mlfe_any()
@@ -101,6 +106,31 @@
                     | mlfe_atom()
                     | mlfe_string()
                       .
+
+%%% ### Binaries
+
+-record(mlfe_binary, {line=0 :: integer(),
+                      segments=[] :: list(mlfe_bits())}).
+-type mlfe_binary() :: #mlfe_binary{}.
+
+-type mlfe_bits_type() :: int | float | binary | utf8.
+
+-record(mlfe_bits, {line=0 :: integer(),
+                    %% Used to signal whether or not the bitstring is simply
+                    %% using default size and unit values.  If it is *not*
+                    %% and the `type` is `binary` *and* the bitstring is the
+                    %% last segment in a binary, it's size must be set to 
+                    %% `'all'` with unit 8 to capture all remaining bits.
+                    %% This is in keeping with how Erlang compiles to Core
+                    %% Erlang.
+                    default_sizes=true :: boolean(),
+                    value={symbol, 0, ""} :: mlfe_symbol()|mlfe_number()|mlfe_string(),
+                    size=8 :: non_neg_integer()|all,
+                    unit=1 :: non_neg_integer(),
+                    type=int :: mlfe_bits_type(),
+                    sign=unsigned :: signed | unsigned,
+                    endian=big :: big | little | native}).
+-type mlfe_bits() :: #mlfe_bits{}.
 
 %%% ### AST Nodes For Types
 %%% 
@@ -118,16 +148,24 @@
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
 -record(mlfe_type_tuple, {
-                         members=[] :: list(mlfe_type_var() | mlfe_type())
+                         members=[] :: list(mlfe_base_type() 
+                                            | mlfe_type_var() 
+                                            | mlfe_poly_type())
                         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
 %% Explicit built-in list type for use in ADT definitions.
 -type mlfe_list_type() :: {mlfe_list, 
-                           mlfe_type()
-                           | mlfe_type_tuple()
-                           | mlfe_type_var()
-                           | mlfe_base_type()}.
+                           mlfe_base_type()|mlfe_poly_type()}.
+
+-type mlfe_map_type() :: {mlfe_map,
+                          mlfe_base_type()|mlfe_poly_type(),
+                          mlfe_base_type()|mlfe_poly_type()}.
+
+-type mlfe_poly_type() :: mlfe_type()
+                        | mlfe_type_tuple()
+                        | mlfe_list_type()
+                        | mlfe_map_type().
 
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ(),
@@ -148,7 +186,8 @@
                                            | mlfe_type()
                                            | mlfe_type_tuple()
                                            | mlfe_base_type()
-                                           | mlfe_list_type())
+                                           | mlfe_list_type()
+                                           | mlfe_map_type())
          }).
 -type mlfe_type() :: #mlfe_type{}.
 
@@ -169,6 +208,29 @@
 -type mlfe_nil() :: {nil, integer()}.
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
+%%% ### Maps
+%%% 
+%%% For both map literals and map patterns
+
+-record(mlfe_map_pair, {type=undefined :: typ(),
+                        line=0 :: integer(),
+                        is_pattern=false :: boolean(),
+                        key=undefined :: mlfe_value_expression(),
+                        val=undefined :: mlfe_value_expression()}).
+-type mlfe_map_pair() :: #mlfe_map_pair{}.
+
+-record(mlfe_map, {type=undefined :: typ(),
+                   line=0 :: integer(),
+                   is_pattern=false :: boolean(),
+                   pairs=[] :: list(mlfe_map_pair())}).
+-type mlfe_map() :: #mlfe_map{}.
+
+-record(mlfe_map_add, {type=undefined :: typ(),
+                       line=0 :: integer(),
+                       to_add=#mlfe_map_pair{} :: mlfe_map_pair(),
+                       existing=#mlfe_map{} :: mlfe_value_expression()}).
+-type mlfe_map_add() :: #mlfe_map_add{}.
+
 %%% ### Tuples
 
 -record(mlfe_tuple, {type=undefined :: typ(),
@@ -184,7 +246,9 @@
                     | is_atom
                     | is_bool
                     | is_list
-                    | is_string.
+                    | is_string
+                    | is_chars
+                    | is_binary.
 
 %% TODO:  revisit this in mlfe_typer.erl as well as scanning and parsing:
 -record(mlfe_type_check, {type=undefined :: undefined|type_check(),
@@ -245,10 +309,19 @@
 
 %%% ### Module Building Blocks
 
+-record(mlfe_test, {type=undefined :: typ(),
+                    line=0 :: integer(),
+                    name={string, 0, ""} :: mlfe_string(),
+                    expression={unit, 0} :: mlfe_expression()}).
+-type mlfe_test() :: #mlfe_test{}.
+
 %%% Expressions that result in values:
 -type mlfe_value_expression() :: mlfe_const()
                                | mlfe_symbol()
                                | mlfe_list()
+                               | mlfe_binary()
+                               | mlfe_map()
+                               | mlfe_map_add()
                                | mlfe_tuple()
                                | mlfe_apply()
                                | mlfe_type_apply()
@@ -332,6 +405,7 @@
           types=[] :: list(mlfe_type()),
           type_imports=[] :: list(mlfe_type_import()),
           type_exports=[] :: list(string()),
-          functions=[] :: list(mlfe_fun_def())
+          functions=[] :: list(mlfe_fun_def()),
+          tests=[] :: list(mlfe_test())
          }).
 -type mlfe_module() :: #mlfe_module{}.

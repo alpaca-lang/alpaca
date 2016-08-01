@@ -23,4 +23,4 @@
         let sent = send x sender in
         will_be_a_process x
 
-    start_a_process init = spawn will_be_a_process [init]
+    start_a_process init = spawn will_be_a_process init

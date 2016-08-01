@@ -22,10 +22,11 @@ TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
 BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
-TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_pid
+TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_chars|is_pid|is_binary
 
-BASE_TYPE = atom|int|float|string|bool
+BASE_TYPE = atom|int|float|string|bool|binary
 BASE_LIST = list
+BASE_MAP = map
 BASE_PID = pid
 
 Rules.
@@ -33,15 +34,18 @@ Rules.
 ,     : {token, {',', TokenLine}}.
 /     : {token, {'/', TokenLine}}.
 
-{     : {token, {'{', TokenLine}}.
-}     : {token, {'}', TokenLine}}.
 \(    : {token, {'(', TokenLine}}.
 \)    : {token, {')', TokenLine}}.
 \|    : {token, {'|', TokenLine}}.
-\:\:    : {token, {':', TokenLine}}.
+\:\:  : {token, {cons_infix, TokenLine}}.
+\:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
 ()    : {token, {unit, TokenLine}}.
+#{    : {token, {map_open, TokenLine}}.
+{     : {token, {open_brace, TokenLine}}.
+}     : {token, {close_brace, TokenLine}}.
+=>    : {token, {map_arrow, TokenLine}}.
 
 %% Reserved words
 let         : {token, {'let', TokenLine}}.
@@ -57,10 +61,14 @@ spawn       : {token, {spawn, TokenLine}}.
 send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
+test        : {token, {'test', TokenLine}}.
+
+true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 
 %% Base types are the fundamental types available on the Erlang VM.
 {BASE_TYPE} : {token, {base_type, TokenLine, TokenChars}}.
 {BASE_LIST} : {token, {base_list, TokenLine}}.
+{BASE_MAP}  : {token, {base_map, TokenLine}}.
 {BASE_PID}  : {token, {base_pid, TokenLine}}.
 
 %% Type variables (nicked from OCaml):
@@ -79,6 +87,16 @@ after       : {token, {'after', TokenLine}}.
 %% Float
 [-]?{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 
+%% Binaries
+<< : {token, {bin_open, TokenLine}}.
+>> : {token, {bin_close, TokenLine}}.
+unit : {token, {bin_unit, TokenLine}}.
+size : {token, {bin_size, TokenLine}}.
+end : {token, {bin_end, TokenLine}}.
+sign : {token, {bin_sign, TokenLine}}.
+big|little|native : {token, {bin_endian, TokenLine, TokenChars}}.
+utf8 : {token, {bin_text_encoding, TokenChars}}.
+
 %% Symbol
 {SYM}  : {token, {symbol, TokenLine, TokenChars}}.
 
@@ -92,6 +110,12 @@ after       : {token, {'after', TokenLine}}.
 "(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
   {token, {string, TokenLine, S}}.
+
+%% Chars
+c"(\\"*|\\.|[^"\\])*" :
+  S = string:substr(TokenChars, 3, TokenLen - 3),
+  {token, {chars, TokenLine, S}}.
+
 
 %% Operators
 =    : {token, {assign, TokenLine}}.
@@ -118,19 +142,6 @@ _    : {token, {'_', TokenLine}}.
   {token, {comment_line, TokenLine, Text}}.
 (/\*([^*]|(\*+[^*/]))*\*+/)|(//.*) : {token, {comment_lines, TokenLine, TokenChars}}.
 
-%% Separators
-,     : {token, {',', TokenLine}}.
-/     : {token, {'/', TokenLine}}.
-
-{     : {token, {'{', TokenLine}}.
-}     : {token, {'}', TokenLine}}.
-\(    : {token, {'(', TokenLine}}.
-\)    : {token, {')', TokenLine}}.
-\|    : {token, {'|', TokenLine}}.
-\:\:    : {token, {':', TokenLine}}.
-\[    : {token, {'[', TokenLine}}.
-\]    : {token, {']', TokenLine}}.
-()    : {token, {unit, TokenLine}}.
 
 
 Erlang code.

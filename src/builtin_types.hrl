@@ -50,4 +50,7 @@
                           {is_bool, t_bool},
                           {is_list, t_list},
                           {is_pid, t_pid},
-                          {is_string, t_string}]).
+                          {is_string, t_string},
+                          {is_chars, t_chars},
+                          {is_binary, t_binary}]).
+

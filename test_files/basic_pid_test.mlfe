@@ -10,4 +10,4 @@ pid_fun x = receive with
     let sent = send x sender in
                     pid_fun x
 
-start_pid_fun x = spawn pid_fun [x]
+start_pid_fun x = spawn pid_fun x
