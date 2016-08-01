@@ -23,7 +23,7 @@ Make a new project with `rebar3 new app your_app_name` and in the
     {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
 
 Check out
-[the tour for the language basics](https://github.com/j14159/mlfe/Tour.md),
+[the tour for the language basics](https://github.com/j14159/mlfe/blob/master/Tour.md),
 put source files ending in `.mlfe` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
 
