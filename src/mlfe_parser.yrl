@@ -53,7 +53,7 @@ test
 use
 boolean int float atom string chars '_'
 symbol module_fun
-assign int_math float_math
+assign int_math float_math minus
 '[' ']' cons_infix
 bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
 map_open close_brace map_arrow
@@ -72,6 +72,8 @@ let in '(' ')' '/' ','
 eq neq gt lt gte lte.
 
 Rootsymbol expr.
+
+Unary 500 minus.
 
 %% Comments are stripped in the AST assembly right now but I want them 
 %% embedded soon.
@@ -155,10 +157,13 @@ test_case -> test string assign simple_expr :
   #mlfe_test{line=term_line('$1'), name='$2', expression='$4'}.
 
 op -> int_math : '$1'.
+op -> minus : '$1'.
 op -> float_math : '$1'.
 
 const -> boolean : '$1'.
+const -> minus int : {int, L, Val} = '$2', {int, L, 0-Val}.
 const -> int : '$1'.
+const -> minus float : {float, L, Val} = '$2', {float, L, 0-Val}.
 const -> float : '$1'.
 const -> atom : '$1'.
 const -> chars : '$1'.
@@ -369,6 +374,7 @@ Erlang code.
 make_infix(Op, A, B) ->
     Name = case Op of
       {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
+      {minus, L} -> {bif, '-', L, erlang, '-'};
       {int_math, L, OpString} ->
                    OpAtom =  list_to_atom(OpString),
                    {bif, OpAtom, L, erlang, OpAtom};
