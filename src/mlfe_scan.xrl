@@ -128,8 +128,9 @@ c"(\\"*|\\.|[^"\\])*" :
 =<   : {token, {lte, TokenLine}}.
 
 - : {token, {minus, TokenLine}}.
+\+ : {token, {plus, TokenLine}}.
 
-[\+\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
+[\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->   : {token, {'->', TokenLine}}.
 _    : {token, {'_', TokenLine}}.

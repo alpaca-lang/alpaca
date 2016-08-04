@@ -2,7 +2,7 @@ module basic_math
 
 export add2/1, add/2, dec/1, dec_alt/1, neg_float/1
 
-add2 x = add x 2
+add2 x = add x (+2)
 
 add x y = x + y
 
