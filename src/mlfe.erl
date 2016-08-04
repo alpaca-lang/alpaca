@@ -109,6 +109,9 @@ basic_math_compile_test() ->
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(3, N:add2(1)),
     ?assertEqual(5, N:add(2, 3)),
+    ?assertEqual(-1, N:dec(0)),
+    ?assertEqual(-1, N:dec_alt(0)),
+    ?assertEqual(4.0, N:neg_float(-4.0)),
     true = code:delete(N).
 
 basic_adt_compile_test() ->
