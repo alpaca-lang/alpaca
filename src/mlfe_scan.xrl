@@ -140,10 +140,10 @@ _    : {token, {'_', TokenLine}}.
 {BRK} : {token, {break, TokenLine}}.
 
 %% Comments
-//[.]*\n : 
+--[.]*\n :
   Text = string:sub_string(TokenChars, 3),
   {token, {comment_line, TokenLine, Text}}.
-(/\*([^*]|(\*+[^*/]))*\*+/)|(//.*) : {token, {comment_lines, TokenLine, TokenChars}}.
+({-([^-]|(-+[^}]))*-})|(--.*) : {token, {comment_lines, TokenLine, TokenChars}}.
 
 
 

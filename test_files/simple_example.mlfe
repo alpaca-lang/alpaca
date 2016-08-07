@@ -1,22 +1,22 @@
     module simple_example
 
-    // a basic top-level function:
+    -- a basic top-level function:
     add2 x = x + 2
 
     something_with_let_bindings x =
-      // a function:
+      -- a function:
       let adder a b = a + b in
-      // a variable (immutable):
+      -- a variable (immutable):
       let x_plus_2 = adder x 2 in
       add2 x
 
-    // a polymorphic ADT:
+    -- a polymorphic ADT:
     type messages 'x = 'x | Fetch pid 'x
 
-    /* A function that can be spawned to receive `messages int`
+    {- A function that can be spawned to receive `messages int`
        messages, that increments its state by received integers
        and can be queried for its state
-    */
+    -}
     will_be_a_process x = receive with
         i -> will_be_a_process (x + i)
       | Fetch sender ->

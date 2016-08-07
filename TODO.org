@@ -32,7 +32,7 @@ Use doc strings to specify types so that the correctness of documentation is enf
 #+BEGIN_SRC
 type even_odd = Even int | Odd int
 
-(* Determine if @x[int] is even or odd.  *)
+{- Determine if @x[int] is even or odd.  -}
 f x = match x % 2 with
     0 -> Even x
   | _ -> Odd x
@@ -41,12 +41,12 @@ In the above example, we specify that ~x~ must be an integer and leave it up to 
 #+BEGIN_SRC
 type even_odd = Even int | Odd int
 
-(* Determine if @x[float] is even or odd.
+{- Determine if @x[float] is even or odd.
 
    Because @x must be an integer to work with the modulo operator (%),
    this documentation string and the method are at odds so this should
    fail to type.
-*)
+-}
 f x = match x % 2 with
     0 -> Even x
   | _ -> Odd x
@@ -56,9 +56,9 @@ Fully specified, something like the following:
 #+BEGIN_SRC
 type even_odd = Even int | Odd int
 
-(* Determine if @x[int] is even or odd.
+{- Determine if @x[int] is even or odd.
    @return[even_odd]
-*)
+-}
 f x = match x % 2 with
     0 -> Even x
   | _ -> Odd x
