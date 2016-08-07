@@ -1,0 +1,111 @@
+* Records
+OCaml and Elm's approach to row polymorphism would be ideal here, biased towards concrete specification of records up front rather than ad-hoc.  Something like the following:
+
+#+BEGIN_SRC
+type rec1 = {x: float, y: int, z: atom}
+type rec2 = {x: float, y: int}
+
+-- call this with any mix of rec1 and rec2:
+add_two_xs a b =
+  match (a, b) with
+    ({x = x1}, {x = x2}) -> x1 + x2
+#+END_SRC
+
+The following should fail to type if all three records are in the same namespace (module) since ~rec3~ breaks the union of all occurrences of ~x~ _unless_ there's an ADT in scope that unions ~int~ and ~float~:
+#+BEGIN_SRC
+type rec1 = {x: float, y: int, z: atom}
+type rec2 = {x: float, y: int}
+type rec3 = {x: int, y: int}
+#+END_SRC
+
+Compiling these as maps probably is easiest but there may be a case (speed?  rigour?) for doing so as tuples at the expense of more compiler-generated code.
+
+* Type Ascriptions/Specifications
+It would be good if we could *partially* specify the types of functions, leaving it up to the inferencer to fill in the blanks.  There are two options at the moment:
+- types as part of documentation
+- separate type specifications (somewhat like Haskell)
+
+I currently prefer the former so that documentation correctness has the capability to be somewhat enforced.
+
+** Types In Documentation
+Use doc strings to specify types so that the correctness of documentation is enforced:
+#+BEGIN_SRC
+type even_odd = Even int | Odd int
+
+(* Determine if @x[int] is even or odd.  *)
+f x = match x % 2 with
+    0 -> Even x
+  | _ -> Odd x
+#+END_SRC
+In the above example, we specify that ~x~ must be an integer and leave it up to the inferencer to figure out the return type.  The following change should *fail* to type-check and thus not compile:
+#+BEGIN_SRC
+type even_odd = Even int | Odd int
+
+(* Determine if @x[float] is even or odd.
+
+   Because @x must be an integer to work with the modulo operator (%),
+   this documentation string and the method are at odds so this should
+   fail to type.
+*)
+f x = match x % 2 with
+    0 -> Even x
+  | _ -> Odd x
+#+END_SRC
+
+Fully specified, something like the following:
+#+BEGIN_SRC
+type even_odd = Even int | Odd int
+
+(* Determine if @x[int] is even or odd.
+   @return[even_odd]
+*)
+f x = match x % 2 with
+    0 -> Even x
+  | _ -> Odd x
+#+END_SRC
+
+This approach requires the full integration of comments into the AST.
+
+** Separate Specifications
+Alternatively we could use fairly typical specifications that still allow for partially specifying types when it's convenient.  Using the same example:
+#+BEGIN_SRC
+type even_odd = Even int | Odd int
+
+f x = match x % 2 with
+    0 -> Even x
+  | _ -> Odd x
+#+END_SRC
+
+In the above it would be convenient if any of the following would work:
+#+BEGIN_SRC
+-- let the inferencer figure out the return type:
+f: int -> _
+
+-- let the inferencer figure out the parameter type:
+f: _ -> even_odd
+
+-- be explicit:
+f: int -> even_odd
+#+END_SRC
+Records
+
+* ML-style Signatures, Modules, and Functors
+All of these will be useful and signatures with modules could form the basis of something like behaviours (compile modules to actual modules with a namespace prefix).
+
+It would be good if modules could be inferenced, to that end [[https://www.mpi-sws.org/~rossberg/1ml/][1ML]]'s approach is under consideration but I don't have a firm enough grasp of it yet.  Motivating example from [[https://www.mpi-sws.org/~rossberg/1ml/1ml.pdf][1ML – Core and Modules United (F-ing First-class Modules)]]:
+
+#+BEGIN_SRC
+module Table = if size > threshold then HashMap else TreeMap
+#+END_SRC
+
+Current reading list to figure it all out:
+- [[https://www.cs.cmu.edu/~rwh/papers/sharing/popl94.pdf][A Type-Theoretic Approach to Higher-Order Modules with Sharing]]
+- [[http://www.mpi-sws.org/~dreyer/papers/thoms/full.pdf][A Type System for Higher-Order Modules (Expanded Version)]]
+- [[http://www.mpi-sws.org/~skilpat/modsem/notes2.pdf][Type Systems for Modules Notes for Meeting #2]] - this is helping me grasp some of the underlying themes
+
+I'm not yet sure how 1ML will play with row polymorphism.
+
+* Code Formatter
+Similar to `go fmt`, a reformatting utility that operates on the AST directly in order to correctly format source files.  This likely requires:
+- comments as legitimate AST nodes
+- overhaul/regularization of existing AST nodes to allow comments to be attached to them (preserves expression-orientedness)
