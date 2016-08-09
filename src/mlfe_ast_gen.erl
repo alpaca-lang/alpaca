@@ -17,7 +17,7 @@ parse(Tokens) when is_list(Tokens) ->
     mlfe_parser:parse(Tokens).
 
 parse_module(NextVarNum, Text) when is_list(Text) ->
-    {ok, Tokens, _} = scanner:scan(Text),
+    {ok, Tokens, _} = mlfe_scanner:scan(Text),
     rebind_and_validate_module(NextVarNum, parse_module(Tokens, #mlfe_module{}));
 
 parse_module([], #mlfe_module{name=no_module}) ->
@@ -548,11 +548,11 @@ next_var(X) ->
 -ifdef(TEST).
 
 test_parse(S) ->
-    parse(scanner:scan(S)).
+    parse(mlfe_scanner:scan(S)).
 
 symbols_test_() ->
     [?_assertMatch({ok, {symbol, 1, "oneSymbol"}}, 
-                   parse(scanner:scan("oneSymbol")))
+                   parse(mlfe_scanner:scan("oneSymbol")))
     ].
 
 user_types_test_() ->
@@ -612,7 +612,7 @@ defn_test_() ->
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "x"},
                                       args=[], 
                                       body={int, 1, 5}}},
-                   parse(scanner:scan("x=5"))),
+                   parse(mlfe_scanner:scan("x=5"))),
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "double"}, 
                                        args=[{symbol, 1, "x"}],
                                        body=#mlfe_apply{
@@ -620,7 +620,7 @@ defn_test_() ->
                                                name={bif, '+', 1, erlang, '+'}, 
                                                args=[{symbol, 1, "x"},
                                                      {symbol, 1, "x"}]}}},
-                  parse(scanner:scan("double x = x + x"))),
+                  parse(mlfe_scanner:scan("double x = x + x"))),
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "add"}, 
                                       args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
                                       body=#mlfe_apply{
@@ -628,14 +628,14 @@ defn_test_() ->
                                               name={bif, '+', 1, erlang, '+'},
                                               args=[{symbol, 1, "x"},
                                                     {symbol, 1, "y"}]}}},
-                   parse(scanner:scan("add x y = x + y")))
+                   parse(mlfe_scanner:scan("add x y = x + y")))
     ].
 
 float_math_test_() ->
     [?_assertMatch({ok, #mlfe_apply{name={bif, '+', 1, erlang, '+'}}},
-                   parse(scanner:scan("2 + 1"))),
+                   parse(mlfe_scanner:scan("2 + 1"))),
      ?_assertMatch({ok, #mlfe_apply{name={bif, '+.', 1, erlang, '+'}}},
-                   parse(scanner:scan("2.0 +. 1.3")))
+                   parse(mlfe_scanner:scan("2.0 +. 1.3")))
     ].
 
 let_binding_test_() ->
@@ -651,7 +651,7 @@ let_binding_test_() ->
                            expr=#mlfe_apply{
                                    name={symbol, 1, "double"}, 
                                    args=[{int, 1, 2}]}}}, 
-                   parse(scanner:scan("let double x = x + x in double 2"))),
+                   parse(mlfe_scanner:scan("let double x = x + x in double 2"))),
      ?_assertMatch({ok, #var_binding{
                            name={symbol, 1, "x"},
                            to_bind=#mlfe_apply{
@@ -660,7 +660,7 @@ let_binding_test_() ->
                            expr=#mlfe_apply{
                                    name={symbol, 1, "double"},
                                    args=[{symbol, 1, "x"}]}}},
-                    parse(scanner:scan("let x = double 2 in double x"))),
+                    parse(mlfe_scanner:scan("let x = double 2 in double x"))),
      ?_assertMatch({ok, #mlfe_fun_def{
                            name={symbol, 1, "doubler"}, 
                            args=[{symbol, 1, "x"}],
@@ -676,7 +676,7 @@ let_binding_test_() ->
                                    expr=#mlfe_apply{
                                            name={symbol, 3, "double"},
                                            args=[{int, 3, 2}]}}}}, 
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "doubler x =\n"
                            "  let double x = x + x in\n"
                            "  double 2"))),
@@ -710,7 +710,7 @@ let_binding_test_() ->
                                                          #mlfe_apply{
                                                             name={symbol,1,"yer"},
                                                             args=[{symbol,1,"y"}]}]}}}}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "my_fun x y ="
                            "  let xer a = a + a in"
                            "  let yer b = b + b in"
@@ -720,50 +720,50 @@ let_binding_test_() ->
 application_test_() ->
     [?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "double"},
                                     args=[{int, 1, 2}]}},
-                  parse(scanner:scan("double 2"))),
+                  parse(mlfe_scanner:scan("double 2"))),
      ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "two"}, 
                                     args=[{symbol, 1, "symbols"}]}},
-                   parse(scanner:scan("two symbols"))),
+                   parse(mlfe_scanner:scan("two symbols"))),
      ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "x"}, 
                                     args=[{symbol, 1, "y"}, {symbol, 1, "z"}]}},
-                   parse(scanner:scan("x y z"))),
+                   parse(mlfe_scanner:scan("x y z"))),
      ?_assertMatch({ok, {error, {invalid_fun_application,
                             {int, 1, 1},
                            [{symbol, 1, "x"}, {symbol, 1, "y"}]}}},
-                    parse(scanner:scan("1 x y"))),
+                    parse(mlfe_scanner:scan("1 x y"))),
      ?_assertMatch({ok, #mlfe_apply{
                            name={'module', {symbol, 1, "fun"}, 2},
                            args=[{int, 1, 1}, {symbol, 1, "x"}]}},
-                   parse(scanner:scan("module.fun 1 x")))
+                   parse(mlfe_scanner:scan("module.fun 1 x")))
     ].
 
 module_def_test_() ->
     [?_assertMatch({ok, {module, 'test_mod'}}, 
-                   parse(scanner:scan("module test_mod"))),
+                   parse(mlfe_scanner:scan("module test_mod"))),
      ?_assertMatch({ok, {module, 'myMod'}}, 
-                   parse(scanner:scan("module myMod")))
+                   parse(mlfe_scanner:scan("module myMod")))
     ].
 
 export_test_() ->
     [?_assertMatch({ok, {export, [{"add", 2}]}},
-                  parse(scanner:scan("export add/2")))
+                  parse(mlfe_scanner:scan("export add/2")))
     ].
 
 expr_test_() ->
-    [?_assertMatch({ok, {int, 1, 2}}, parse(scanner:scan("2"))),
+    [?_assertMatch({ok, {int, 1, 2}}, parse(mlfe_scanner:scan("2"))),
      ?_assertMatch({ok, #mlfe_apply{type=undefined,
                                     name={bif, '+', 1, erlang, '+'}, 
                                     args=[{int, 1, 1}, 
                                           {int, 1, 5}]}},
-                  parse(scanner:scan("1 + 5"))),
+                  parse(mlfe_scanner:scan("1 + 5"))),
      ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "add"}, 
                                     args=[{symbol, 1, "x"},
                                           {int, 1, 2}]}},
-                   parse(scanner:scan("add x 2"))),
+                   parse(mlfe_scanner:scan("add x 2"))),
      ?_assertMatch({ok, 
                     #mlfe_apply{name={symbol, 1, "double"},
                                 args=[{symbol, 1, "x"}]}}, 
-                   parse(scanner:scan("(double x)"))),
+                   parse(mlfe_scanner:scan("(double x)"))),
      ?_assertMatch({ok, #mlfe_apply{
                            name={symbol, 1, "tuple_func"},
                            args=[#mlfe_tuple{
@@ -771,7 +771,7 @@ expr_test_() ->
                                     values=[{symbol, 1, "x"}, 
                                             {int, 1, 1}]},
                                  {symbol, 1, "y"}]}},
-                   parse(scanner:scan("tuple_func (x, 1) y")))
+                   parse(mlfe_scanner:scan("tuple_func (x, 1) y")))
     ].
 
 module_with_let_test() ->
@@ -813,7 +813,7 @@ match_test_() ->
                                              #mlfe_clause{
                                                 pattern={'_', 3}, 
                                                 result={symbol, 3, "non_zero"}}]}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "match x with\n"
                            " 0 -> zero\n"
                            "| _ -> non_zero\n"))),
@@ -829,7 +829,7 @@ match_test_() ->
                                                           result={atom, 4, 
                                                                   "more_than_one"}}
                          ]}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "match add x y with\n"
                            " 0 -> :zero\n"
                            "| 1 -> :one\n"
@@ -848,7 +848,7 @@ match_test_() ->
                                                   values=[{int, 3, 1}, 
                                                           {symbol, 3, "x"}]},
                                        result={atom, 3, "one_first"}}]}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "match x with\n"
                            "  (_, x) -> :anything_first\n"
                            "| (1, x) -> :one_first\n"))),
@@ -866,27 +866,27 @@ match_test_() ->
                                                                      {int, 2, 1}]},
                                                           {symbol, 2, "a"}]},
                                        result={atom, 2, "nested_tuple"}}]}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "match (x, y) with\n"
                            " ((_, 1), a) -> :nested_tuple")))
     ].
 
 tuple_test_() ->
     %% first no unary tuples:
-    [?_assertMatch({ok, {int, 1, 1}}, parse(scanner:scan("(1)"))),
+    [?_assertMatch({ok, {int, 1, 1}}, parse(mlfe_scanner:scan("(1)"))),
      ?_assertMatch({ok, #mlfe_tuple{arity=2, 
                                     values=[{int, 1, 1}, {int, 1, 2}]}},
-                   parse(scanner:scan("(1, 2)"))),
+                   parse(mlfe_scanner:scan("(1, 2)"))),
      ?_assertMatch({ok, #mlfe_tuple{arity=2,
                                     values=[{symbol, 1, "x"}, {int, 1, 1}]}},
-                   parse(scanner:scan("(x, 1)"))),
+                   parse(mlfe_scanner:scan("(x, 1)"))),
      ?_assertMatch({ok, #mlfe_tuple{
                            arity=2, 
                            values=[#mlfe_tuple{arity=2, 
                                                values=[{int, 1, 1}, 
                                                        {symbol, 1, "x"}]},
                                  {int, 1, 12}]}},
-                   parse(scanner:scan("((1, x), 12)")))
+                   parse(mlfe_scanner:scan("((1, x), 12)")))
     ].
 
 list_test_() ->
@@ -897,17 +897,17 @@ list_test_() ->
                                                   head={int, 1, 3},
                                                   tail={nil, 0}}}}},
                    test_parse("[1, 2, 3]")),
-     ?_assertMatch({ok, {nil, 1}}, parse(scanner:scan("[]"))),
+     ?_assertMatch({ok, {nil, 1}}, parse(mlfe_scanner:scan("[]"))),
      ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1}, tail={nil, 1}}},
-                   parse(scanner:scan("[1]"))),
+                   parse(mlfe_scanner:scan("[1]"))),
      ?_assertMatch({ok, #mlfe_cons{
                            head={symbol, 1, "x"},
                            tail=#mlfe_cons{head={int, 1, 1}, 
                                            tail={nil, 1}}}},
-                   parse(scanner:scan("x :: [1]"))),
+                   parse(mlfe_scanner:scan("x :: [1]"))),
      ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1},
                                    tail={symbol, 1, "y"}}},
-                   parse(scanner:scan("1 :: y"))),
+                   parse(mlfe_scanner:scan("1 :: y"))),
      ?_assertMatch({ok, #mlfe_match{
                            match_expr={symbol,1,"x"},
                            clauses=[#mlfe_clause{pattern={nil,2},
@@ -916,7 +916,7 @@ list_test_() ->
                                                             head={symbol,3,"h"},
                                                             tail={symbol,3,"t"}},
                                                  result={symbol,3,"h"}}]}},
-                   parse(scanner:scan(
+                   parse(mlfe_scanner:scan(
                            "match x with\n"
                            "  [] -> []\n"
                            "| h :: t -> h\n")))
@@ -926,7 +926,7 @@ binary_test_() ->
     [?_assertMatch({ok, #mlfe_binary{
                            line=1,
                            segments=[#mlfe_bits{line=1, value={int, 1, 1}}]}},
-                    parse(scanner:scan("<<1>>"))),
+                    parse(mlfe_scanner:scan("<<1>>"))),
      ?_assertMatch({ok, #mlfe_binary{
                           line=1,
                           segments=[#mlfe_bits{value={int, 1, 1},
@@ -935,13 +935,13 @@ binary_test_() ->
                                     #mlfe_bits{value={int, 1, 2},
                                                size=16,
                                                unit=1}]}},
-                   parse(scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
+                   parse(mlfe_scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
      ?_assertMatch({ok, #mlfe_binary{}},
-                   parse(scanner:scan("<<255: size=16 unit=1 sign=true end=little>>"))),
+                   parse(mlfe_scanner:scan("<<255: size=16 unit=1 sign=true end=little>>"))),
      ?_assertMatch({ok, #mlfe_binary{
                           segments=[#mlfe_bits{value={symbol, 1, "a"}}, 
                                     #mlfe_bits{value={symbol, 1, "b"}}]}},
-                   parse(scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
+                   parse(mlfe_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
     ].
 
 string_test_() ->
