@@ -1,0 +1,5 @@
+module basic_compile_file
+
+export double/1
+
+double n = n*2
