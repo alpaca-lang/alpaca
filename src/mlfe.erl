@@ -13,11 +13,19 @@
 % limitations under the License.
 -module(mlfe).
 
--export([compile/1, compile/2]).
+-export([ compile/1
+        , compile/2
+        , file/1
+        , file/2
+        ]).
 
-% Can be safely ignored, it is meant to be called by external OTP-apps and part
-% of the public API.
--ignore_xref([compile/1, compile/2]).
+%% Can be safely ignored, it is meant to be called by external OTP-apps and part
+%% of the public API.
+-ignore_xref([ compile/1
+             , compile/2
+             , file/1
+             , file/2
+             ]).
 
 -include("mlfe_ast.hrl").
 
@@ -30,9 +38,18 @@
           filename :: string(),
           bytes :: binary()}).
 
+-type compile_res() :: {ok, list(#compiled_module{})} | {error, term()}.
+
+-spec file(file:filename()) -> compile_res().
+file(File) ->
+    file(File, []).
+
+-spec file(file:filename(), list()) -> compile_res().
+file(File, Opts) ->
+    compile({files, [File]}, Opts).
+
 -spec compile({text, list(binary())}
-              |{files, list(string())}) -> {ok, list(#compiled_module{})} | 
-                                         {error, term()}.
+              |{files, list(string())}) -> compile_res().
 compile(What) ->
     compile(What, []).
 
@@ -101,8 +118,16 @@ type_modules(Mods) ->
 
 -ifdef(TEST).
 
+basic_file_test() ->
+    Res = file("test_files/basic_compile_file.mlfe"),
+    [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
+    ?assertEqual('basic_compile_file', N),
+    ?assertEqual("basic_compile_file.beam", FN),
+    ?assertMatch({module, N}, code:load_binary(N, FN, Bin)),
+    ?assertEqual(1998, N:double(999)).
+
 basic_math_compile_test() ->
-    Res = compile({files, ["test_files/basic_math.mlfe"]}),
+    Res = file("test_files/basic_math.mlfe", []),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     ?assertEqual('basic_math', N),
     ?assertEqual("basic_math.beam", FN),
