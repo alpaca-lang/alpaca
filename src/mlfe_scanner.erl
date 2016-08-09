@@ -1,4 +1,4 @@
--module(scanner).
+-module(mlfe_scanner).
 -export([scan/1]).
 
 -ifdef(TEST).

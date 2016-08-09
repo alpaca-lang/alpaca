@@ -1896,20 +1896,20 @@ typ_of(Env, Exp) ->
     end.
 
 from_code(C) ->
-    {ok, E} = mlfe_ast_gen:parse(scanner:scan(C)),
+    {ok, E} = mlfe_ast_gen:parse(mlfe_scanner:scan(C)),
     E.
 
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
 top_typ_of(Code) ->
-    Tokens = scanner:scan(Code),
+    Tokens = mlfe_scanner:scan(Code),
     {ok, E} = mlfe_ast_gen:parse(Tokens),
     typ_of(new_env(), E).
 
 %% Check the type of the expression in code from the "top-level" with a
 %% new environment that contains the provided ADTs.
 top_typ_with_types(Code, ADTs) ->
-    {ok, E} = mlfe_ast_gen:parse(scanner:scan(Code)),
+    {ok, E} = mlfe_ast_gen:parse(mlfe_scanner:scan(Code)),
     Env = new_env(),
     typ_of(Env#env{current_types=ADTs,
                    type_constructors=constructors(ADTs)}, 
