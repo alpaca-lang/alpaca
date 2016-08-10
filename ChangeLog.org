@@ -1,3 +1,10 @@
+* v0.2.2
+- Haskell-style comments, from https://github.com/tuncer
+- nested comments are errors, from https://github.com/yurrriq
+- file renaming (cleanup) from https://github.com/tuncer (scanner -> mlfe_scanner)
+- new compiler entry points from https://github.com/tuncer
+* v0.2.1
+- unary minus fix (parser corrections) from https://github.com/danabr.  Makes ~symbol-1~ work as ~symbol - 1~ does.
 * v0.2.0
 - dialyzer and xref fixes, Travis CI integration, courtesy of https://github.com/NobbZ
 - module_info synthesized by the compiler, courtesy of https://github.com/erszcz
