@@ -140,10 +140,11 @@ _    : {token, {'_', TokenLine}}.
 {BRK} : {token, {break, TokenLine}}.
 
 %% Comments
-//[.]*\n : 
+--[.]*\n :
   Text = string:sub_string(TokenChars, 3),
   {token, {comment_line, TokenLine, Text}}.
-(/\*([^*]|(\*+[^*/]))*\*+/)|(//.*) : {token, {comment_lines, TokenLine, TokenChars}}.
+({-([^-]|(-+[^}]))*-})|(--.*) :
+  validate_comment(TokenLine, string:substr(TokenChars, 3)).
 
 
 
@@ -152,3 +153,9 @@ Erlang code.
 -dialyzer({nowarn_function, yyrev/2}).
 
 -ignore_xref([format_error/1, string/2, token/2, token/3, tokens/2, tokens/3]).
+
+validate_comment(TokenLine, TokenChars) ->
+    case string:str(TokenChars, "{-") of
+        0 -> {token, {comment_lines, TokenLine, TokenChars}};
+        _ -> {error, {nested_comment, TokenChars}}
+    end.

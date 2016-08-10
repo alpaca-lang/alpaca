@@ -59,23 +59,23 @@ Here's an example module:
 
     module simple_example
 
-    // a basic top-level function:
+    -- a basic top-level function:
     add2 x = x + 2
 
     something_with_let_bindings x =
-      // a function:
+      -- a function:
       let adder a b = a + b in
-      // a variable (immutable):
+      -- a variable (immutable):
       let x_plus_2 = adder x 2 in
       add2 x
 
-    // a polymorphic ADT:
+    -- a polymorphic ADT:
     type messages 'x = 'x | Fetch pid 'x
 
-    /* A function that can be spawned to receive `messages int`
+    {- A function that can be spawned to receive `messages int`
        messages, that increments its state by received integers
        and can be queried for its state.
-    */
+    -}
     will_be_a_process x = receive with
         i -> will_be_a_process (x + i)
       | Fetch sender ->
@@ -249,18 +249,18 @@ Types start lower-case, type constructors upper-case.
 
 Integer and float math use different symbols as in OCaml, e.g.
 
-    1 + 2      // ok
-    1.0 + 2    // type error
-    1.0 + 2.0  // type error
-    1.0 +. 2.0 //ok
+    1 + 2      -- ok
+    1.0 + 2    -- type error
+    1.0 + 2.0  -- type error
+    1.0 +. 2.0 --ok
 
 Basic comparison functions are in place and are type checked, e.g. `>`
 and `<` will work both in a guard and as a function but:
 
-    1 > 2             // ok
-    1 < 2.0           // type error
-    "Hello" > "world" // ok
-    "a" > 1           // type error
+    1 > 2             -- ok
+    1 < 2.0           -- type error
+    "Hello" > "world" -- ok
+    "a" > 1           -- type error
 
 See `src/builtin_types.hrl` for the included functions.
 
@@ -338,12 +338,12 @@ An example:
 
     module try
 
-    export map/2  // separate multiple exports with commas
+    export map/2  -- separate multiple exports with commas
 
-    // type variables start with a single quote:
+    -- type variables start with a single quote:
     type maybe_success 'error 'ok = Error 'error | Success 'ok
 
-    // Apply a function to a successful result or preserve an error.
+    -- Apply a function to a successful result or preserve an error.
     map e f = match e with
         Error _ -> e
       | Success ok -> Success (f ok)

@@ -39,22 +39,22 @@ Here's a simple example of a module:
 #+BEGIN_SRC
 module my_module
 
-// one function that takes a single argument will be publicly accessible:
+-- one function that takes a single argument will be publicly accessible:
 export double/1
 
-/* Our double function defines an "add" function inside of itself.
+{- Our double function defines an "add" function inside of itself.
    Comments for now are C-style.
- */
+ -}
 double x =
   let add a b = a + b in
   add x x
 
 test "doubling 2 is 4" = some_test_checker (double 2) 4
 
-// Basic ADT with type constructors:
+-- Basic ADT with type constructors:
 type even_or_odd = Even int | Odd int
 
-// A function from integers to our ADT:
+-- A function from integers to our ADT:
 even_or_odd x =
   let rem = x % 2 in
   match rem with
@@ -70,10 +70,10 @@ Just ~true~ and ~false~, not atoms as in Erlang although they're encoded as such
 MLFE has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
 
 #+BEGIN_SRC
-1 + 2       // integer
-1.0 +. 2.0  // float
-1 +. 2      // type error, +. is only for floats
-1 +. 2.0    // type error, can't mix integers and floats
+1 + 2       -- integer
+1.0 +. 2.0  -- float
+1 +. 2      -- type error, +. is only for floats
+1 +. 2.0    -- type error, can't mix integers and floats
 #+END_SRC
 
 *** Atoms
@@ -94,12 +94,12 @@ If you're not familiar with binaries, there's some [[http://learnyousomeerlang.c
 <<"this text is assumed to be UTF-8">>
 <<"But we can also be explicit": type=utf8>>
 
-/* endian, sign, units and size all work, here's how we might encode
+{- endian, sign, units and size all work, here's how we might encode
  * a 32-bit, big-endian, unsigned integer:
- */
+ -}
 <<SomeInteger: type=int, size=8, unit=4, end=big, sign=false>>
 
-// of course we can just list off integers and floats too:
+-- of course we can just list off integers and floats too:
 <<1, 2, 3.14, 4, 5, 6.0>>
 #+END_SRC
 
@@ -118,23 +118,23 @@ third_string my_tuple =
   match my_tuple with
     (_, _, x), is_string x -> x
 
-third (1, 2, 3) // will return the integer 3
+third (1, 2, 3) -- will return the integer 3
 
-/* The following will fail compilation with a type error because
+{- The following will fail compilation with a type error because
  * third_string/1 only takes tuples that have strings as their
  * third element:
- */
+ -}
 third_string (1, 2, 3)
 
-/* Both of the following will also fail compilation since the function
+{- Both of the following will also fail compilation since the function
  * third/1 requires tuples with exactly 3 elements:
- */
+ -}
 third (1, 2)
 third (1, 2, 3, 4)
 
-/* This function will also fail to compile because tuples of arity 2
+{- This function will also fail to compile because tuples of arity 2
  * those of arity 3 are fundamentally different types:
- */
+ -}
 second_or_third my_tuple =
   match my_tuple with
       (_, _, x) -> x
@@ -150,7 +150,7 @@ We can build lists up with the cons operator ~::~ or as literals:
 "end" :: "a" :: "cons'd" :: "list" :: "with the nil literal []" :: []
 ["or just put", "it", "in", "square brackets"]
 
-// type error:
+-- type error:
 [:atom, "and a string"]
 #+END_SRC
 Let's revisit pattern matching here as well with both forms:
@@ -169,11 +169,11 @@ is_length_3 my_list =
 *** Maps
 Maps are type-checked as lists are but have separate types for their keys vs their values.  If we wanted a map with atom keys and string values, it could be expressed as the type ~map atom string~.  Functionality is relatively limited still but we can construct literal maps, add single key-value pairs to maps, and pattern match on them.  
 #+BEGIN_SRC
-#{:key => "value"}  // a literal
+#{:key => "value"}  -- a literal
 
-/* This will cause a type error because the types of the keys
+{- This will cause a type error because the types of the keys
  * don't match:
- */
+ -}
 #{:key1 => "value 1", "key 2" => "value 2"}
 #+END_SRC
 *** PIDs
@@ -182,19 +182,19 @@ Process identifiers (references to processes to which we can send messages) are 
 Inside of a function we can define both immutable variables and new functions:
 #+BEGIN_SRC
 f x =
-  let double y = y + y in      // this is a single argument function
-  let doubled_x = double x in  // a variable named "double_x"
-  doubled_x + x                // the expression returned as a result
+  let double y = y + y in      -- this is a single argument function
+  let doubled_x = double x in  -- a variable named "double_x"
+  doubled_x + x                -- the expression returned as a result
 #+END_SRC
 As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
 
 #+BEGIN_SRC
-/* Because the body of this function multiplies the parameter by a float,
+{- Because the body of this function multiplies the parameter by a float,
    the compiler knows that this function takes floats and returns floats
    (float -> float).  If we were to call this function with something other
    than a float (e.g. an integer or string), the compiler would fail with
    a type error.
-*/
+-}
 double x = x *. 2.0
 #+END_SRC
 Explicit type specifications for variables and functions is a planned feature for version 0.3.0.
@@ -224,10 +224,10 @@ The basic infix comparisons are all available and can be used in pattern matchin
 
 Some simple examples:
 #+BEGIN_SRC
-1 == 1     // true
-1 == 2     // false
-1 == 1.0   // type error
-:a == :a   // true
+1 == 1     -- true
+1 == 2     -- false
+1 == 1.0   -- type error
+:a == :a   -- true
 #+END_SRC
 
 The basic arithmetic functions also exist, ~+~, ~-~, ~*~, ~/~, and ~%~ for modulo.  The base forms are all for integers, just add ~.~ to them for the float versions except for modulo (e.g. ~+.~ or ~/.~).
@@ -262,25 +262,25 @@ g x =
 We can currently specify new types by combining existing ones, creating [[https://en.wikipedia.org/wiki/Algebraic_data_type][algebraic data types (ADTs)]].  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 
 #+BEGIN_SRC
-// a union:
+-- a union:
 type number = int | float
 #+END_SRC
 
 We can also use "type constructors" and type variables to be a bit more expressive.  Type constructors start with an uppercase letter (e.g. ~Like~ ~These~) and can have a single associated value.  Type variables start with a single apostrophe like 'this.  Here's a simple example of an option type that's also polymorphic/generic (like lists and maps):
 
 #+BEGIN_SRC
-/* `Some` has a single associated value, `None` stands alone.  Note that
+{- `Some` has a single associated value, `None` stands alone.  Note that
    we have the type variable 'a here that lets us be particular about which
    items in the type's members are polymorphic.
-*/
+-}
 type opt 'a = Some 'a | None
 
-/* Here's a map "get value by key" function that uses the new `opt` type.
+{- Here's a map "get value by key" function that uses the new `opt` type.
    It's polymorphic in that if we give this function a `map string int`
    and a string for `key`, the return type will be an `opt int`.  If we 
    instead give it a `map atom (list string)` and an atom for the key, 
    the return type will be `opt (list string)`.
-*/
+-}
 map_get key the_map =
   match the_map with
       #{key => value} -> Some value
@@ -345,10 +345,10 @@ add x y = x + y
 
 test "add 2 2 should result in 4" = test_equal (add 2 2) 4
 
-/* Test the equality of two terms, throwing an exception if they're
+{- Test the equality of two terms, throwing an exception if they're
    not equal.  The two terms will need to be the same type for any
    call to this to succeed:
- */
+ -}
 test_equal x y =
   match (x == y) with
       true -> :passed
@@ -356,7 +356,7 @@ test_equal x y =
         let msg = format_msg "Not equal:  ~w and ~w" x y in
         call_erlang :erlang :error [msg] with _ -> :failed
 
-// formats a failure message:
+-- formats a failure message:
 format_msg base x y =
   let m = call_erlang :io_lib :format [base, [x, y]] with msg -> msg in
   call_erlang :lists :flatten [m] with msg, is_chars msg -> msg
@@ -378,17 +378,17 @@ a_counting_function x =
       "add" -> a_counting_function x + 1
     | "sub" -> a_counting_function x - 1 
 
-/* If a_counting_function/1 is exported from the module, the following
+{- If a_counting_function/1 is exported from the module, the following
  * will spawn a `pid string`, that is, a "process that can receive 
  * strings".  Note that this is not a valid top-level entry for a module,
  * we just want a few simple examples.
- */
+ -}
 let my_pid = spawn a_counting_function 0
 
-// send "add" to `my_pid`:
+-- send "add" to `my_pid`:
 send "add" my_pid
 
-// type error, `my_pid` only knows how to receive strings:
+-- type error, `my_pid` only knows how to receive strings:
 send :add my_pid
 #+END_SRC
 
@@ -415,7 +415,7 @@ b () =
       "a" -> a ()
     | _ -> b ()
 
-// The above will fail compilation unless the following ADT is in scope:
+-- The above will fail compilation unless the following ADT is in scope:
 type a_and_b = string | atom
 #+END_SRC
 
