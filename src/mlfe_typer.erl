@@ -156,7 +156,7 @@ copy_cell(Cell, RefMap) ->
           type_bindings=[]     :: list({string(), t_adt()}),
           bindings=[]          :: list({term(), typ()|t_cell()}),
           modules=[]           :: list(mlfe_module())
-}).
+         }).
 
 -type env() :: #env{}.
 
@@ -168,12 +168,13 @@ new_env(Mods) ->
 %%% constructor's AST node and associated type.
 -spec constructors(list(mlfe_type())) -> list({string(), mlfe_constructor()}).
 constructors(Types) ->
-    MemberFolder = fun(#mlfe_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
-                           WithType = C#mlfe_constructor{type=Type},
-                           {Type, [{N, WithType}|Acc]};
-                      (_, Acc) ->
-                           Acc
-                   end,
+    MemberFolder =
+        fun(#mlfe_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
+                WithType = C#mlfe_constructor{type=Type},
+                {Type, [{N, WithType}|Acc]};
+           (_, Acc) ->
+                Acc
+        end,
     TypesFolder = fun(#mlfe_type{members=Ms}=Typ, Acc) ->
                           {_, Cs} = lists:foldl(MemberFolder, {Typ, []}, Ms),
                           [Cs|Acc]
@@ -264,10 +265,12 @@ module_name(#env{current_module=#mlfe_module{name=N}}) ->
 module_name(_) ->
     undefined.
 
--type unification_error() :: {error, {cannot_unify, atom(), integer(), typ(), typ()}}.
+-type unification_error() ::
+        {error, {cannot_unify, atom(), integer(), typ(), typ()}}.
 %% I make unification error tuples everywhere, just standardizing their
 %% construction here:
--spec unify_error(Env::env(), Line::integer(), typ(), typ()) -> unification_error().
+-spec unify_error(Env::env(), Line::integer(), typ(), typ()) ->
+                         unification_error().
 unify_error(Env, Line, Typ1, Typ2) ->
     {error, {cannot_unify, module_name(Env), Line, Typ1, Typ2}}.
 
@@ -315,9 +318,9 @@ unify(T1, T2, Env, Line) ->
             end,
             set_cell(T2, {link, T1}),
             ok;
-        %%% This section creeps me right out at the moment.  This is where some
-        %%% other operator that moves the receiver to the outside should be.
-        %%% Smells like a functor or monad to me.
+%%% This section creeps me right out at the moment.  This is where some
+%%% other operator that moves the receiver to the outside should be.
+%%% Smells like a functor or monad to me.
         {{t_arrow, _, A2}, {t_arrow, _, B2}} ->
             ArrowArgCells = fun(C) when is_pid(C) ->
                                     {t_arrow, Xs, _}=get_cell(C),
@@ -333,10 +336,11 @@ unify(T1, T2, Env, Line) ->
                                 case get_cell(C) of
                                     {t_receiver, _, _}=R ->
                                         R;
-                                    {link, CC} when is_pid(CC) -> case get_cell(CC) of
-                                                     {t_receiver, _, _}=R2 -> R2;
-                                                      _ -> none
-                                                  end;
+                                    {link, CC} when is_pid(CC) ->
+                                        case get_cell(CC) of
+                                            {t_receiver, _, _}=R2 -> R2;
+                                            _ -> none
+                                        end;
                                     {link, {t_receiver, _, _}=R2} -> R2;
                                     _ -> none
                                 end;
@@ -388,10 +392,11 @@ unify(T1, T2, Env, Line) ->
                                     case unify(A2, B2, Env, Line) of
                                         {error, _}=Err -> Err;
                                         ok ->
-                                            %% Re-wrapping with fresh cells because
-                                            %% I was running into cycles.  This
-                                            %% entire block of arrow unification
-                                            %% needs to be rewritten.
+                                            %% Re-wrapping with fresh cells
+                                            %% because I was running into
+                                            %% cycles. This entire block of
+                                            %% arrow unification needs to be
+                                            %% rewritten.
                                             Receiver = {t_receiver,
                                                         new_cell(unwrap(H)),
                                                         new_cell(unwrap(A2))},
@@ -439,22 +444,22 @@ unify(T1, T2, Env, Line) ->
                     ok
             end;
 
-        %%% Receivers unify with each other or in the case of a receiver and
-        %%% something else, the receiver unifies its result type with the other
-        %%% expression and both become receivers.
+%%% Receivers unify with each other or in the case of a receiver and
+%%% something else, the receiver unifies its result type with the other
+%%% expression and both become receivers.
         {{t_receiver, _, _}, {t_receiver, _, _}} ->
             RecvRes = fun(C) when is_pid(C) ->
                               {t_receiver, _, X} = get_cell(C),
                               X;
-                          ({t_receiver, _, X}) ->
+                         ({t_receiver, _, X}) ->
                               X
-                       end,
+                      end,
             RecvR = fun(C) when is_pid(C) ->
                             {t_receiver, X, _} = get_cell(C),
                             X;
                        ({t_receiver, X, _}) ->
                             X
-                       end,
+                    end,
             case unify(RecvR(T1), RecvR(T2), Env, Line) of
                 {error, _}=Err -> Err;
                 ok -> case unify(RecvRes(T1), RecvRes(T2), Env, Line) of
@@ -481,13 +486,14 @@ unify(T1, T2, Env, Line) ->
                 ok ->
                     set_cell(T2, {link, T1}),
                     ok
-                end;
+            end;
         {_A, {t_receiver, _Recv, _ResB}} ->
             unify(T2, T1, Env, Line);
         {_T1, _T2} ->
             case find_covering_type(_T1, _T2, Env, Line) of
                 {error, _}=Err ->
-                    io:format("UNIFY FAIL:  ~w AND ~w~n", [unwrap(T1), unwrap(T2)]),
+                    io:format("UNIFY FAIL:  ~w AND ~w~n",
+                              [unwrap(T1), unwrap(T2)]),
                     io:format("LINE ~w~n", [Line]),
                     Err;
                 {ok, _EnvOut, Union} ->
@@ -505,7 +511,8 @@ unify(T1, T2, Env, Line) ->
 -spec unify_adt(t_cell(), t_cell(), t_adt(), typ(), env(), Line::integer()) ->
                        ok |
                        {error, {cannot_unify, typ(), typ()}}.
-unify_adt(C1, C2, #adt{name=N, vars=AVars}=A, #adt{name=N, vars=BVars}, Env, L) ->
+unify_adt(C1, C2, #adt{name=N, vars=AVars}=A,
+          #adt{name=N, vars=BVars}, Env, L) ->
     %% Don't unify the keys _and_ vars:
     case unify_list([V||{_, V} <- AVars], [V||{_, V} <- BVars], Env, L) of
         {error, _}=Err -> Err;
@@ -514,7 +521,8 @@ unify_adt(C1, C2, #adt{name=N, vars=AVars}=A, #adt{name=N, vars=BVars}, Env, L) 
             set_cell(C2, {link, C1}),
             ok
     end;
-unify_adt(C1, C2, #adt{vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_atom(AtomTyp) ->
+unify_adt(C1, C2, #adt{vars=Vs, members=Ms}=A, AtomTyp, Env, L)
+  when is_atom(AtomTyp) ->
     case [M||M <- Ms, unwrap(M) =:= AtomTyp] of
         [_] ->
             set_cell(C1, A),
@@ -608,17 +616,17 @@ find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
                          end
                  end,
 
-    %%% We remove all of the types from the environment because we don't want
-    %%% to reinstantiate them again on unification failure when it's trying
-    %%% to unify the two types with the instantiated member types.
-    %%%
-    %%% For example, if `T1` is `t_int` and the first member of a type we're
-    %%% checking for valid union is anything _other_ that `t_int`, the call
-    %%% to `unify` in `try_types` will cause `unify` to call this method
-    %%% (`find_covering_type`) again, leading to instantiating all of the
-    %%% types all over again and eventually leading to a spawn limit error.
-    %%% By simply removing the types from the environment before proceeding,
-    %%% we avoid this cycle.
+    %% We remove all of the types from the environment because we don't want
+    %% to reinstantiate them again on unification failure when it's trying
+    %% to unify the two types with the instantiated member types.
+    %%
+    %% For example, if `T1` is `t_int` and the first member of a type we're
+    %% checking for valid union is anything _other_ that `t_int`, the call
+    %% to `unify` in `try_types` will cause `unify` to call this method
+    %% (`find_covering_type`) again, leading to instantiating all of the
+    %% types all over again and eventually leading to a spawn limit error.
+    %% By simply removing the types from the environment before proceeding,
+    %% we avoid this cycle.
     case lists:foldl(TypeFolder, {[], EnvIn#env{current_types=[]}}, Ts) of
         {error, _}=Err -> Err;
         {ADTs, EnvOut} ->
@@ -707,7 +715,8 @@ inst_type_members(ADT, [{mlfe_list, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstMem]} ->
-            inst_type_members(ADT, Rem, Env2, [new_cell({t_list, InstMem})|Memo])
+            inst_type_members(ADT, Rem, Env2,
+                              [new_cell({t_list, InstMem})|Memo])
     end;
 inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [KExp], Env, []) of
@@ -723,9 +732,11 @@ inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
 
 inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
-        {error, _}=Err -> Err;
+        {error, _}=Err ->
+            Err;
         {ok, Env2, _, [InstMem]} ->
-            inst_type_members(ADT, Rem, Env2, [new_cell({t_pid, InstMem})|Memo])
+            inst_type_members(ADT, Rem, Env2,
+                              [new_cell({t_pid, InstMem})|Memo])
     end;
 
 inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
@@ -739,7 +750,8 @@ inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
         {error, _}=Err ->
             Err;
         {ok, Env2, _, InstMembers} ->
-            inst_type_members(ADT, T, Env2, [new_cell({t_tuple, InstMembers})|Memo])
+            inst_type_members(ADT, T, Env2,
+                              [new_cell({t_tuple, InstMembers})|Memo])
     end;
 
 inst_type_members(ADT,
@@ -787,8 +799,10 @@ inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
     %% 20160603:  I have an awful lot of case ... of all over this
     %% codebase, trying a lineup of functions specific to this
     %% task here instead.  Sort of want Scala's `Try`.
-    ADT_f = fun({error, _}=Err) -> Err;
-               (#mlfe_constructor{type=#mlfe_type{}=T}=C) -> {C, inst_type(T, EnvIn)}
+    ADT_f = fun({error, _}=Err) ->
+                    Err;
+               (#mlfe_constructor{type=#mlfe_type{}=T}=C) ->
+                    {C, inst_type(T, EnvIn)}
             end,
     Cons_f = fun({_, {error, _}=Err}) ->Err;
                 ({C, {ok, Env, ADT, _}}) ->
@@ -857,7 +871,8 @@ inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
 %%
 %% The return is the instantiated type, the updated environment and the
 %% updated cache map.
--spec inst(typ(), integer(), env(), CachedMap::map()) -> {typ(), env(), map()} | {error, term()}.
+-spec inst(typ(), integer(), env(), CachedMap::map()) ->
+                  {typ(), env(), map()} | {error, term()}.
 inst({link, Typ}, Lvl, Env, CachedMap) ->
     inst(Typ, Lvl, Env, CachedMap);
 inst({unbound, _, _}=Typ, _, Env, M) ->
@@ -1061,28 +1076,31 @@ typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {new_cell({t_list, TL}), NV};
 typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
     {HTyp, NV1} = typ_of(Env, Lvl, H),
-    {TTyp, NV2} = case T of
-                      {nil, _} -> {new_cell({t_list, HTyp}), NV1};
-                      #mlfe_cons{}=Cons ->
-                          typ_of(update_counter(NV1, Env), Lvl, Cons);
-                      {symbol, L, _} = S ->
-                          {STyp, Next} =
-                              typ_of(update_counter(NV1, Env), Lvl, S),
-                          {TL, #env{next_var=Next2}} =
-                              new_var(Lvl, update_counter(Next, Env)),
-                          case unify(new_cell({t_list, TL}), STyp, Env, L) of
-                              {error, _} = E -> E;
-                              ok -> {STyp, Next2}
-                          end;
-                      #mlfe_apply{}=Apply ->
-                          {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
-                          case unify(new_cell({t_list, HTyp}), TApp, Env, apply_line(Apply)) of
-                              {error, _} = E -> E;
-                              ok -> {TApp, Next}
-                          end;
-                      NonList ->
-                          {error, {cons_to_non_list, NonList}}
-                  end,
+    {TTyp, NV2} =
+        case T of
+            {nil, _} -> {new_cell({t_list, HTyp}), NV1};
+            #mlfe_cons{}=Cons ->
+                typ_of(update_counter(NV1, Env), Lvl, Cons);
+            {symbol, L, _} = S ->
+                {STyp, Next} =
+                    typ_of(update_counter(NV1, Env), Lvl, S),
+                {TL, #env{next_var=Next2}} =
+                    new_var(Lvl, update_counter(Next, Env)),
+                case unify(new_cell({t_list, TL}), STyp, Env, L) of
+                    {error, _} = E -> E;
+                    ok -> {STyp, Next2}
+                end;
+            #mlfe_apply{}=Apply ->
+                {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
+                case unify(
+                       new_cell({t_list, HTyp}), TApp, Env, apply_line(Apply))
+                of
+                    {error, _} = E -> E;
+                    ok -> {TApp, Next}
+                end;
+            NonList ->
+                {error, {cons_to_non_list, NonList}}
+        end,
 
     %% TODO:  there's no error check here:
     ListType = case TTyp of
@@ -1165,22 +1183,24 @@ typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
     end;
 
 typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
-    Satisfy = fun() ->
-                      %% Naively assume a single call to the same function for now.
-                      %% does the module exist and does it export the function?
-                      case extract_fun(Env, Mod, X, Arity) of
-                          {error, _} = E -> E;
-                          {ok, Module, Fun} ->
-                              Env2 = Env#env{current_module=Module,
-                                             entered_modules=[Mod | Env#env.entered_modules]},
-                              case typ_of(Env2, Lvl, Fun) of
-                                  {error, _} = E -> E;
-                                  {TypF, NextVar} ->
-                                      typ_apply(update_counter(NextVar, Env),
-                                                Lvl, TypF, NextVar, Args, L)
-                              end
-                      end
-              end,
+    Satisfy =
+        fun() ->
+                %% Naively assume a single call to the same function for now.
+                %% does the module exist and does it export the function?
+                case extract_fun(Env, Mod, X, Arity) of
+                    {error, _} = E -> E;
+                    {ok, Module, Fun} ->
+                        EnteredModules = [Mod | Env#env.entered_modules],
+                        Env2 = Env#env{current_module=Module,
+                                       entered_modules=EnteredModules},
+                        case typ_of(Env2, Lvl, Fun) of
+                            {error, _} = E -> E;
+                            {TypF, NextVar} ->
+                                typ_apply(update_counter(NextVar, Env),
+                                          Lvl, TypF, NextVar, Args, L)
+                        end
+                end
+        end,
     Error = fun() ->
                     [CurrMod|_] = Env#env.entered_modules,
                     {error, {bidirectional_module_ref, Mod, CurrMod}}
@@ -1205,18 +1225,19 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
                   {bif, FunName, Line, _, _} -> {Line, FunName}
               end,
 
-    ForwardFun = fun() ->
-                         Mod = Env#env.current_module,
-                         case get_fun(Mod, FN, length(Args)) of
-                             {ok, _, Fun} ->
-                                 case typ_of(Env, Lvl, Fun) of
-                                     {error, _}=Err -> Err;
-                                     {TypF, NextVar} ->
-                                         typ_apply(Env, Lvl, TypF, NextVar, Args, L)
-                                 end;
-                             {error, _} = E -> E
-                         end
-                 end,
+    ForwardFun =
+        fun() ->
+                Mod = Env#env.current_module,
+                case get_fun(Mod, FN, length(Args)) of
+                    {ok, _, Fun} ->
+                        case typ_of(Env, Lvl, Fun) of
+                            {error, _}=Err -> Err;
+                            {TypF, NextVar} ->
+                                typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                        end;
+                    {error, _} = E -> E
+                end
+        end,
 
     case typ_of(Env, Lvl, N) of
         {error, {bad_variable_name, _}} -> ForwardFun();
@@ -1238,7 +1259,8 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
             %% unify the expression with the unified pattern:
             case unify(ETyp, PTyp, Env, Line) of
                 {error, _} = Err -> Err;
-                %% only need to return the result type of the unified clause types:
+                %% only need to return the result type of the unified
+                %% clause types:
                 ok -> {RTyp, NextVar2}
             end
     end;
@@ -1250,8 +1272,10 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R, line=L}) ->
             F = fun(_, {error, _}=Err) -> Err;
                    (G, {Typs, AccEnv}) ->
                         case typ_of(AccEnv, Lvl, G) of
-                            {error, _}=Err -> Err;
-                            {GTyp, NV} -> {[GTyp|Typs], update_counter(NV, AccEnv)}
+                            {error, _}=Err ->
+                                Err;
+                            {GTyp, NV} ->
+                                {[GTyp|Typs], update_counter(NV, AccEnv)}
                         end
                 end,
             case lists:foldl(F, {[], NewEnv}, Gs) of
@@ -1321,14 +1345,14 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
                            {[T|Typs], update_counter(X, EnvAcc)}
                    end,
     {TypedCs, #env{next_var=NV2}} = lists:foldl(
-                                           ClauseFolder,
-                                           {[], update_counter(NV, Env)}, Cs),
+                                      ClauseFolder,
+                                      {[], update_counter(NV, Env)}, Cs),
     UnifyFolder = fun(A, Acc) ->
-                             case unify(A, Acc, Env, L) of
-                                 ok -> Acc;
-                                 {error, _} = Err -> Err
-                             end
-                     end,
+                          case unify(A, Acc, Env, L) of
+                              ok -> Acc;
+                              {error, _} = Err -> Err
+                          end
+                  end,
     [FC|TCs] = lists:reverse(TypedCs),
 
     case lists:foldl(UnifyFolder, FC, TCs) of
@@ -1389,7 +1413,7 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
                     TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
                     {t_receiver, Recv2, Res2}=collapse_receivers(TRec, Env, Lvl),
                     X = {{t_receiver, Recv2,
-                      {t_arrow, JustTypes, Res2}}, NextVar},
+                          {t_arrow, JustTypes, Res2}}, NextVar},
                     X;
                 _ ->
                     {{t_arrow, JustTypes, T}, NextVar}
@@ -1398,8 +1422,8 @@ typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
 
 %% A function binding inside a function:
 typ_of(Env, Lvl, #fun_binding{
-               def=#mlfe_fun_def{name={symbol, _, N}}=E,
-               expr=E2}) ->
+                    def=#mlfe_fun_def{name={symbol, _, N}}=E,
+                    expr=E2}) ->
     {TypE, NextVar} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
@@ -1420,7 +1444,8 @@ type_bin_segments(#env{next_var=NV}, _Lvl, []) ->
 type_bin_segments(
   Env,
   Level,
-  [#mlfe_bits{value=V, type=T, line=L}|Rem]) when T == int; T == float; T == binary; T == utf8; T == latin1 ->
+  [#mlfe_bits{value=V, type=T, line=L}|Rem])
+  when T == int; T == float; T == binary; T == utf8; T == latin1 ->
     VTyp = typ_of(Env, Level, V),
     map_typ_of(Env, VTyp,
                fun(Env2, BitsTyp) ->
@@ -1475,33 +1500,35 @@ unify_map_pairs(Env, Lvl, [#mlfe_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
 %%% This was pulled out of typing match expressions since the exact same clause
 %%% type unification has to occur in match and receive expressions.
 unify_clauses(Env, Lvl, Cs) ->
-     ClauseFolder = fun(_, {error, _}=Err) -> Err;
-                       (C, {Clauses, EnvAcc}) ->
-                            case typ_of(EnvAcc, Lvl, C) of
-                                {error, _}=Err -> Err;
-                                {TypC, NV} ->
-                                    #mlfe_clause{line=Line} = C,
-                                    {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
-                            end
-                    end,
+    ClauseFolder =
+        fun(_, {error, _}=Err) -> Err;
+           (C, {Clauses, EnvAcc}) ->
+                case typ_of(EnvAcc, Lvl, C) of
+                    {error, _}=Err -> Err;
+                    {TypC, NV} ->
+                        #mlfe_clause{line=Line} = C,
+                        {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
+                end
+        end,
     case lists:foldl(ClauseFolder, {[], Env}, Cs) of
         {error, _}=Err -> Err;
         {TypedCs, #env{next_var=NextVar2}} ->
-            UnifyFolder = fun(_, {error, _}=Err) -> Err;
-                             ({Line, {t_clause, PA, _, RA}}, Acc) ->
-                                  case Acc of
-                                      {t_clause, PB, _, RB} = TypC ->
-                                          case unify(PA, PB, Env, Line) of
-                                              ok ->
-                                                  case unify(RA, RB, Env, Line) of
-                                                      ok -> TypC;
-                                                      {error, _} = Err -> Err
-                                                  end;
-                                              {error, _} = Err -> Err
-                                          end;
-                                      {error, _} = Err -> Err
-                                  end
-                          end,
+            UnifyFolder =
+                fun(_, {error, _}=Err) -> Err;
+                   ({Line, {t_clause, PA, _, RA}}, Acc) ->
+                        case Acc of
+                            {t_clause, PB, _, RB} = TypC ->
+                                case unify(PA, PB, Env, Line) of
+                                    ok ->
+                                        case unify(RA, RB, Env, Line) of
+                                            ok -> TypC;
+                                            {error, _} = Err -> Err
+                                        end;
+                                    {error, _} = Err -> Err
+                                end;
+                            {error, _} = Err -> Err
+                        end
+                end,
 
             [{_, FC}|TCs] = lists:reverse(TypedCs),
             case lists:foldl(UnifyFolder, FC, TCs) of
@@ -1566,13 +1593,17 @@ type_receive(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}) 
                 undefined ->
                     {new_cell({t_receiver, PTyp, RTyp}), Env2#env.next_var};
                 E -> case typ_of(Env2, Lvl, E) of
-                         {error, _}=Err -> Err;
+                         {error, _}=Err ->
+                             Err;
                          {Typ, NV} ->
                              Env3 = update_counter(NV, Env2),
                              CollapsedC = new_cell(Collapsed),
                              case unify(Typ, CollapsedC, Env3, Line) of
-                                 {error, _}=Err -> Err;
-                                 ok -> {new_cell({t_receiver, PTyp, CollapsedC}), NV}
+                                 {error, _}=Err ->
+                                     Err;
+                                 ok ->
+                                     {new_cell({t_receiver, PTyp, CollapsedC}),
+                                      NV}
                              end
                      end
             end
@@ -1592,7 +1623,8 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
             _ when is_pid(TypF) ->
                 case get_cell(TypF) of
                     {t_receiver, Recv, App} ->
-                        case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
+                        case typ_apply_no_recv(Env, Lvl, App,
+                                               NextVar, Args, Line) of
                             {error, _}=Err -> Err;
                             {Typ, NV} ->
                                 NewRec = {t_receiver, Recv, Typ},
@@ -1659,7 +1691,8 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
                               {not_found, atom(), string, integer()}} .
 extract_fun(Env, ModuleName, FunName, Arity) ->
     case [M || M <- Env#env.modules, M#mlfe_module.name =:= ModuleName] of
-        [] -> {error, {no_module, ModuleName}};
+        [] ->
+            {error, {no_module, ModuleName}};
         [Module] ->
             Exports = Module#mlfe_module.function_exports,
             case [F || {FN, A} = F <- Exports, FN =:= FunName, A =:= Arity] of
@@ -1681,7 +1714,8 @@ get_fun(Module, FunName, Arity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A) when length(Args) =:= A, N =:= FN ->
+filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A)
+  when length(Args) =:= A, N =:= FN ->
     {ok, Fun};
 filter_to_fun([_|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
@@ -1738,7 +1772,8 @@ add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
     {#mlfe_tuple{values=Vs}=Tup2, NN2} = rename_wildcards(Tup1, NameNum),
     {Env2, NN3} = lists:foldl(
                     fun (V, {EnvAcc, NN}) ->
-                            {_, _, NewEnv, NewNN} = add_bindings(V, EnvAcc, Lvl, NN),
+                            {_, _, NewEnv, NewNN} = add_bindings(V, EnvAcc,
+                                                                 Lvl, NN),
                             {NewEnv, NewNN}
                     end,
                     {Env, NN2},
@@ -1866,7 +1901,8 @@ rename_wildcards(O, N) ->
 
 dump_env(#env{next_var=V, bindings=Bs}) ->
     io:format("Next var number is ~w~n", [V]),
-    [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])||{N, T} <- Bs].
+    [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])
+     || {N, T} <- Bs].
 
 dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
@@ -1891,7 +1927,8 @@ new_env() ->
 
 %% Top-level typ_of unwraps the reference cells used in unification.
 %% This is only preserved for tests at the moment.
--spec typ_of(Env::env(), Exp::mlfe_expression()) -> {typ(), env()} | {error, term()}.
+-spec typ_of(Env::env(), Exp::mlfe_expression())
+            -> {typ(), env()} | {error, term()}.
 typ_of(Env, Exp) ->
     case typ_of(Env, 0, Exp) of
         {error, _} = E -> E;
@@ -1925,7 +1962,7 @@ typ_of_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
                    top_typ_of("double x = x + x"))
     , ?_assertMatch({{t_arrow, [{t_arrow, [A], B}, A], B}, _},
-                   top_typ_of("apply f x = f x"))
+                    top_typ_of("apply f x = f x"))
     , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
                     top_typ_of("doubler x = let double y = y + y in double x"))
     ].
@@ -2010,8 +2047,8 @@ pattern_match_error_line_test_() ->
 
 tuple_test_() ->
     [?_assertMatch({{t_arrow,
-                    [{t_tuple, [t_int, t_float]}],
-                    {t_tuple, [t_float, t_int]}}, _},
+                     [{t_tuple, [t_int, t_float]}],
+                     {t_tuple, [t_float, t_int]}}, _},
                    top_typ_of(
                      "f tuple = match tuple with\n"
                      " (i, f) -> (f +. 1.0, i + 1)")),
@@ -2052,8 +2089,8 @@ list_test_() ->
      %% so that one does NOT get unified with the other when they're
      %% potentially different types:
      ?_assertMatch({{t_arrow,
-                    [{t_tuple, [{t_list, t_int}, {unbound, _, _}, t_float]}],
-                    {t_tuple, [t_int, t_float]}}, _},
+                     [{t_tuple, [{t_list, t_int}, {unbound, _, _}, t_float]}],
+                     {t_tuple, [t_int, t_float]}}, _},
                    top_typ_of(
                      "f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
@@ -2133,15 +2170,16 @@ module_with_forward_reference_test() ->
         "adder x y = x + y",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    ?assertMatch({ok, #mlfe_module{
-                         functions=[
-                                    #mlfe_fun_def{
-                                       name={symbol, 5, "add"},
-                                       type={t_arrow, [t_int, t_int], t_int}},
-                                    #mlfe_fun_def{
-                                       name={symbol, 7, "adder"},
-                                       type={t_arrow, [t_int, t_int], t_int}}]}},
-                 typ_module(M, Env#env{current_module=M, modules=[M]})).
+    ?assertMatch(
+       {ok, #mlfe_module{
+               functions=[
+                          #mlfe_fun_def{
+                             name={symbol, 5, "add"},
+                             type={t_arrow, [t_int, t_int], t_int}},
+                          #mlfe_fun_def{
+                             name={symbol, 7, "adder"},
+                             type={t_arrow, [t_int, t_int], t_int}}]}},
+       typ_module(M, Env#env{current_module=M, modules=[M]})).
 
 simple_inter_module_test() ->
     Mod1 =
@@ -2155,13 +2193,14 @@ simple_inter_module_test() ->
     {ok, _, _, M2} = mlfe_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
-    ?assertMatch({ok, #mlfe_module{
-                         function_exports=[],
-                         functions=[
-                                    #mlfe_fun_def{
-                                       name={symbol, 3, "add"},
-                                       type={t_arrow, [t_int, t_int], t_int}}]}},
-                  typ_module(M1, Env)).
+    ?assertMatch(
+       {ok, #mlfe_module{
+               function_exports=[],
+               functions=[
+                          #mlfe_fun_def{
+                             name={symbol, 3, "add"},
+                             type={t_arrow, [t_int, t_int], t_int}}]}},
+       typ_module(M1, Env)).
 
 bidirectional_module_fail_test() ->
     Mod1 =
@@ -2200,13 +2239,15 @@ recursive_fun_test_() ->
                      "  0 -> :zero\n"
                      "| 1 -> 1\n"
                      "| y -> y - 1\n")),
-     ?_assertMatch({{t_arrow, [{t_list, {unbound, A, _}},
-                              {t_arrow, [{unbound, A, _}], {unbound, B, _}}],
-                    {t_list, {unbound, B, _}}}, _} when A =/= B,
-                   top_typ_of(
-                     "my_map l f = match l with\n"
-                     "  [] -> []\n"
-                     "| h :: t -> (f h) :: (my_map t f)"))
+     ?_assertMatch(
+        {{t_arrow, [{t_list, {unbound, A, _}},
+                    {t_arrow, [{unbound, A, _}], {unbound, B, _}}],
+          {t_list, {unbound, B, _}}}, _}
+        when A =/= B,
+             top_typ_of(
+               "my_map l f = match l with\n"
+               "  [] -> []\n"
+               "| h :: t -> (f h) :: (my_map t f)"))
     ].
 
 infinite_mutual_recursion_test() ->
@@ -2307,11 +2348,12 @@ type_guard_test_() ->
                      "   i, i == 1.0 -> i\n"
                      " | i, is_integer i -> i")),
      %% Guards should work with items from inside tuples:
-     ?_assertMatch({{t_arrow, [{t_tuple, [t_atom, {unbound, _, _}]}], t_atom}, _},
-                   top_typ_of(
-                     "f x = match x with\n"
-                     "   (msg, _), msg == :error -> :error\n"
-                     " | (msg, _) -> :ok"))
+     ?_assertMatch(
+        {{t_arrow, [{t_tuple, [t_atom, {unbound, _, _}]}], t_atom}, _},
+        top_typ_of(
+          "f x = match x with\n"
+          "   (msg, _), msg == :error -> :error\n"
+          " | (msg, _) -> :ok"))
 
     ].
 
@@ -2329,8 +2371,8 @@ union_adt_test_() ->
      %% Adding a type that unions integers and atoms should make the
      %% previously failing code pass.
      ?_assertMatch({{t_arrow,
-                         [t_int],
-                         #adt{name="t", vars=[]}},
+                     [t_int],
+                     #adt{name="t", vars=[]}},
                     _},
                    top_typ_with_types(
                      "f x = match x with "
@@ -2347,9 +2389,9 @@ type_tuple_test_() ->
     %% t_int and t_tuple in try_types which causes unify to reinstantiate the
     %% types and the cycle continues.  Both orderings of members need to work.
     [?_assertMatch({{t_arrow,
-                    [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
-                    t_atom},
-                   _},
+                     [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
+                     t_atom},
+                    _},
                    top_typ_with_types(
                      "f x = match x with "
                      "   0 -> :zero"
@@ -2361,9 +2403,9 @@ type_tuple_test_() ->
                                                       t_int]},
                                           t_int]}])),
      ?_assertMatch({{t_arrow,
-                    [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
-                    t_atom},
-                   _},
+                     [#adt{name="t", vars=[{"x", {unbound, t1, 0}}]}],
+                     t_atom},
+                    _},
                    top_typ_with_types(
                      "f x = match x with "
                      "   0 -> :zero"
@@ -2375,24 +2417,25 @@ type_tuple_test_() ->
                                              members=[{type_var, 1, "x"},
                                                       t_int]}]}])),
      %% A recursive type with a bad variable:
-     ?_assertMatch({error, {bad_variable, 1, "y"}},
-                   top_typ_with_types(
-                     "f x = match x with "
-                     " 0 -> :zero"
-                     "| (i, 0) -> :adt"
-                     "| (0, (i, 0)) -> :nested",
-                     [#mlfe_type{name={type_name, 1, "t"},
-                                 vars=[{type_var, 1, "x"}],
-                                 members=[t_int,
-                                          #mlfe_type_tuple{
-                                             members=[{type_var, 1, "x"},
-                                                      t_int]},
-                                         #mlfe_type_tuple{
-                                            members=[t_int,
-                                                     #mlfe_type{
-                                                        name={type_name, 1, "t"},
-                                                        vars=[{type_var, 1, "y"}]}
-                                                    ]}]}]))
+     ?_assertMatch(
+        {error, {bad_variable, 1, "y"}},
+        top_typ_with_types(
+          "f x = match x with "
+          " 0 -> :zero"
+          "| (i, 0) -> :adt"
+          "| (0, (i, 0)) -> :nested",
+          [#mlfe_type{name={type_name, 1, "t"},
+                      vars=[{type_var, 1, "x"}],
+                      members=[t_int,
+                               #mlfe_type_tuple{
+                                  members=[{type_var, 1, "x"},
+                                           t_int]},
+                               #mlfe_type_tuple{
+                                  members=[t_int,
+                                           #mlfe_type{
+                                              name={type_name, 1, "t"},
+                                              vars=[{type_var, 1, "y"}]}
+                                          ]}]}]))
     ].
 
 same_polymorphic_adt_union_test_() ->
@@ -2436,76 +2479,80 @@ type_constructor_test_() ->
                                           #mlfe_constructor{
                                              name={type_constructor, 1, "A"},
                                              arg={type_var, 1, "x"}}]}])),
-     ?_assertMatch({{t_arrow,
-                     [t_int],
-                     #adt{name="even_odd", vars=[]}},
-                    _},
-                   top_typ_with_types(
-                     "f x = match x % 2 with "
-                     "  0 -> Even x"
-                     "| 1 -> Odd x",
-                     [#mlfe_type{name={type_name, 1, "even_odd"},
-                                 vars=[],
-                                 members=[#mlfe_constructor{
-                                             name={type_constructor, 1, "Even"},
-                                             arg=t_int},
-                                          #mlfe_constructor{
-                                             name={type_constructor, 1, "Odd"},
-                                             arg=t_int}]}])),
-     ?_assertMatch({{t_arrow,
-                     [#adt{name="json_subset", vars=[]}],
-                     t_atom},
-                    _},
-                   top_typ_with_types(
-                     "f x = match x with "
-                     "  i, is_integer i -> :int"
-                     "| f, is_float f   -> :float"
-                     "| (k, v)          -> :keyed_value",
-                     [#mlfe_type{
-                         name={type_name, 1, "json_subset"},
-                         vars=[],
-                         members=[t_int,
-                                  t_float,
-                                  #mlfe_type_tuple{
-                                     members=[t_string,
-                                              #mlfe_type{
-                                                 name={type_name, 1, "json_subset"}}]}
-                                 ]}])),
-     ?_assertMatch({{t_arrow,
-                     [{unbound, V, _}],
-                     #adt{name="my_list", vars=[{"x", {unbound, V, _}}]}},
-                    _},
-                   top_typ_with_types(
-                     "f x = Cons (x, Cons (x, Nil))",
-                     [#mlfe_type{
-                         name={type_name, 1, "my_list"},
-                         vars=[{type_var, 1, "x"}],
-                         members=[#mlfe_constructor{
-                                     name={type_constructor, 1, "Cons"},
-                                     arg=#mlfe_type_tuple{
-                                            members=[{type_var, 1, "x"},
-                                                     #mlfe_type{
-                                                        name={type_name, 1, "my_list"},
-                                                        vars=[{type_var, 1, "x"}]}]}},
-                                  #mlfe_constructor{
-                                     name={type_constructor, 1, "Nil"},
-                                     arg=none}]}])),
-     ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
-                   top_typ_with_types(
-                     "f x = Cons (1, Cons (2.0, Nil))",
-                     [#mlfe_type{
-                         name={type_name, 1, "my_list"},
-                         vars=[{type_var, 1, "x"}],
-                         members=[#mlfe_constructor{
-                                     name={type_constructor, 1, "Cons"},
-                                     arg=#mlfe_type_tuple{
-                                            members=[{type_var, 1, "x"},
-                                                     #mlfe_type{
-                                                        name={type_name, 1, "my_list"},
-                                                        vars=[{type_var, 1, "x"}]}]}},
-                                  #mlfe_constructor{
-                                     name={type_constructor, 1, "Nil"},
-                                     arg=none}]}]))
+     ?_assertMatch(
+        {{t_arrow,
+          [t_int],
+          #adt{name="even_odd", vars=[]}},
+         _},
+        top_typ_with_types(
+          "f x = match x % 2 with "
+          "  0 -> Even x"
+          "| 1 -> Odd x",
+          [#mlfe_type{name={type_name, 1, "even_odd"},
+                      vars=[],
+                      members=[#mlfe_constructor{
+                                  name={type_constructor, 1, "Even"},
+                                  arg=t_int},
+                               #mlfe_constructor{
+                                  name={type_constructor, 1, "Odd"},
+                                  arg=t_int}]}])),
+     ?_assertMatch(
+        {{t_arrow,
+          [#adt{name="json_subset", vars=[]}],
+          t_atom},
+         _},
+        top_typ_with_types(
+          "f x = match x with "
+          "  i, is_integer i -> :int"
+          "| f, is_float f   -> :float"
+          "| (k, v)          -> :keyed_value",
+          [#mlfe_type{
+              name={type_name, 1, "json_subset"},
+              vars=[],
+              members=[t_int,
+                       t_float,
+                       #mlfe_type_tuple{
+                          members=[t_string,
+                                   #mlfe_type{
+                                      name={type_name, 1, "json_subset"}}]}
+                      ]}])),
+     ?_assertMatch(
+        {{t_arrow,
+          [{unbound, V, _}],
+          #adt{name="my_list", vars=[{"x", {unbound, V, _}}]}},
+         _},
+        top_typ_with_types(
+          "f x = Cons (x, Cons (x, Nil))",
+          [#mlfe_type{
+              name={type_name, 1, "my_list"},
+              vars=[{type_var, 1, "x"}],
+              members=[#mlfe_constructor{
+                          name={type_constructor, 1, "Cons"},
+                          arg=#mlfe_type_tuple{
+                                 members=[{type_var, 1, "x"},
+                                          #mlfe_type{
+                                             name={type_name, 1, "my_list"},
+                                             vars=[{type_var, 1, "x"}]}]}},
+                       #mlfe_constructor{
+                          name={type_constructor, 1, "Nil"},
+                          arg=none}]}])),
+     ?_assertMatch(
+        {error, {cannot_unify, _, _, t_float, t_int}},
+        top_typ_with_types(
+          "f x = Cons (1, Cons (2.0, Nil))",
+          [#mlfe_type{
+              name={type_name, 1, "my_list"},
+              vars=[{type_var, 1, "x"}],
+              members=[#mlfe_constructor{
+                          name={type_constructor, 1, "Cons"},
+                          arg=#mlfe_type_tuple{
+                                 members=[{type_var, 1, "x"},
+                                          #mlfe_type{
+                                             name={type_name, 1, "my_list"},
+                                             vars=[{type_var, 1, "x"}]}]}},
+                       #mlfe_constructor{
+                          name={type_constructor, 1, "Nil"},
+                          arg=none}]}]))
     ].
 
 %%% Type constructors that use underscores in pattern matches to discard actual
@@ -2523,18 +2570,19 @@ rename_constructor_wildcard_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    ?assertMatch({ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
-                                       name={symbol, 5, "a"},
-                                       type={t_arrow,
-                                             [#adt{
-                                                 name="t",
-                                                 vars=[],
-                                                 members=[{t_adt_cons, "Pair"},
-                                                          t_float,
-                                                          t_int]}],
-                                             t_atom}}]}},
-                 Res).
+    ?assertMatch(
+       {ok, #mlfe_module{
+               functions=[#mlfe_fun_def{
+                             name={symbol, 5, "a"},
+                             type={t_arrow,
+                                   [#adt{
+                                       name="t",
+                                       vars=[],
+                                       members=[{t_adt_cons, "Pair"},
+                                                t_float,
+                                                t_int]}],
+                                   t_atom}}]}},
+       Res).
 
 module_with_map_in_adt_test() ->
     Code =
@@ -2558,7 +2606,8 @@ module_with_adt_map_error_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    ?assertMatch({error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
+    ?assertMatch(
+       {error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
 
 json_union_type_test() ->
     Code =
@@ -2574,27 +2623,28 @@ json_union_type_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    ?assertMatch({ok,
-                  #mlfe_module{
-                     types=[#mlfe_type{
-                               module='json_union_type_test',
-                               name={type_name, 3, "json"}}],
-                     functions=[#mlfe_fun_def{
-                                   name={symbol, _, "json_to_atom"},
-                                   type={t_arrow,
-                                         [#adt{name="json",
-                                               members=[{t_list,
-                                                         {t_tuple,
-                                                          [t_string,
-                                                           #adt{name="json"}]}},
-                                                         {t_list,
-                                                          #adt{name="json"}},
-                                                          t_bool,
-                                                          t_string,
-                                                          t_float,
-                                                          t_int]}],
-                                               t_atom}}]}},
-                 Res).
+    ?assertMatch(
+       {ok,
+        #mlfe_module{
+           types=[#mlfe_type{
+                     module='json_union_type_test',
+                     name={type_name, 3, "json"}}],
+           functions=[#mlfe_fun_def{
+                         name={symbol, _, "json_to_atom"},
+                         type={t_arrow,
+                               [#adt{name="json",
+                                     members=[{t_list,
+                                               {t_tuple,
+                                                [t_string,
+                                                 #adt{name="json"}]}},
+                                              {t_list,
+                                               #adt{name="json"}},
+                                              t_bool,
+                                              t_string,
+                                              t_float,
+                                              t_int]}],
+                               t_atom}}]}},
+       Res).
 
 module_with_types_test() ->
     Code =
@@ -2608,23 +2658,24 @@ module_with_types_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    ?assertMatch({ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
-                                       name={symbol, 5, "a"},
-                                       type={t_arrow,
-                                             [#adt{
-                                                 name="t",
-                                                 vars=[],
-                                                 members=[{t_tuple,
-                                                           [t_string,
-                                                            #adt{name="t",
-                                                                 vars=[],
-                                                                 members=[]}]},
-                                                          t_float,
-                                                          t_int
-                                                          ]}],
-                                             t_atom}}]}},
-                 Res).
+    ?assertMatch(
+       {ok, #mlfe_module{
+               functions=[#mlfe_fun_def{
+                             name={symbol, 5, "a"},
+                             type={t_arrow,
+                                   [#adt{
+                                       name="t",
+                                       vars=[],
+                                       members=[{t_tuple,
+                                                 [t_string,
+                                                  #adt{name="t",
+                                                       vars=[],
+                                                       members=[]}]},
+                                                t_float,
+                                                t_int
+                                               ]}],
+                                   t_atom}}]}},
+       Res).
 
 module_matching_lists_test() ->
     Code =
@@ -2638,13 +2689,13 @@ module_matching_lists_test() ->
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
-                                     name={symbol, 5, "a"},
-                                     type={t_arrow,
-                                           [#adt{
-                                               name="my_list",
-                                               vars=[{"x", t_int}]}],
-                                           t_atom}}]}},
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, 5, "a"},
+                                       type={t_arrow,
+                                             [#adt{
+                                                 name="my_list",
+                                                 vars=[{"x", t_int}]}],
+                                             t_atom}}]}},
                  Res).
 
 %%% When ADTs are instantiated their variables and references to those
@@ -2667,33 +2718,34 @@ type_var_protection_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
-    ?assertMatch({ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
-                                     name={symbol, 5, "a"},
-                                     type={t_arrow,
-                                           [#adt{
-                                               name="my_list",
-                                               vars=[{"x", t_int}]}],
-                                           t_atom}},
-                                   #mlfe_fun_def{
-                                      name={symbol, 7, "b"},
-                                      type={t_arrow,
-                                            [#adt{
-                                                name="my_list",
-                                                vars=[{"x", t_float}]}],
-                                            t_atom}},
-                                   #mlfe_fun_def{
-                                      name={symbol, 9, "c"},
-                                      type={t_arrow,
-                                            [t_unit],
-                                            {t_tuple,
-                                             [#adt{
-                                                 name="my_list",
-                                                 vars=[{"x", t_float}]},
-                                              #adt{
-                                                 name="my_list",
-                                                 vars=[{"x", t_int}]}]}}}]}},
-                 Res).
+    ?assertMatch(
+       {ok, #mlfe_module{
+               functions=[#mlfe_fun_def{
+                             name={symbol, 5, "a"},
+                             type={t_arrow,
+                                   [#adt{
+                                       name="my_list",
+                                       vars=[{"x", t_int}]}],
+                                   t_atom}},
+                          #mlfe_fun_def{
+                             name={symbol, 7, "b"},
+                             type={t_arrow,
+                                   [#adt{
+                                       name="my_list",
+                                       vars=[{"x", t_float}]}],
+                                   t_atom}},
+                          #mlfe_fun_def{
+                             name={symbol, 9, "c"},
+                             type={t_arrow,
+                                   [t_unit],
+                                   {t_tuple,
+                                    [#adt{
+                                        name="my_list",
+                                        vars=[{"x", t_float}]},
+                                     #adt{
+                                        name="my_list",
+                                        vars=[{"x", t_int}]}]}}}]}},
+       Res).
 
 type_var_protection_fail_unify_test() ->
     Code =
@@ -2705,7 +2757,8 @@ type_var_protection_fail_unify_test() ->
     Env = new_env(),
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Res = typ_module(M, Env),
-    ?assertMatch({error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
+    ?assertMatch(
+       {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
 
 type_error_in_test_test() ->
     Code =
@@ -2713,7 +2766,8 @@ type_error_in_test_test() ->
         "add x y = x + y\n\n"
         "test \"add floats\" = add 1.0 2.0",
     Res = module_typ_and_parse(Code),
-    ?assertEqual({error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
+    ?assertEqual(
+       {error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
 
 %% At the moment we don't care what the type of the test expression is,
 %% only that it type checks.
@@ -2724,7 +2778,7 @@ typed_tests_test() ->
         "test \"add floats\" = add 1 2",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, #mlfe_module{
-                        tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
+                         tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
                  Res).
 
 
@@ -2777,21 +2831,21 @@ receive_test_() ->
                  "  i -> f (i - x)",
              ?assertMatch(
                 {ok, #mlfe_module{
-                       functions=[#mlfe_fun_def{
-                                     name={symbol, 3, "f"},
-                                     type={t_receiver,
-                                           t_int,
-                                           {t_arrow,
-                                            [t_int],
-                                            t_atom}}},
-                                  #mlfe_fun_def{
-                                     name={symbol, 5, "g"},
-                                     type={t_receiver,
-                                           t_int,
-                                           {t_arrow,
-                                            [t_int],
-                                            t_atom}}}
-                                 ]}},
+                        functions=[#mlfe_fun_def{
+                                      name={symbol, 3, "f"},
+                                      type={t_receiver,
+                                            t_int,
+                                            {t_arrow,
+                                             [t_int],
+                                             t_atom}}},
+                                   #mlfe_fun_def{
+                                      name={symbol, 5, "g"},
+                                      type={t_receiver,
+                                            t_int,
+                                            {t_arrow,
+                                             [t_int],
+                                             t_atom}}}
+                                  ]}},
                 module_typ_and_parse(Code))
      end,
      fun() ->
@@ -2805,12 +2859,12 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #mlfe_module{
                         functions=[#mlfe_fun_def{
-                                     name={symbol, 5, "a"},
-                                     type={t_receiver,
-                                           #adt{name="t"},
-                                           {t_arrow,
-                                            [t_unit],
-                                            t_rec}}},
+                                      name={symbol, 5, "a"},
+                                      type={t_receiver,
+                                            #adt{name="t"},
+                                            {t_arrow,
+                                             [t_unit],
+                                             t_rec}}},
                                    #mlfe_fun_def{
                                       name={symbol, 7, "b"},
                                       type={t_receiver,
@@ -2865,44 +2919,45 @@ spawn_test_() ->
                  " i -> f (x + i)\n\n"
                  "start_f init = spawn f init",
              ?assertMatch({ok, #mlfe_module{
-                                 functions=[#mlfe_fun_def{
-                                               name={symbol, 5, "f"},
-                                               type={t_receiver,
-                                                     t_int,
-                                                     {t_arrow,
+                                  functions=[#mlfe_fun_def{
+                                                name={symbol, 5, "f"},
+                                                type={t_receiver,
+                                                      t_int,
+                                                      {t_arrow,
+                                                       [t_int],
+                                                       t_rec}}},
+                                             #mlfe_fun_def{
+                                                name={symbol, 7, "start_f"},
+                                                type={t_arrow,
                                                       [t_int],
-                                                      t_rec}}},
-                                            #mlfe_fun_def{
-                                               name={symbol, 7, "start_f"},
-                                               type={t_arrow,
-                                                     [t_int],
-                                                     {t_pid, t_int}
-                                              }}]}},
+                                                      {t_pid, t_int}
+                                                     }}]}},
                           module_typ_and_parse(Code))
      end
-     , fun() ->
-               Code =
-                   "module spawn_composed_receiver\n\n"
-                   "recv () = receive with "
-                   "  i, is_integer i -> i\n\n"
-                   "not_recv () = (recv ()) + 2",
-               ?assertMatch({ok, #mlfe_module{
-                                   functions=[#mlfe_fun_def{
-                                                name={symbol, 3, "recv"},
-                                                type={t_receiver,
-                                                      t_int,
-                                                      {t_arrow,
-                                                       [t_unit],
-                                                       t_int}}},
-                                              #mlfe_fun_def{
-                                                name={symbol, 5, "not_recv"},
-                                                type={t_receiver,
-                                                      t_int,
-                                                      {t_arrow,
-                                                       [t_unit],
-                                                       t_int}}}]}},
-                            module_typ_and_parse(Code))
-     end
+    , fun() ->
+              Code =
+                  "module spawn_composed_receiver\n\n"
+                  "recv () = receive with "
+                  "  i, is_integer i -> i\n\n"
+                  "not_recv () = (recv ()) + 2",
+              ?assertMatch(
+                 {ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, 3, "recv"},
+                                       type={t_receiver,
+                                             t_int,
+                                             {t_arrow,
+                                              [t_unit],
+                                              t_int}}},
+                                    #mlfe_fun_def{
+                                       name={symbol, 5, "not_recv"},
+                                       type={t_receiver,
+                                             t_int,
+                                             {t_arrow,
+                                              [t_unit],
+                                              t_int}}}]}},
+                 module_typ_and_parse(Code))
+      end
     , fun() ->
               Code =
                   "module spawn_composed_pid\n\n"
@@ -2915,27 +2970,28 @@ spawn_test_() ->
                   "    A xx -> a (x + xx)\n"
                   "  | B xx -> b (xx + x)\n\n"
                   "start_a init = spawn a init",
-              ?assertMatch({ok, #mlfe_module{
-                                   functions=[#mlfe_fun_def{
-                                                 name={symbol, _, "a"},
-                                                 type={t_receiver,
-                                                       #adt{name="t"},
-                                                       {t_arrow,
-                                                        [t_int],
-                                                        t_rec}}},
-                                              #mlfe_fun_def{
-                                                 name={symbol, _, "b"},
-                                                type={t_receiver,
-                                                      #adt{name="t"},
-                                                      {t_arrow,
-                                                       [t_int],
-                                                       t_rec}}},
-                                              #mlfe_fun_def{
-                                                 name={symbol, _, "start_a"},
-                                                 type={t_arrow,
-                                                       [t_int],
-                                                       {t_pid, #adt{name="t"}}}}]}},
-                           module_typ_and_parse(Code))
+              ?assertMatch(
+                 {ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, _, "a"},
+                                       type={t_receiver,
+                                             #adt{name="t"},
+                                             {t_arrow,
+                                              [t_int],
+                                              t_rec}}},
+                                    #mlfe_fun_def{
+                                       name={symbol, _, "b"},
+                                       type={t_receiver,
+                                             #adt{name="t"},
+                                             {t_arrow,
+                                              [t_int],
+                                              t_rec}}},
+                                    #mlfe_fun_def{
+                                       name={symbol, _, "start_a"},
+                                       type={t_arrow,
+                                             [t_int],
+                                             {t_pid, #adt{name="t"}}}}]}},
+                 module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
@@ -2954,20 +3010,20 @@ spawn_test_() ->
                  {error, {cannot_unify, _, _, #adt{name="u"}, #adt{name="t"}}},
                  module_typ_and_parse(Code))
       end
-     , fun() ->
-               Code =
-                   "module non_receiver_pid\n\n"
-                   "export f/1, start_f/1\n\n"
-                   "f x = f (x + 1)\n\n"
-                   "start_f () = spawn f 0",
-               ?assertMatch(
-                  {ok, #mlfe_module{
-                          functions=[#mlfe_fun_def{
-                                        name={symbol, _, "f"},
-                                        type={t_arrow, [t_int], t_rec}},
-                                     #mlfe_fun_def{}]}},
-                  module_typ_and_parse(Code))
-       end
+    , fun() ->
+              Code =
+                  "module non_receiver_pid\n\n"
+                  "export f/1, start_f/1\n\n"
+                  "f x = f (x + 1)\n\n"
+                  "start_f () = spawn f 0",
+              ?assertMatch(
+                 {ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       name={symbol, _, "f"},
+                                       type={t_arrow, [t_int], t_rec}},
+                                    #mlfe_fun_def{}]}},
+                 module_typ_and_parse(Code))
+      end
     ].
 
 send_message_test_() ->

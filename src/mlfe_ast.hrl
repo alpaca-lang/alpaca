@@ -151,10 +151,10 @@
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
 -record(mlfe_type_tuple, {
-                         members=[] :: list(mlfe_base_type()
-                                            | mlfe_type_var()
-                                            | mlfe_poly_type())
-                        }).
+          members=[] :: list(mlfe_base_type()
+                             | mlfe_type_var()
+                             | mlfe_poly_type())
+         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
 %% Explicit built-in list type for use in ADT definitions.
@@ -341,8 +341,7 @@
                          | mlfe_type_check()
                          | mlfe_binding()
                          | mlfe_fun_def()
-                         | mlfe_type_import()
-                           .
+                         | mlfe_type_import().
 
 -record(fun_binding, {def :: mlfe_fun_def(),
                       expr :: mlfe_expression()
@@ -364,7 +363,12 @@
 %% actual Erlang BIF.  Making the distinction between the MLFE and Erlang
 %% name to support something like '+' for integers and '+.' for floats.
 -type mlfe_bif_name() ::
-        {bif, MlfeFun::atom(), Line::integer(), Module::atom(), ErlangFun::atom()}.
+        { bif
+        , MlfeFun::atom()
+        , Line::integer()
+        , Module::atom()
+        , ErlangFun::atom()
+        }.
 
 %%% A function application can occur in one of 4 ways:
 %%%
@@ -386,7 +390,7 @@
                                      | mlfe_symbol()
                                      | mlfe_bif_name(),
                      args=[] :: list(mlfe_expression())
-                     }).
+                    }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
 -record (mlfe_fun_def, {
@@ -399,7 +403,7 @@
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
 
 -record(mlfe_type_import, {module=undefined :: atom(),
-                          type=undefined :: string()}).
+                           type=undefined :: string()}).
 -type mlfe_type_import() :: #mlfe_type_import{}.
 
 -record(mlfe_module, {
