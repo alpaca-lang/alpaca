@@ -1,3 +1,5 @@
+    -- An example module
+
     module simple_example
 
     -- a basic top-level function:
