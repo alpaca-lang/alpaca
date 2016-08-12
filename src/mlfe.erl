@@ -1,16 +1,19 @@
-% Copyright 2016 Jeremy Pierre
-%
-% Licensed under the Apache License, Version 2.0 (the "License");
-% you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
-%
-%     http://www.apache.org/licenses/LICENSE-2.0
-%
-% Unless required by applicable law or agreed to in writing, software
-% distributed under the License is distributed on an "AS IS" BASIS,
-% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-% See the License for the specific language governing permissions and
-% limitations under the License.
+%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%% ex: ft=erlang ts=4 sw=4 et
+%%%
+%%% Copyright 2016 Jeremy Pierre
+%%%
+%%% Licensed under the Apache License, Version 2.0 (the "License");
+%%% you may not use this file except in compliance with the License.
+%%% You may obtain a copy of the License at
+%%%
+%%%     http://www.apache.org/licenses/LICENSE-2.0
+%%%
+%%% Unless required by applicable law or agreed to in writing, software
+%%% distributed under the License is distributed on an "AS IS" BASIS,
+%%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%%% See the License for the specific language governing permissions and
+%%% limitations under the License.
 -module(mlfe).
 
 -export([ compile/1
@@ -72,7 +75,7 @@ compile({files, Filenames}, Opts) ->
     {ok, _, Mods} = type_modules(parse_modules(Code)),
     Compiled = lists:foldl(fun(M, Acc) -> [compile_module(M, Opts)|Acc] end, [], Mods),
     Compiled.
-    
+
 
 compile_module(#mlfe_module{name=N}=Mod, Opts) ->
     {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
@@ -212,9 +215,9 @@ basic_binary_test() ->
     ?assertEqual(3, M:first_three_bits(<<2#01100000>>)),
 
     ?assertEqual(<<"안녕"/utf8>>, M:utf8_bins(unit)),
-    
+
     ?assertEqual(<<" world">>, M:drop_hello(<<"hello world">>)),
-    
+
     code:delete(M).
 
 basic_unit_tests_test() ->
