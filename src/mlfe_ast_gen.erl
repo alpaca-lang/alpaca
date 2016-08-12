@@ -141,6 +141,8 @@ update_memo(_, Bad) ->
 %% Select a discrete batch of tokens to parse.  This basically wants a sequence
 %% from the beginning of a top-level expression to a recognizable break between
 %% it and the next discrete expression (e.g. two newlines).
+next_batch([{break, _}|Rem], []=Memo) ->
+    next_batch(Rem, Memo);
 next_batch([{break, _}|Rem], Memo) ->
     {lists:reverse(Memo), Rem};
 %% TODO:  comments should get embedded in the AST for a "go fmt"-like tool as
