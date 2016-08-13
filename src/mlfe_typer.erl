@@ -2295,16 +2295,16 @@ terminating_mutual_recursion_test() ->
 ffi_test_() ->
     [?_assertMatch({t_int, _},
                    top_typ_of(
-                     "call_erlang :io :format [\"One is ~w~n\", [1]] with\n"
+                     "beam :io :format [\"One is ~w~n\", [1]] with\n"
                      " _ -> 1")),
      ?_assertMatch({error, {cannot_unify, undefined, 1, t_atom, t_int}},
                    top_typ_of(
-                     "call_erlang :a :b [1] with\n"
+                     "beam :a :b [1] with\n"
                      "  (:ok, x) -> 1\n"
                      "| (:error, x) -> :error")),
      ?_assertMatch({{t_arrow, [{unbound, _, _}], t_atom}, _},
                    top_typ_of(
-                     "f x = call_erlang :a :b [x] with\n"
+                     "f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
                      "| _ -> :not_one"))
 
@@ -2340,7 +2340,7 @@ type_guard_test_() ->
      %% type in the pattern for use in the resulting expression:
      ?_assertMatch({t_int, _},
                    top_typ_of(
-                     "call_erlang :a :b [5] with\n"
+                     "beam :a :b [5] with\n"
                      "   :one -> 1\n"
                      " | i, i == 2.0 -> 2\n"
                      " | i, is_integer i -> i\n")),
@@ -2348,7 +2348,7 @@ type_guard_test_() ->
      %% should result in a type error:
      ?_assertMatch({error, {cannot_unify, _, _, t_int, t_float}},
                    top_typ_of(
-                     "call_erlang :a :b [2] with\n"
+                     "beam :a :b [2] with\n"
                      "   i, i == 1.0 -> i\n"
                      " | i, is_integer i -> i")),
      %% Guards should work with items from inside tuples:

@@ -55,7 +55,7 @@ let         : {token, {'let', TokenLine}}.
 in          : {token, {in, TokenLine}}.
 match       : {token, {match, TokenLine}}.
 with        : {token, {with, TokenLine}}.
-call_erlang : {token, {call_erlang, TokenLine}}.
+beam        : {token, {beam, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type        : {token, {type_declare, TokenLine}}.
