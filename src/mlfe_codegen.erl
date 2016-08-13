@@ -1,16 +1,18 @@
-% Copyright 2016 Jeremy Pierre
-%
-% Licensed under the Apache License, Version 2.0 (the "License");
-% you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
-%
-%     http://www.apache.org/licenses/LICENSE-2.0
-%
-% Unless required by applicable law or agreed to in writing, software
-% distributed under the License is distributed on an "AS IS" BASIS,
-% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-% See the License for the specific language governing permissions and
-% limitations under the License.
+%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%% ex: ft=erlang ts=4 sw=4 et
+%%% Copyright 2016 Jeremy Pierre
+%%%
+%%% Licensed under the Apache License, Version 2.0 (the "License");
+%%% you may not use this file except in compliance with the License.
+%%% You may obtain a copy of the License at
+%%%
+%%%     http://www.apache.org/licenses/LICENSE-2.0
+%%%
+%%% Unless required by applicable law or agreed to in writing, software
+%%% distributed under the License is distributed on an "AS IS" BASIS,
+%%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%%% See the License for the specific language governing permissions and
+%%% limitations under the License.
 
 -module(mlfe_codegen).
 -export([gen/2]).
@@ -23,24 +25,26 @@
 
 gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
-       name=ModuleName, 
-       function_exports=Exports, 
+       name=ModuleName,
+       function_exports=Exports,
        functions=Funs,
        tests=Tests} = Mod,
-    Env = [{N, length(Args)}||#mlfe_fun_def{name={symbol, _, N}, args=Args}<-Funs],
+    Env = [{N, length(Args)}
+           || #mlfe_fun_def{name={symbol, _, N}, args=Args} <- Funs],
     {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledTests = gen_tests(Env2, Tests),
 
-    CompiledExports = [gen_export(E) || E <- Exports] ++ gen_test_exports(Tests, Opts, []),
+    CompiledExports =
+        [gen_export(E) || E <- Exports] ++ gen_test_exports(Tests, Opts, []),
     {ok, cerl:c_module(
            cerl:c_atom(ModuleName),
            [gen_export({"module_info", 0}),
             gen_export({"module_info", 1})] ++
-           CompiledExports,
+               CompiledExports,
            [],
            [module_info0(ModuleName),
             module_info1(ModuleName)] ++
-           CompiledFuns ++ CompiledTests)
+               CompiledFuns ++ CompiledTests)
     }.
 
 gen_export({N, A}) ->
@@ -50,8 +54,10 @@ gen_test_exports([], _, Memo) ->
     Memo;
 gen_test_exports(_, [], Memo) ->
     Memo;
-gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts, Memo) ->
-    gen_test_exports(RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
+gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts,
+                 Memo) ->
+    gen_test_exports(
+      RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
 gen_test_exports(Tests, [_|Rem], Memo) ->
     gen_test_exports(Tests, Rem, Memo).
 
@@ -127,14 +133,15 @@ gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
     %% a convenience:
     M = gen_expr(Env, B),
-    cerl:c_call(cerl:c_atom(maps), 
+    cerl:c_call(cerl:c_atom(maps),
                 cerl:c_atom(put),
                 [gen_expr(Env, K), gen_expr(Env, V), M]);
 gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
     %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
     %% the following but that doesn't work for 18.2 nor 18.3.
     %% The LFE source put me on to the following:
-    cerl:ann_c_map_pair([], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
+    cerl:ann_c_map_pair(
+      [], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
     cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
@@ -156,14 +163,14 @@ gen_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
     cerl:c_call(
       cerl:c_atom(Module),
       cerl:c_atom(FName),
-      [gen_expr(Env, E) || E <- Args]);      
+      [gen_expr(Env, E) || E <- Args]);
 gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
     FName = cerl:c_atom(N),
     cerl:c_call(
       cerl:c_atom(Module),
       FName,
       [gen_expr(Env, E) || E <- Args]);
-    
+
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env) of
                 undefined -> cerl:c_var(list_to_atom(Name));
@@ -195,10 +202,10 @@ gen_expr(Env, #mlfe_ffi{}=FFI) ->
               cerl:c_atom('erlang'),
               cerl:c_atom('apply'),
               [gen_expr(Env, M),
-               gen_expr(Env, FN), 
+               gen_expr(Env, FN),
                gen_expr(Env, Cons)]),
 
-   cerl:c_case(Apply, [gen_expr(Env, X) || X <- Clauses]);
+    cerl:c_case(Apply, [gen_expr(Env, X) || X <- Clauses]);
 
 %% Pattern, expression
 gen_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
@@ -210,16 +217,15 @@ gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
                       cerl:c_atom('and'),
                       [gen_expr(Env, G), Acc])
             end,
-    F = fun
-            ([], G) -> G;
-            (G, Acc) -> NestG(G, Acc)
+    F = fun([], G) -> G;
+           (G, Acc) -> NestG(G, Acc)
         end,
     [H|T] = lists:reverse(Gs),
     G = lists:foldl(F, gen_expr(Env, H), T),
-    cerl:c_clause([gen_expr(Env, P)], 
+    cerl:c_clause([gen_expr(Env, P)],
                   G,
                   gen_expr(Env, E));
-                
+
 gen_expr(Env, #mlfe_tuple{values=Vs}) ->
     cerl:c_tuple([gen_expr(Env, E) || E <- Vs]);
 gen_expr(_Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
@@ -230,14 +236,14 @@ gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
 gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
     cerl:c_case(gen_expr(Env, E), [gen_expr(Env, X) || X <- Cs]);
 
-gen_expr(Env, #mlfe_spawn{from_module=M, 
-                          module=undefined, 
+gen_expr(Env, #mlfe_spawn{from_module=M,
+                          module=undefined,
                           function={symbol, _, FN},
                           args=Args}) ->
 
     ArgCons = lists:foldl(
                 fun(A, L) -> cerl:c_cons(gen_expr(Env, A), L) end,
-                cerl:c_nil(), 
+                cerl:c_nil(),
                 lists:reverse(Args)),
     cerl:c_call(
       cerl:c_atom('erlang'),
@@ -247,7 +253,7 @@ gen_expr(Env, #mlfe_spawn{from_module=M,
 gen_expr(Env, #mlfe_receive{clauses=Cs, timeout_action=undefined}) ->
     cerl:c_receive([gen_expr(Env, E)||E <- Cs]);
 gen_expr(Env, #mlfe_receive{
-                 clauses=Cs, 
+                 clauses=Cs,
                  timeout=TO,
                  timeout_action=TA}) ->
     X = case TO of
@@ -270,9 +276,9 @@ gen_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
             end,
     NewEnv = [{N, Arity}|Env],
     cerl:c_letrec([gen_fun(NewEnv, F)], gen_expr(NewEnv, E));
-gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) -> 
+gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
     %% TODO:  environment supporting vars
-    cerl:c_let([cerl:c_var(list_to_atom(N))], 
+    cerl:c_let([cerl:c_var(list_to_atom(N))],
                gen_expr(Env, E1),
                gen_expr(Env, E2)).
 
@@ -293,19 +299,22 @@ gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 
 gen_bits(_Env, [], AllSegs) ->
     lists:reverse(AllSegs);
-gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs) when T == binary; T == utf8 ->
+gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs)
+  when T == binary; T == utf8 ->
     #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
-    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8), 
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8),
                       get_bits_type(T), bits_flags(Sign, E)),
     lists:reverse([B|Segs]);
 
-gen_bits(Env, [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem], Segs) ->
+gen_bits(Env,
+         [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
+         Segs) ->
     Lit = lists:reverse(literal_binary(S, utf8)),
     gen_bits(Env, Rem, Lit ++ Segs);
 
 gen_bits(Env, [Bits|Rem], Memo) ->
     #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
-    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U), 
+    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U),
                       get_bits_type(T), bits_flags(Sign, E)),
     gen_bits(Env, Rem, [B|Memo]).
 
@@ -314,15 +323,18 @@ get_bits_type(float) -> cerl:c_atom(float);
 get_bits_type(utf8) -> cerl:c_atom(binary);
 get_bits_type(binary) -> cerl:c_atom(binary).
 
-bits_flags(Sign, Endian) -> 
-    cerl:c_cons(cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
+bits_flags(Sign, Endian) ->
+    cerl:c_cons(
+      cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
 
 literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
     Bin = unicode:characters_to_binary(Chars, Encoding),
-    F = fun(I) -> cerl:c_bitstr(cerl:c_int(I), cerl:c_int(8), cerl:c_int(1), 
-                                cerl:c_atom(integer),
-                                cerl:c_cons(cerl:c_atom(unsigned),
-                                            cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
+    F = fun(I) ->
+                cerl:c_bitstr(
+                  cerl:c_int(I), cerl:c_int(8), cerl:c_int(1),
+                  cerl:c_atom(integer),
+                  cerl:c_cons(cerl:c_atom(unsigned),
+                              cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
         end,
     [F(I) || I <- binary_to_list(Bin)].
 
@@ -395,7 +407,7 @@ parser_nested_letrec_test() ->
 module_with_match_test() ->
     Name = compile_module_with_match,
     FN = atom_to_list(Name) ++ ".beam",
-    Code = 
+    Code =
         "module compile_module_with_match\n\n"
         "export check/1, first/1, compare/2\n\n"
         "check x = match x with\n"
@@ -422,7 +434,7 @@ module_with_match_test() ->
 cons_test() ->
     Name = compiler_cons_test,
     FN = atom_to_list(Name) ++ ".beam",
-    Code = 
+    Code =
         "module compiler_cons_test\n\n"
         "export make_list/2, my_map/2\n\n"
         "make_list h t =\n"
@@ -453,9 +465,10 @@ call_test() ->
 
     {ok, _, Bin1} = parse_and_gen(Code1),
     {ok, _, Bin2} = parse_and_gen(Code2),
-    {module, call_test_a} = code:load_binary(call_test_a, "call_test_a.beam", Bin1),
-    {module, call_test_b} = code:load_binary(call_test_b, "call_test_b.beam", Bin2),
-
+    {module, call_test_a} =
+        code:load_binary(call_test_a, "call_test_a.beam", Bin1),
+    {module, call_test_b} =
+        code:load_binary(call_test_b, "call_test_b.beam", Bin2),
 
     Name = call_test_a,
     ?assertEqual(3, Name:a(2)),
@@ -471,7 +484,7 @@ ffi_test() ->
         "| _ -> :not_one\n",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, ffi_test} = code:load_binary(ffi_test, "ffi_test.beam", Bin),
-    
+
     Mod = ffi_test,
     ?assertEqual('one', Mod:a("1")),
     ?assertEqual('not_one', Mod:a("2")),
@@ -480,7 +493,7 @@ ffi_test() ->
 %% TODO:  with union types, test/1 should return integers and floats
 %% just tagged with different type constructors.
 type_guard_test() ->
-    Code = 
+    Code =
         "module type_guard_test\n\n"
         "export check/1\n\n"
         "check x = \n"
@@ -490,7 +503,7 @@ type_guard_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     Mod = type_guard_test,
     {module, Mod} = code:load_binary(Mod, "type_guard_test.beam", Bin),
-    
+
     %% Checking that when the result is NOT an integer we're falling back
     %% to integer 0 as expected in the code above:
     ?assertEqual(4, Mod:check(2)),
@@ -498,7 +511,7 @@ type_guard_test() ->
     true = code:delete(Mod).
 
 multi_type_guard_test() ->
-    Code = 
+    Code =
         "module multi_type_guard_test\n\n"
         "export check/1\n\n"
         "check x = \n"
@@ -510,13 +523,13 @@ multi_type_guard_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     Mod = multi_type_guard_test,
     {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),
-    
+
     ?assertEqual('got_four', Mod:check(2)),
     ?assertEqual('middle', Mod:check(4)),
     ?assertEqual('just_int', Mod:check(5)),
     ?assertEqual('not_int', Mod:check(1.3)),
     true = code:delete(Mod).
-    
+
 module_info_helpers_test() ->
     Code = "module module_info_helpers_test\n",
     {ok, _, Bin} = parse_and_gen(Code),

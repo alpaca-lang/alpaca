@@ -1,19 +1,22 @@
-% Copyright 2016 Jeremy Pierre
-%
-% Licensed under the Apache License, Version 2.0 (the "License");
-% you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
-%
-%     http://www.apache.org/licenses/LICENSE-2.0
-%
-% Unless required by applicable law or agreed to in writing, software
-% distributed under the License is distributed on an "AS IS" BASIS,
-% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-% See the License for the specific language governing permissions and
-% limitations under the License.
+%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%% ex: ft=erlang ts=4 sw=4 et
+%%%
+%%% Copyright 2016 Jeremy Pierre
+%%%
+%%% Licensed under the Apache License, Version 2.0 (the "License");
+%%% you may not use this file except in compliance with the License.
+%%% You may obtain a copy of the License at
+%%%
+%%%     http://www.apache.org/licenses/LICENSE-2.0
+%%%
+%%% Unless required by applicable law or agreed to in writing, software
+%%% distributed under the License is distributed on an "AS IS" BASIS,
+%%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%%% See the License for the specific language governing permissions and
+%%% limitations under the License.
 
-%%% ## Type-Tracking Data Types 
-%%% 
+%%% ## Type-Tracking Data Types
+%%%
 %%% These are all of the specs the typer uses to track MLFE types.
 
 -type typ_name() :: atom().
@@ -43,16 +46,16 @@
 
 -type t_tuple() :: {t_tuple, list(typ())}.
 
-%% pattern, optional guard, result.  Currently I'm doing nothing with 
+%% pattern, optional guard, result.  Currently I'm doing nothing with
 %% present guards.
 %% TODO:  the guards don't need to be part of the type here.  Their
 %%        only role in typing is to constrain the pattern's typing.
 -type t_clause() :: {t_clause, typ(), t_arrow()|undefined, typ()}.
 
 %%% `t_rec` is a special type that denotes an infinitely recursive function.
-%%% Since all functions here are considered recursive, the return type for 
-%%% any function must begin as `t_rec`.  `t_rec` unifies with anything else by 
-%%% becoming that other thing and as such should be in its own reference cell. 
+%%% Since all functions here are considered recursive, the return type for
+%%% any function must begin as `t_rec`.  `t_rec` unifies with anything else by
+%%% becoming that other thing and as such should be in its own reference cell.
 -type t_const() :: t_rec
                  | t_int
                  | t_float
@@ -119,7 +122,7 @@
                     %% Used to signal whether or not the bitstring is simply
                     %% using default size and unit values.  If it is *not*
                     %% and the `type` is `binary` *and* the bitstring is the
-                    %% last segment in a binary, it's size must be set to 
+                    %% last segment in a binary, it's size must be set to
                     %% `'all'` with unit 8 to capture all remaining bits.
                     %% This is in keeping with how Erlang compiles to Core
                     %% Erlang.
@@ -133,7 +136,7 @@
 -type mlfe_bits() :: #mlfe_bits{}.
 
 %%% ### AST Nodes For Types
-%%% 
+%%%
 %%% AST nodes that describe the basic included types and constructs for
 %%% defining and instantiating ADTs (type constructors).
 
@@ -148,14 +151,14 @@
 -type mlfe_type_var()  :: {type_var, integer(), string()}.
 
 -record(mlfe_type_tuple, {
-                         members=[] :: list(mlfe_base_type() 
-                                            | mlfe_type_var() 
-                                            | mlfe_poly_type())
-                        }).
+          members=[] :: list(mlfe_base_type()
+                             | mlfe_type_var()
+                             | mlfe_poly_type())
+         }).
 -type mlfe_type_tuple() :: #mlfe_type_tuple{}.
 
 %% Explicit built-in list type for use in ADT definitions.
--type mlfe_list_type() :: {mlfe_list, 
+-type mlfe_list_type() :: {mlfe_list,
                            mlfe_base_type()|mlfe_poly_type()}.
 
 -type mlfe_map_type() :: {mlfe_map,
@@ -172,8 +175,8 @@
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
                            arg=none :: none
                                      | mlfe_base_type()
-                                     | mlfe_type_var() 
-                                     | mlfe_type() 
+                                     | mlfe_type_var()
+                                     | mlfe_type()
                                      | mlfe_type_tuple()
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
@@ -209,7 +212,7 @@
 -type mlfe_list() :: mlfe_cons() | mlfe_nil().
 
 %%% ### Maps
-%%% 
+%%%
 %%% For both map literals and map patterns
 
 -record(mlfe_map_pair, {type=undefined :: typ(),
@@ -272,7 +275,7 @@
 -type mlfe_match() :: #mlfe_match{}.
 
 %%% ### Erlang FFI
-%%% 
+%%%
 %%% A call to an Erlang function via the Foreign Function Interface.
 %%% Only the result of these calls is typed.
 -record(mlfe_ffi, {type=undefined :: typ(),
@@ -338,13 +341,12 @@
                          | mlfe_type_check()
                          | mlfe_binding()
                          | mlfe_fun_def()
-                         | mlfe_type_import()
-                           .
+                         | mlfe_type_import().
 
 -record(fun_binding, {def :: mlfe_fun_def(),
                       expr :: mlfe_expression()
                      }).
-                      
+
 -record(var_binding, {type=undefined :: typ(),
                       name=undefined :: undefined|mlfe_symbol(),
                       to_bind=undefined :: undefined|mlfe_expression(),
@@ -360,18 +362,23 @@
 %% is a way to indicate what the MLFE function name is and the corresponding
 %% actual Erlang BIF.  Making the distinction between the MLFE and Erlang
 %% name to support something like '+' for integers and '+.' for floats.
--type mlfe_bif_name() :: 
-        {bif, MlfeFun::atom(), Line::integer(), Module::atom(), ErlangFun::atom()}.
+-type mlfe_bif_name() ::
+        { bif
+        , MlfeFun::atom()
+        , Line::integer()
+        , Module::atom()
+        , ErlangFun::atom()
+        }.
 
 %%% A function application can occur in one of 4 ways:
-%%% 
+%%%
 %%% - an Erlang BIF
 %%% - intra-module, a function defined in the module it's being called
 %%%   within or one in scope from a let binding
 %%% - inter-module (a "call" in core erlang), calling a function defined
 %%%   in a different module
 %%% - a function bound to a variable
-%%% 
+%%%
 %%% The distinction is particularly important between the first and third
 %%% since core erlang wants the arity specified in the first case but _not_
 %%% in the third.
@@ -383,7 +390,7 @@
                                      | mlfe_symbol()
                                      | mlfe_bif_name(),
                      args=[] :: list(mlfe_expression())
-                     }).
+                    }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
 -record (mlfe_fun_def, {
@@ -396,7 +403,7 @@
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
 
 -record(mlfe_type_import, {module=undefined :: atom(),
-                          type=undefined :: string()}).
+                           type=undefined :: string()}).
 -type mlfe_type_import() :: #mlfe_type_import{}.
 
 -record(mlfe_module, {

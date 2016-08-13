@@ -1,3 +1,5 @@
+%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%% ex: ft=erlang ts=4 sw=4 et
 -module(mlfe_scanner).
 -export([scan/1]).
 
@@ -21,9 +23,9 @@ tuple_test_() ->
     EmptyTupleExpected = {ok, [{'(', 1}, {')', 1}], 1},
     [
      ?_assertEqual({ok, [
-                         {'(', 1}, 
-                         {int, 1, 1}, 
-                         {')', 1}], 1}, 
+                         {'(', 1},
+                         {int, 1, 1},
+                         {')', 1}], 1},
                    scan("(1)")),
      ?_assertEqual(EmptyTupleExpected, scan("()")),
      ?_assertEqual(EmptyTupleExpected, scan("( )")),
