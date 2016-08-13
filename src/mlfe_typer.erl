@@ -519,7 +519,11 @@ unify_adt(C1, C2, #adt{vars=Vs, members=Ms}=A, AtomTyp, Env, L) when is_atom(Ato
             ok;
         []  -> 
             VFolder = fun(_, ok) -> ok;
-                         ({_, V}, _) -> unify(AtomTyp, V, Env, L)
+                         ({_, V}, Res) ->
+                            case lists:member(V, Ms) of
+                              true -> unify(AtomTyp, V, Env, L);
+                              false -> Res
+                            end
                       end,
             lists:foldl(VFolder, unify_error(Env, L, A, AtomTyp), Vs)
     end;
@@ -2622,6 +2626,40 @@ module_with_types_test() ->
                                                           ]}],
                                              t_atom}}]}}, 
                  Res).
+
+recursive_polymorphic_adt_test() ->
+  Code = polymorphic_tree_code() ++
+        "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({ok, _}, Res).
+
+recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
+  Code = polymorphic_tree_code() ++
+        "\n\nfail () = height 1",
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    Env = new_env(),
+    Res = typ_module(M, Env),
+    ?assertMatch({error,
+                   {cannot_unify,tree,15,
+                       {adt,"tree",
+                           [{"a",_}],
+                           [{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
+                       t_int}},
+                 Res).
+
+polymorphic_tree_code() ->
+  "module tree\n\n"
+  "type tree 'a = Leaf | Node (tree 'a, 'a, tree 'a)\n\n"
+  "height t =\n"
+  "  match t with\n"
+  "    Leaf -> 0\n"
+  "  | Node (l, _, r) -> 1 + (max (height l) (height r))\n\n"
+  "max a b =\n"
+  "  match (a > b) with\n"
+  "    true -> a\n"
+  "  | false -> b".
 
 module_matching_lists_test() ->
     Code =
