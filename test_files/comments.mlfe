@@ -1,0 +1,15 @@
+module comments
+
+export double/1
+
+-- single line comment
+
+{- single line block comment -}
+
+{- multi-line
+block }
+    bar
+    comment
+-}
+
+double n = n*2

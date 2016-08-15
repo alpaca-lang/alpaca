@@ -241,4 +241,9 @@ basic_unit_tests_test() ->
 simple_example_module_test() ->
     [M] = compile_and_load(["test_files/simple_example.mlfe"], []),
     code:delete(M).
+
+comments_test() ->
+    [M] = compile_and_load(["test_files/comments.mlfe"], []),
+    ?assertMatch(4, M:double(2)).
+
 -endif.
