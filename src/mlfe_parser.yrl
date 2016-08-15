@@ -17,7 +17,7 @@ Nonterminals
 comment
 op infix
 const
-type poly_type type_member type_members type_expr type_vars
+type poly_type type_member type_members type_expr type_expressions
 type_tuple type_tuple_list
 type_apply
 type_import
@@ -96,14 +96,14 @@ type_import -> use module_fun:
 
 module_def -> module atom : {module, '$1'}.
 
-type_vars -> type_var : ['$1'].
-type_vars -> type_var type_vars : ['$1'|'$2'].
+type_expressions -> type_expr : ['$1'].
+type_expressions -> type_expr type_expressions : ['$1'|'$2'].
 
-poly_type -> symbol type_vars :
+poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
-  #mlfe_type{name={type_name, L, N}, vars='$2'}.
-poly_type -> poly_type type_vars :
-  '$1'#mlfe_type{vars='$1'#mlfe_type.vars ++ ['$2']}.
+  Members = '$2',
+  Vars = [V || {type_var, _, _}=V <- Members],
+  #mlfe_type{name={type_name, L, N}, members=Members, vars=Vars}.
 
 type_expr -> type_var : '$1'.
 type_expr -> poly_type : '$1'.
