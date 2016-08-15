@@ -63,7 +63,7 @@ send
 receive after
 spawn
 
-call_erlang
+beam
 
 type_check_tok
 
@@ -315,7 +315,7 @@ spawn_pid -> spawn symbol terms:
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
-ffi_call -> call_erlang atom atom cons with match_clauses:
+ffi_call -> beam atom atom cons with match_clauses:
   #mlfe_ffi{module='$2',
             function_name='$3',
             args='$4',

@@ -360,7 +360,7 @@ export a function called `add_2_and_2_test`:
       let res = add 2 2 in
       match res with
           4 -> :ok
-        | _ -> call_erlang :erlang :error [no_match] with _ -> meaningless_return
+        | _ -> beam :erlang :error [no_match] with _ -> meaningless_return
 
 Any test that throws an exception will fail so the above would work
 but if we replaced `add/2` with `add x y = x + (y + 1)` we'd get a
@@ -425,7 +425,7 @@ _all_ message sends to that process will be a type error.
 ## Current FFI
 The FFI is quite limited at present and operates as follows:
 
-    call_erlang :a_module :a_function [3, "different", "arguments"] with
+    beam :a_module :a_function [3, "different", "arguments"] with
        (ok, _) -> :ok
      | (error, _) -> :error
 

@@ -479,7 +479,7 @@ ffi_test() ->
     Code =
         "module ffi_test\n\n"
         "export a/1\n\n"
-        "a x = call_erlang :erlang :list_to_integer [x] with\n"
+        "a x = beam :erlang :list_to_integer [x] with\n"
         "  1 -> :one\n"
         "| _ -> :not_one\n",
     {ok, _, Bin} = parse_and_gen(Code),
@@ -497,7 +497,7 @@ type_guard_test() ->
         "module type_guard_test\n\n"
         "export check/1\n\n"
         "check x = \n"
-        "call_erlang :erlang :* [x, x] with\n"
+        "beam :erlang :* [x, x] with\n"
         "   i, is_integer i -> i\n"
         " | f -> 0",
     {ok, _, Bin} = parse_and_gen(Code),
@@ -515,7 +515,7 @@ multi_type_guard_test() ->
         "module multi_type_guard_test\n\n"
         "export check/1\n\n"
         "check x = \n"
-        "call_erlang :erlang :* [x, x] with\n"
+        "beam :erlang :* [x, x] with\n"
         "   i, is_integer i, i == 4 -> :got_four\n"
         " | i, is_integer i, i > 5, i < 20 -> :middle\n"
         " | i, is_integer i -> :just_int\n"

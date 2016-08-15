@@ -269,7 +269,7 @@ Explicit type specifications for variables and functions is a planned feature fo
 While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
 
     print_hello () =
-      call_erlang :io :format ["Hello~n", []] with _ -> ()
+      beam :io :format ["Hello~n", []] with _ -> ()
 
 ## The Foreign Function Interface<a id="sec-4-1" name="sec-4-1"></a>
 
@@ -277,10 +277,10 @@ The FFI is how we call any non-MLFE code in the Erlang VM (e.g. Erlang, [Elixir]
 
 Here we're using a simple guard function so that we know the FFI expression is returning characters (an Erlang string):
 
-    call_erlang :io_lib :format ["This will contain the integer 3:  ~w", [3]] with
+    beam :io_lib :format ["This will contain the integer 3:  ~w", [3]] with
       cs, is_chars cs -> cs
 
-The FFI `call_erlang` expects the external module and function as atoms and then a list of arguments to send.  The arguments sent are **not** type checked but the return value in the pattern matching clauses **is** checked.
+The FFI `beam` expects the external module and function as atoms and then a list of arguments to send.  The arguments sent are **not** type checked but the return value in the pattern matching clauses **is** checked.
 
 ## Built-In Functions<a id="sec-4-2" name="sec-4-2"></a>
 
@@ -413,12 +413,12 @@ While the above test is type checked and will happily be compiled, we lack asser
           true -> :passed
         | false ->
             let msg = format_msg "Not equal:  ~w and ~w" x y in
-            call_erlang :erlang :error [msg] with _ -> :failed
+            beam :erlang :error [msg] with _ -> :failed
     
     // formats a failure message:
     format_msg base x y =
-      let m = call_erlang :io_lib :format [base, [x, y]] with msg -> msg in
-      call_erlang :lists :flatten [m] with msg, is_chars msg -> msg
+      let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
+      beam :lists :flatten [m] with msg, is_chars msg -> msg
 
 It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in MLFE.
 

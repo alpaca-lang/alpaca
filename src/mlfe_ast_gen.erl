@@ -1001,7 +1001,7 @@ ffi_test_() ->
                                                    tail={nil, 1}},
                                            tail={nil, 0}}}}},
                    test_parse(
-                     "call_erlang :io :format [\"One is ~s~n\", [1]] with\n"
+                     "beam :io :format [\"One is ~s~n\", [1]] with\n"
                      " _ -> 0"))
     ].
 
