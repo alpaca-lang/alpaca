@@ -2682,16 +2682,16 @@ module_with_types_test() ->
        Res).
 
 recursive_polymorphic_adt_test() ->
-  Code = polymorphic_tree_code() ++
-        "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
+    Code = polymorphic_tree_code() ++
+          "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
     ?assertMatch({ok, _}, Res).
 
 recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
-  Code = polymorphic_tree_code() ++
-        "\n\nfail () = height 1",
+    Code = polymorphic_tree_code() ++
+          "\n\nfail () = height 1",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
@@ -2704,16 +2704,16 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
                  Res).
 
 polymorphic_tree_code() ->
-  "module tree\n\n"
-  "type tree 'a = Leaf | Node (tree 'a, 'a, tree 'a)\n\n"
-  "height t =\n"
-  "  match t with\n"
-  "    Leaf -> 0\n"
-  "  | Node (l, _, r) -> 1 + (max (height l) (height r))\n\n"
-  "max a b =\n"
-  "  match (a > b) with\n"
-  "    true -> a\n"
-  "  | false -> b".
+    "module tree\n\n"
+    "type tree 'a = Leaf | Node (tree 'a, 'a, tree 'a)\n\n"
+    "height t =\n"
+    "  match t with\n"
+    "    Leaf -> 0\n"
+    "  | Node (l, _, r) -> 1 + (max (height l) (height r))\n\n"
+    "max a b =\n"
+    "  match (a > b) with\n"
+    "    true -> a\n"
+    "  | false -> b".
 
 builtin_types_as_type_variables_test() ->
     Code =
