@@ -1010,8 +1010,10 @@ typ_module(#mlfe_module{functions=Fs,
                     FunRes = typ_module_funs(Fs, Env3, []),
 
                     case type_module_tests(Tests, Env3, ok, FunRes) of
-                        {error, _} = E -> E;
-                        [_|_] = Funs   -> {ok, M#mlfe_module{functions=Funs}}
+                        {error, _} = Err        ->
+                            Err;
+                        Funs when is_list(Funs) ->
+                            {ok, M#mlfe_module{functions=Funs}}
                     end
             end
     end.
@@ -2719,8 +2721,7 @@ builtin_types_as_type_variables_test() ->
     Code =
         "module optlist\n\n"
         "type proplist 'k 'v = list ('k, 'v)\n\n"
-        "type optlist 'v = proplist atom 'v\n\n"
-        "dummy () = :ok",
+        "type optlist 'v = proplist atom 'v",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = typ_module(M, Env),
