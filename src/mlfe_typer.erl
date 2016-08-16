@@ -1011,9 +1011,9 @@ typ_module(#mlfe_module{functions=Fs,
 
                     case type_module_tests(Tests, Env3, ok, FunRes) of
                         {error, _} = Err        ->
-                          Err;
+                            Err;
                         Funs when is_list(Funs) ->
-                          {ok, M#mlfe_module{functions=Funs}}
+                            {ok, M#mlfe_module{functions=Funs}}
                     end
             end
     end.
