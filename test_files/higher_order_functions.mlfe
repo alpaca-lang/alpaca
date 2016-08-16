@@ -1,0 +1,17 @@
+module higher_order_functions
+
+export new/1, lookup/2, insert/3
+
+type option x = None | Some x
+
+new () =
+  let ret k = None in ret
+
+lookup k d = d k
+
+insert k v d =
+  let d2 k2 =
+    match (k2 == k) with
+      true  -> Some v
+    | false -> d k
+  in d2

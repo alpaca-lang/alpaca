@@ -113,10 +113,13 @@ gen_expr(_, {string, _, S}) ->
     cerl:c_binary(literal_binary(S, utf8));
 gen_expr(_, {'_', _}) ->
     cerl:c_var("_");
-gen_expr(_Env, [{symbol, _, V}]) ->
-    cerl:c_var(list_to_atom(V));
-gen_expr(_Env, {symbol, _, V}) ->
-    cerl:c_var(list_to_atom(V));
+gen_expr(Env, {symbol, _, V}) ->
+    case proplists:get_value(V, Env) of
+        Arity when is_integer(Arity) ->
+            cerl:c_fname(list_to_atom(V), Arity);
+        undefined ->
+            cerl:c_var(list_to_atom(V))
+    end;
 gen_expr(_, {nil, _}) ->
     cerl:c_nil();
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
