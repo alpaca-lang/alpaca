@@ -246,4 +246,12 @@ comments_test() ->
     [M] = compile_and_load(["test_files/comments.mlfe"], []),
     ?assertMatch(4, M:double(2)).
 
+higher_order_function_test() ->
+    [M] = compile_and_load(["test_files/higher_order_functions.mlfe"], []),
+    Dict0 = M:new({}),
+    ?assertEqual('None', M:lookup(key, Dict0)),
+    Dict1 = M:insert(key, value, Dict0),
+    ?assertEqual({'Some', value}, M:lookup(key, Dict1)),
+    ?assertEqual('None', M:lookup(anotherkey, Dict1)),
+    code:delete(M).
 -endif.
