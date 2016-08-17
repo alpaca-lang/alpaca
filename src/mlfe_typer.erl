@@ -115,6 +115,20 @@ copy_cell(Cell, RefMap) ->
                 Existing ->
                     {Existing, RefMap}
             end;
+        {t_list, C} ->
+            {C2, Map2} = copy_cell(C, RefMap),
+            {new_cell({t_list, C2}), Map2};
+        {t_map, K, V} ->
+            {K2, Map2} = copy_cell(K, RefMap),
+            {V2, Map3} = copy_cell(V, Map2),
+            {new_cell({t_map, K2, V2}), Map3};
+        #adt{vars=TypeVars}=ADT ->
+            Folder = fun({TN, C}, {L, RM}) ->
+                             {C2, NM} = copy_cell(C, RM),
+                             {[{TN, C2}|L], NM}
+                     end,
+            {NewTypeVars, Map2} = lists:foldl(Folder, {[], RefMap}, TypeVars),
+            {new_cell(ADT#adt{vars=NewTypeVars}), Map2};
         V ->
             {new_cell(V), RefMap}
     end.
@@ -2831,6 +2845,45 @@ typed_tests_test() ->
                          tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
                  Res).
 
+polymorphic_list_as_return_value_test() ->
+    Code =
+        "module list_tests\n\n"
+        "is_empty l =\n"
+        "    match l with\n"
+        "        []   -> true\n"
+        "    | _ :: _ -> false\n\n"
+        "a () = is_empty []\n\n"
+        "b () = is_empty [:ok]\n\n"
+        "c () = is_empty [1]",
+    Res = module_typ_and_parse(Code),
+    ?assertMatch({ok, _}, Res).
+
+polymorphic_adt_as_return_value_test() ->
+    Code =
+        "module option\n\n"
+        "type option 't = Some 't | None\n\n"
+        "is_none opt =\n"
+        "    match opt with\n"
+        "        None   -> true\n"
+        "    |   Some _ -> false\n\n"
+        "a () = is_none None\n\n"
+        "b () = is_none (Some :a)\n\n"
+        "c () = is_none (Some 1)",
+    Res = module_typ_and_parse(Code),
+    ?assertMatch({ok, _}, Res).
+
+polymorphic_map_as_return_value_test() ->
+    Code =
+        "module empty_map\n\n"
+        "is_empty m =\n"
+        "    match m with\n"
+        "        #{} -> true\n"
+        "        | _ -> false\n\n"
+        "a () = is_empty #{}\n\n"
+        "b () = is_empty #{:a => 1}\n\n"
+        "c () = is_empty #{1 => :a}\n\n",
+    Res = module_typ_and_parse(Code),
+    ?assertMatch({ok, _}, Res).
 
 %%% ### Process Interaction Typing Tests
 %%%
