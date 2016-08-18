@@ -38,9 +38,9 @@
 %% allowed to be sent messages.
 -type t_pid() :: {t_pid, typ()}.
 
--type t_cons() :: {t_cons, typ(), t_list()}.
--type t_nil() :: t_nil.
--type t_list() :: t_cons() | t_nil().
+-type t_receiver() :: {t_receiver, typ(), typ()}.
+
+-type t_list() :: {t_list, typ()}.
 
 -type t_map() :: {t_map, typ(), typ()}.
 
@@ -77,7 +77,10 @@
              | t_map()
              | t_tuple()
              | t_clause()
-             | typer:t_cell().  % a reference cell for a type.
+             | t_pid()
+             | t_receiver()
+             | mlfe_type()
+             | mlfe_typer:t_cell().  % a reference cell for a type.
 
 %%% ## MLFE AST Nodes
 
