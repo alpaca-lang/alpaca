@@ -77,7 +77,7 @@
              | t_map()
              | t_tuple()
              | t_clause()
-             | typer:t_cell().  % a reference cell for a type.
+             | mlfe_typer:t_cell().  % a reference cell for a type.
 
 %%% ## MLFE AST Nodes
 

@@ -33,9 +33,13 @@
 -include("mlfe_ast.hrl").
 -include("builtin_types.hrl").
 
--export([cell/1, new_env/1, replace_env_module/2,
-         typ_module/2]).
--export_type([env/0, typ/0, t_cell/0]).
+%%% API
+-export([type_modules/1]).
+
+-export_type([t_cell/0]).
+
+%%% Internal
+-export([cell/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -71,7 +75,7 @@ cell(TypVal) ->
 
 -spec new_cell(typ()) -> pid().
 new_cell(Typ) ->
-    spawn(?MODULE, cell, [Typ]).
+    spawn_link(?MODULE, cell, [Typ]).
 
 -spec get_cell(t_cell()) -> typ().
 get_cell(Cell) when is_pid(Cell) ->
@@ -980,9 +984,35 @@ retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts}|Rem]) ->
 retrieve_type(SM, M, T, [_|Rem]) ->
     retrieve_type(SM, M, T, Rem).
 
--spec typ_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
-                                                  {error, term()}.
-typ_module(#mlfe_module{functions=Fs,
+-spec type_modules([mlfe_module()]) -> {ok, [mlfe_module()]} |
+                                       {error, term()}.
+type_modules(Mods) ->
+    {Pid, Monitor} = erlang:spawn_monitor(fun() ->
+        try type_modules(Mods, new_env(Mods), []) of
+            Res -> exit(Res)
+        catch
+            E:T ->
+                io:format("mlfe_typer:type_modules/2 crashed with ~p:~p~n"
+                          "Stacktrace: ~p~n", [E, T, erlang:get_stacktrace()]),
+                exit({error, "mlfe_typer:type_modules/2 crashed"})
+        end
+    end),
+    receive
+        {'DOWN', Monitor, process, Pid, Result} -> Result
+    end.
+
+type_modules([], _, Acc)       -> {ok, Acc};
+type_modules([M|Ms], Env, Acc) ->
+    case type_module(M, Env) of
+        {ok, M2}       ->
+            type_modules(Ms, replace_env_module(Env, M2), [M2|Acc]);
+        {error, _}=Err ->
+            Err
+    end.
+
+-spec type_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
+                                                   {error, term()}.
+type_module(#mlfe_module{functions=Fs,
                         name=Name,
                         types=Ts,
                         type_imports=Imports,
@@ -2180,7 +2210,7 @@ module_typing_test() ->
                                              [{t_list, {unbound, A, _}}],
                                              {unbound, A, _}}}
                                    ]}},
-                 typ_module(M, new_env())).
+                 type_module(M, new_env())).
 
 module_with_forward_reference_test() ->
     Code =
@@ -2199,7 +2229,7 @@ module_with_forward_reference_test() ->
                           #mlfe_fun_def{
                              name={symbol, 7, "adder"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
-       typ_module(M, Env#env{current_module=M, modules=[M]})).
+       type_module(M, Env#env{current_module=M, modules=[M]})).
 
 simple_inter_module_test() ->
     Mod1 =
@@ -2220,7 +2250,7 @@ simple_inter_module_test() ->
                           #mlfe_fun_def{
                              name={symbol, 3, "add"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
-       typ_module(M1, Env)).
+       type_module(M1, Env)).
 
 bidirectional_module_fail_test() ->
     Mod1 =
@@ -2239,7 +2269,7 @@ bidirectional_module_fail_test() ->
     ?assertMatch({error, {bidirectional_module_ref,
                           inter_module_two,
                           inter_module_one}},
-                 typ_module(M2, Env)).
+                 type_module(M2, Env)).
 
 
 recursive_fun_test_() ->
@@ -2286,7 +2316,7 @@ infinite_mutual_recursion_test() ->
                                     #mlfe_fun_def{
                                        name={symbol, 5, "b"},
                                        type={t_arrow, [t_int], t_rec}}]}},
-                 typ_module(M, E)).
+                 type_module(M, E)).
 
 terminating_mutual_recursion_test() ->
     Code =
@@ -2306,7 +2336,7 @@ terminating_mutual_recursion_test() ->
                                     #mlfe_fun_def{
                                        name={symbol, 5, "b"},
                                        type={t_arrow, [t_int], t_atom}}]}},
-                 typ_module(M, E)).
+                 type_module(M, E)).
 
 ffi_test_() ->
     [?_assertMatch({t_int, _},
@@ -2589,7 +2619,7 @@ rename_constructor_wildcard_test() ->
         "| Pair (_, Pair (_, Pair(_, _))) -> :double_nested_t",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_module(M, Env),
     ?assertMatch(
        {ok, #mlfe_module{
                functions=[#mlfe_fun_def{
@@ -2612,9 +2642,7 @@ module_with_map_in_adt_test() ->
         "    h :: t -> h"
         "  | #{:key => v} -> v",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env = new_env(),
-    Res = typ_module(M, Env),
-    ?assertMatch({ok, #mlfe_module{}}, Res).
+    ?assertMatch({ok, _}, type_modules([M])).
 
 module_with_adt_map_error_test() ->
     Code =
@@ -2624,8 +2652,7 @@ module_with_adt_map_error_test() ->
         "    h :: t, is_string h -> h"
         "  | #{:key => v}, is_chars v -> v",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
 
@@ -2642,7 +2669,7 @@ json_union_type_test() ->
         "  | _ :: _ -> :json_array",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_module(M, Env),
     ?assertMatch(
        {ok,
         #mlfe_module{
@@ -2677,7 +2704,7 @@ module_with_types_test() ->
         "| (_, (_, _)) -> :nested",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_module(M, Env),
     ?assertMatch(
        {ok, #mlfe_module{
                functions=[#mlfe_fun_def{
@@ -2701,16 +2728,14 @@ recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
 recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nfail () = height 1",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_modules([M]),
     ?assertMatch({error,
                    {cannot_unify,tree,15,
                        {adt,"tree",
@@ -2737,8 +2762,7 @@ builtin_types_as_type_variables_test() ->
         "type proplist 'k 'v = list ('k, 'v)\n\n"
         "type optlist 'v = proplist atom 'v",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
 module_matching_lists_test() ->
@@ -2751,7 +2775,7 @@ module_matching_lists_test() ->
         "| Cons (i, x) -> :more_than_one",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_module(M, Env),
     ?assertMatch({ok, #mlfe_module{
                          functions=[#mlfe_fun_def{
                                        name={symbol, 5, "a"},
@@ -2781,7 +2805,7 @@ type_var_protection_test() ->
         "c () = (Cons (1.0, Nil), Cons(1, Nil))",
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     Env = new_env(),
-    Res = typ_module(M, Env),
+    Res = type_module(M, Env),
     ?assertMatch(
        {ok, #mlfe_module{
                functions=[#mlfe_fun_def{
@@ -2818,9 +2842,8 @@ type_var_protection_fail_unify_test() ->
         "c () = "
         "let x = Cons (1.0, Nil) in "
         "Cons (1, x)",
-    Env = new_env(),
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Res = typ_module(M, Env),
+    Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
 
@@ -2890,10 +2913,11 @@ polymorphic_map_as_return_value_test() ->
 %%% Things like receive, send, and spawn.
 
 module_typ_and_parse(Code) ->
-    Env = new_env(),
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    Env#env{modules=[M]},
-    typ_module(M, Env).
+    case type_modules([M]) of
+        {ok, [M2]} -> {ok, M2};
+        Err        -> Err
+    end.
 
 receive_test_() ->
     [?_assertMatch({{t_receiver, t_int, t_int}, _},
@@ -3174,4 +3198,14 @@ send_message_test_() ->
                  module_typ_and_parse(Code))
       end
     ].
+
+no_process_leak_test() ->
+    Code =
+        "module no_leaks\n\n"
+        "add a b = a + b",
+    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    ProcessesBefore = length(erlang:processes()),
+    ?assertMatch({ok, _}, type_modules([M])),
+    ProcessesAfter = length(erlang:processes()),
+    ?assertEqual(ProcessesBefore, ProcessesAfter).
 -endif.
