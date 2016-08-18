@@ -22,7 +22,8 @@
   {registered, []},
   {mod, {'mlfe_app', []}},
   {applications,
-   [kernel,
+   [compiler,
+    kernel,
     stdlib
    ]},
   {env,[]},
