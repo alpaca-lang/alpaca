@@ -33,13 +33,16 @@ parse_module([], #mlfe_module{name=N, functions=Funs, types=Ts}=M) ->
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
 parse_module(Tokens, Mod) ->
-    {NextBatch, Rem} = next_batch(Tokens, []),
-    {ok, Parsed} = parse(NextBatch),
-    case update_memo(Mod, Parsed) of
-        {ok, NewMemo} ->
-            parse_module(Rem, NewMemo);
-        {error, Err} ->
-            Err
+    case next_batch(Tokens, []) of
+        {[], Rem}        -> parse_module(Rem, Mod);
+        {NextBatch, Rem} ->
+            {ok, Parsed} = parse(NextBatch),
+            case update_memo(Mod, Parsed) of
+                {ok, NewMemo} ->
+                    parse_module(Rem, NewMemo);
+                {error, Err} ->
+                    Err
+            end
     end.
 
 rebind_and_validate_module(_, {error, _} = Err) ->
