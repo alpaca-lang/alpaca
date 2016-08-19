@@ -79,7 +79,6 @@
              | t_clause()
              | t_pid()
              | t_receiver()
-             | mlfe_type()
              | mlfe_typer:t_cell().  % a reference cell for a type.
 
 %%% ## MLFE AST Nodes
@@ -174,7 +173,7 @@
                         | mlfe_map_type().
 
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
--record(mlfe_constructor, {type=undefined :: typ(),
+-record(mlfe_constructor, {type=undefined :: typ() | mlfe_type(),
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
                            arg=none :: none
                                      | mlfe_base_type()
