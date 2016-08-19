@@ -1,6 +1,5 @@
 language: erlang
 otp_release:
-  - 19.0
   - 18.3
   - 18.2
 
@@ -24,7 +23,6 @@ before_install:
 before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
-  - rebar3 dialyzer --update-plt true --succ-typings false
-  - rebar3 dialyzer --update-plt false --succ-typings true
+  - rebar3 dialyzer
   - rebar3 xref
   - rebar3 eunit
