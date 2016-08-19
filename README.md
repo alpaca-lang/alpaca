@@ -7,8 +7,8 @@ ML-flavoured Erlang.
 # TLDR; How Do I Use It?
 Make sure the following are installed:
 
-- Erlang R18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use R19 locally from [kerl](https://github.com/kerl/kerl)
+- Erlang OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+but mostly use OTP 19 locally from [kerl](https://github.com/kerl/kerl)
 of late)
 - [Rebar3](https://rebar3.org)
 
@@ -132,10 +132,13 @@ tests in `mlfe_typer.erl`.
 ## Prerequisites
 You will generally want the following two things installed:
 
-- Erlang R18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use R19 locally from [kerl](https://github.com/kerl/kerl)
+- Erlang/OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
+but mostly use OTP 19 locally from [kerl](https://github.com/kerl/kerl)
 of late)
 - [Rebar3](https://rebar3.org)
+
+Note: While MLFE builds and all tests pass on OTP 19, dialyzer fails due to a spec bug that
+has been fixed in OTP master.
 
 ## Writing MLFE with Rebar3
 Thanks to [@tsloughter](https://github.com/tsloughter)'s

@@ -1,5 +1,6 @@
 language: erlang
 otp_release:
+  - 19.0
   - 18.3
   - 18.2
 
@@ -23,6 +24,6 @@ before_install:
 before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
-  - rebar3 dialyzer
+  - if [ "$TRAVIS_OTP_RELEASE" != "19.0" ]; then rebar3 dialyzer; else echo "dialyzer disabled on OTP 19.0"; fi
   - rebar3 xref
   - rebar3 eunit
