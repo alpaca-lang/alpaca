@@ -3206,6 +3206,16 @@ no_process_leak_test() ->
     {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),
-    ProcessesAfter = length(erlang:processes()),
+    ProcessesAfter = wait_for_processes_to_die(ProcessesBefore, 10),
     ?assertEqual(ProcessesBefore, ProcessesAfter).
+
+wait_for_processes_to_die(ExpectedNumProcesses, 0)            ->
+    length(erlang:processes());
+wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft) ->
+    case length(erlang:processes()) of
+        ExpectedNumProcesses -> ExpectedNumProcesses;
+        _WrongNumProcesses   ->
+            timer:sleep(10),
+            wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft-1)
+    end.
 -endif.
