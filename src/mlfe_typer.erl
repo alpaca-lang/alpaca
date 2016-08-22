@@ -993,7 +993,7 @@ type_modules(Mods) ->
         catch
             E:T ->
                 io:format("mlfe_typer:type_modules/2 crashed with ~p:~p~n"
-                          "Stacktrace: ~p~n", [E, T, erlang:get_stacktrace()]),
+                          "Stacktrace:~n~p~n", [E, T, erlang:get_stacktrace()]),
                 exit({error, "mlfe_typer:type_modules/2 crashed"})
         end
     end),
