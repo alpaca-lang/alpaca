@@ -60,7 +60,7 @@ compile({text, Code}, Opts) ->
     {ok, _, _, Mods} = parse_modules([Code]),
     case type_modules(Mods) of
         {error, _}=Err -> Err;
-        {ok, _, [TypedMod]} ->
+        {ok, [TypedMod]} ->
             {ok, Forms} = mlfe_codegen:gen(TypedMod, Opts),
             compile:forms(Forms, [report, verbose, from_core])
     end;
@@ -73,7 +73,7 @@ compile({files, Filenames}, Opts) ->
                      ok = file:close(Device),
                      [Res|Acc]
              end, [], Filenames),
-    {ok, _, Mods} = type_modules(parse_modules(Code)),
+    {ok, Mods} = type_modules(parse_modules(Code)),
     Compiled = lists:foldl(
                  fun(M, Acc) ->
                          [compile_module(M, Opts)|Acc]
@@ -112,18 +112,7 @@ type_modules({ok, _, _, Mods}) ->
 type_modules({error, _}=Err) ->
     Err;
 type_modules(Mods) ->
-    E = mlfe_typer:new_env(Mods),
-
-    F = fun(_, {error, _, _}=Err) -> Err;
-           (M, {ok, Env, Acc}) ->
-                case mlfe_typer:typ_module(M, Env) of
-                    {ok, M2} ->
-                        {ok, mlfe_typer:replace_env_module(Env, M2), [M2|Acc]};
-                    Err ->
-                        Err
-                end
-        end,
-    lists:foldl(F, {ok, E, []}, Mods).
+    mlfe_typer:type_modules(Mods).
 
 -ifdef(TEST).
 
