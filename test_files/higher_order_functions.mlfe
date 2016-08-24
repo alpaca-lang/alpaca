@@ -2,7 +2,7 @@ module higher_order_functions
 
 export new/1, lookup/2, insert/3
 
-type option x = None | Some x
+type option 'x = None | Some 'x
 
 new () =
   let ret k = None in ret
