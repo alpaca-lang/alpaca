@@ -1127,4 +1127,7 @@ rebinding_test_() ->
                    rename_bindings(0, undefined, F))
     ].
 
+type_expr_in_type_declaration_test() ->
+    ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
+
 -endif.

@@ -17,8 +17,8 @@ Nonterminals
 comment
 op infix
 const
-type poly_type type_member type_members type_expr type_expressions
-type_tuple type_tuple_list
+type poly_type poly_type_decl type_vars type_member type_members type_expr
+type_expressions type_tuple type_tuple_list
 type_apply
 type_import
 
@@ -145,11 +145,20 @@ type_member -> type_expr : '$1'.
 type_members -> type_member : ['$1'].
 type_members -> type_member '|' type_members : ['$1'|'$3'].
 
-type -> type_declare poly_type assign type_members :
+type -> type_declare poly_type_decl assign type_members :
   '$2'#mlfe_type{members='$4'}.
 type -> type_declare symbol assign type_members :
   {symbol, L, N} = '$2',
   #mlfe_type{name={type_name, L, N}, vars=[], members='$4'}.
+
+poly_type_decl -> symbol type_vars :
+  {symbol, L, N} = '$1',
+  #mlfe_type{name={type_name, L, N}, vars='$2'}.
+poly_type -> poly_type type_vars :
+  '$1'#mlfe_type{vars='$1'#mlfe_type.vars ++ ['$2']}.
+
+type_vars -> type_var : ['$1'].
+type_vars -> type_var type_vars : ['$1'|'$2'].
 
 type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
 type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
