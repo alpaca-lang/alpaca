@@ -2602,8 +2602,41 @@ type_constructor_test_() ->
                                              vars=[{type_var, 1, "x"}]}]}},
                        #mlfe_constructor{
                           name={type_constructor, 1, "Nil"},
-                          arg=none}]}]))
+                          arg=none}]}])),
+     ?_assertMatch(
+        {{t_arrow,
+          [{unbound, V, _}],
+          #adt{name="t", vars=[]}},
+         _},
+        top_typ_with_types(
+          "f x = Constructor [1]",
+          [#mlfe_type{
+              name={type_name, 1, "t"},
+              vars=[],
+              members=[#mlfe_constructor{
+                          name={type_constructor, 1, "Constructor"},
+                          arg={mlfe_list, t_int}}]}])),
+     ?_assertMatch(
+        {{t_arrow,
+          [{unbound, V, _}],
+          #adt{name="t", vars=[]}},
+         _},
+        top_typ_with_types(
+          "f x = Constructor #{1 => \"one\"}",
+          [#mlfe_type{
+              name={type_name, 1, "t"},
+              vars=[],
+              members=[#mlfe_constructor{
+                          name={type_constructor, 1, "Constructor"},
+                          arg={mlfe_map, t_int, t_string}}]}]))
     ].
+
+type_constructor_with_pid_arg_test() ->
+    Code = "module constructor\n\n"
+           "type t = Constructor pid int\n\n"
+           "a x = x + 1\n\n"
+           "make () = Constructor (spawn a 2)",
+     ?assertMatch({ok, _}, module_typ_and_parse(Code)).
 
 %%% Type constructors that use underscores in pattern matches to discard actual
 %%% values should work, depends on correct recursive renaming.
