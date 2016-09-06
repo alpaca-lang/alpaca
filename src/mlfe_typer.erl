@@ -845,6 +845,8 @@ inst_constructor_arg({type_var, _, N}, Vs) ->
     proplists:get_value(N, Vs);
 inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs) ->
     new_cell({t_tuple, [inst_constructor_arg(M, Vs) || M <- Ms]});
+inst_constructor_arg({mlfe_list, ElementType}, Vs) ->
+    new_cell({t_list, inst_constructor_arg(ElementType, Vs)});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
     new_cell(#adt{name=N, vars=ADT_vars});
