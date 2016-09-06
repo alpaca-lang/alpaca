@@ -850,6 +850,8 @@ inst_constructor_arg({mlfe_list, ElementType}, Vs) ->
 inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs),
                      inst_constructor_arg(ValType, Vs)});
+inst_constructor_arg({mlfe_pid, MsgType}, Vs) ->
+    new_cell({t_pid, inst_constructor_arg(MsgType, Vs)});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
     new_cell(#adt{name=N, vars=ADT_vars});
@@ -2639,7 +2641,7 @@ type_constructor_test_() ->
 type_constructor_with_pid_arg_test() ->
     Code = "module constructor\n\n"
            "type t = Constructor pid int\n\n"
-           "a x = x + 1\n\n"
+           "a x = receive with i -> x + i\n\n"
            "make () = Constructor (spawn a 2)",
      ?assertMatch({ok, _}, module_typ_and_parse(Code)).
 
