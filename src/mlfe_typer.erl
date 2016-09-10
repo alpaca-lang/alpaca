@@ -1126,8 +1126,10 @@ typ_of(Env, Lvl, {'_', _}) ->
     {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
     {T, VarNum};
 typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
-    {VTyps, NextVar} = typ_list(Vs, Lvl, Env, []),
-    {new_cell({t_tuple, VTyps}), NextVar};
+    case typ_list(Vs, Lvl, Env, []) of
+        {error, _} = E -> E;
+        {VTyps, NextVar} -> {new_cell({t_tuple, VTyps}), NextVar}
+    end;
 typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {TL, #env{next_var=NV}} = new_var(Lvl, Env),
     {new_cell({t_list, TL}), NV};
