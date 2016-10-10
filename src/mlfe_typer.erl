@@ -119,6 +119,13 @@ copy_cell(Cell, RefMap) ->
                 Existing ->
                     {Existing, RefMap}
             end;
+        {t_tuple, Members} ->
+            F = fun(M, {RM, Memo}) ->
+                        {M2, RM2} = copy_cell(M, RM),
+                        {RM2, [M2|Memo]}
+                end,
+            {RefMap2, Members2} = lists:foldl(F, {RefMap, []}, Members),
+            {{t_tuple, Members2}, RefMap2};
         {t_list, C} ->
             {C2, Map2} = copy_cell(C, RefMap),
             {new_cell({t_list, C2}), Map2};
@@ -233,24 +240,28 @@ copy_type_list(TL, RefMap) ->
 %%% in another location.
 deep_copy_type({t_arrow, A, B}, RefMap) ->
     {NewArgs, Map2} = copy_type_list(A, RefMap),
-    {NewRet, _Map3} = copy_type(B, Map2),
-    {t_arrow, NewArgs, NewRet};
+    {NewRet, Map3} = copy_type(B, Map2),
+    {{t_arrow, NewArgs, NewRet}, Map3};
 deep_copy_type({t_list, A}, RefMap) ->
-    {NewList, _} = copy_type_list(A, RefMap),
-    {t_list, NewList};
+    {NewList, Map} = copy_type_list(A, RefMap),
+    {{t_list, NewList}, Map};
 
 %%% Deep copying is used only for function application so we extract the
 %%% arrow for typing here:
 deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
     deep_copy_type(Arrow, RefMap);
 deep_copy_type({t_receiver, A, B}, RefMap) ->
-    {t_receiver, deep_copy_type(A, RefMap), deep_copy_type(B, RefMap)};
+    {A2, M2} = deep_copy_type(A, RefMap),
+    {B2, M3} = deep_copy_type(B, RefMap),
+    {{t_receiver, A2, B2}, M3};
 
-deep_copy_type(T, _) ->
-    T.
+deep_copy_type(T, M) ->
+    {T, M}.
 
 copy_type(P, RefMap) when is_pid(P) ->
     copy_cell(P, RefMap);
+copy_type({t_arrow, _, _}=A, M) ->
+    deep_copy_type(A, M);
 copy_type(T, M) ->
     {new_cell(T), M}.
 
@@ -940,6 +951,8 @@ gen(Lvl, {link, T}) ->
     gen(Lvl, T);
 gen(Lvl, {t_arrow, PTs, T2}) ->
     {t_arrow, [gen(Lvl, T) || T <- PTs], gen(Lvl, T2)};
+gen(Lvl, {t_receiver, A, B}) ->
+    {t_receiver, gen(Lvl, A), gen(Lvl, B)};
 gen(_, T) ->
     T.
 
@@ -1721,7 +1734,7 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% force every other application to unify with them
     %% where the other callers may be expecting a
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
-    CopiedTypF = deep_copy_type(TypF, maps:new()),
+    {CopiedTypF, _} = deep_copy_type(TypF, maps:new()),
 
     case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
         {error, _}=Err -> Err;
@@ -2949,6 +2962,60 @@ polymorphic_map_as_return_value_test() ->
         "c () = is_empty #{1 => :a}\n\n",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, _}, Res).
+
+polymorphic_tuple_as_return_value_test() ->
+    Code =
+        "module poly_tuple\n\n"
+        "second t =\n"
+        "  match t with\n"
+        "    (_, x)  -> x\n\n"
+        "a () = second (1, 2) \n\n"
+        "b () = second (:a, :b)",
+    Res = module_typ_and_parse(Code),
+    ?assertMatch({ok, _}, Res).
+
+polymorphic_process_as_return_value_test() ->
+    Code =
+        "module poly_process\n\n"
+        "behaviour state state_f =\n"
+        "  receive with\n"
+        "    x -> behaviour (state_f state x) state_f \n\n"
+        "a () = let f x y = x + y in spawn behaviour 1 f\n\n"
+        "b () = \n"
+        "  let f x y = x +. y in\n"
+        "  let p = spawn behaviour 1.0 f in\n"
+        "  let u = send :a p in\n"
+        "  p",
+    Res = module_typ_and_parse(Code),
+    io:format("~w~n", [Res]),
+    ?assertMatch({ok, _}, Res).
+
+polymorphic_spawn_test() ->
+    FunCode = 
+        "behaviour state state_f =\n"
+        "  receive with\n"
+        "    x -> behaviour (state_f state x) state_f",
+    BaseEnv = new_env(),
+    {ok, FunExp} = mlfe_ast_gen:parse(mlfe_scanner:scan(FunCode)),
+    {FunType, _} = typ_of(BaseEnv, FunExp),
+    ?assertMatch({t_receiver,
+                  {unbound,t2,0},
+                  {t_arrow,
+                   [{unbound,t0,0},
+                    {t_arrow, 
+                     [{unbound,t0,0},{unbound,t2,0}],
+                     {unbound,t0,0}}],
+                   t_rec}}, 
+                 FunType),
+    NewBindings = [{"behaviour", FunType}|BaseEnv#env.bindings],
+    NewModule = #mlfe_module{functions=[FunExp]},
+    EnvWithFun = BaseEnv#env{bindings=NewBindings, current_module=NewModule},
+    SpawnCode = "let f x y = x +. y in spawn behaviour 1.0 f",
+    {ok, SpawnExp} = mlfe_ast_gen:parse(mlfe_scanner:scan(SpawnCode)),
+    {SpawnType, _} = typ_of(EnvWithFun,  SpawnExp),
+                            
+    ?assertMatch({}, SpawnType).
+
 
 %%% ### Process Interaction Typing Tests
 %%%
