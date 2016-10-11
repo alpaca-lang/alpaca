@@ -77,13 +77,14 @@ cell(TypVal) ->
 new_cell(Typ) ->
     spawn_link(?MODULE, cell, [Typ]).
 
--spec get_cell(t_cell()) -> typ().
+-spec get_cell(t_cell()|typ()) -> typ().
 get_cell(Cell) when is_pid(Cell) ->
     Cell ! {get, self()},
     receive
         Val -> Val
-    end.
-
+    end;
+get_cell(NotACell) ->
+    NotACell.
 
 set_cell(Cell, Val) ->
     Cell ! {set, Val},
@@ -248,11 +249,11 @@ deep_copy_type({t_list, A}, RefMap) ->
 
 %%% Deep copying is used only for function application so we extract the
 %%% arrow for typing here:
-deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
-    deep_copy_type(Arrow, RefMap);
+%deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
+                                                %    deep_copy_type(Arrow, RefMap);
 deep_copy_type({t_receiver, A, B}, RefMap) ->
-    {A2, M2} = deep_copy_type(A, RefMap),
-    {B2, M3} = deep_copy_type(B, RefMap),
+    {B2, M2} = deep_copy_type(B, RefMap),
+    {A2, M3} = copy_type(A, M2),
     {{t_receiver, A2, B2}, M3};
 
 deep_copy_type(T, M) ->
@@ -262,6 +263,8 @@ copy_type(P, RefMap) when is_pid(P) ->
     copy_cell(P, RefMap);
 copy_type({t_arrow, _, _}=A, M) ->
     deep_copy_type(A, M);
+copy_type({unbound, _, _}=U, M) ->
+    copy_type(new_cell(U), M);
 copy_type(T, M) ->
     {new_cell(T), M}.
 
@@ -933,6 +936,11 @@ inst({t_arrow, Params, ResTyp}, Lvl, Env, CachedMap) ->
     {_, NewEnv, M, PTs} = lists:foldr(Folder, {Lvl, Env, CachedMap, []}, Params),
     {RT, NewEnv2, M2} = inst(ResTyp, Lvl, NewEnv, M),
     {{t_arrow, PTs, RT}, NewEnv2, M2};
+inst({t_receiver, Recv, Body}=R, Lvl, Env, CachedMap) ->
+    {Body2, Env2, Map2} = inst(Body, Lvl, Env, CachedMap),
+    {Recv2, Env3, Map3} = inst(Recv, Lvl, Env2, Map2),
+    NewR = {t_receiver, Recv2, Body2},
+    {NewR, Env3, Map3};
 
 %% Everything else is assumed to be a constant:
 inst(Typ, _Lvl, Env, Map) ->
@@ -1436,31 +1444,26 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
 
 %% Spawning of functions in the current module:
 typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) ->
-
     %% make a function application and type it:
     Apply = #mlfe_apply{name=F, args=Args},
-    #mlfe_module{functions=MFs} = Env#env.current_module,
-    {_, _, FN} = F,
-    FunTyp = case [Fun||#mlfe_fun_def{name={_, _, FF}}=Fun <- MFs, FF =:= FN] of
-                 [#mlfe_fun_def{type=undefined}=Fun] ->
-                     typ_of(Env, Lvl, Fun);
-                 [#mlfe_fun_def{type=T}] ->
-                     {T, Env#env.next_var};
-                 [] ->
-                     {error, {no_function, module_name(Env), L, FN}}
-             end,
 
-    case FunTyp of
+    case typ_of(Env, Lvl, F) of
         {error, _}=Err -> Err;
         {SpawnFunTyp, NV} ->
             Env2 = update_counter(NV, Env),
             case typ_of(Env2, Lvl, Apply) of
                 {error, _}=Err -> Err;
-                {_, NV2} ->
-                    %% use the type of the application to type a pid
+                {_AT, NV2} ->
+                    %% use the type of the application to type a pid but prefer
+                    %% the one determined by typing the application.
                     case SpawnFunTyp of
                         {t_receiver, Recv, _} ->
-                            {new_cell({t_pid, Recv}), NV2};
+                            case _AT of
+                                {t_receiver, Recv2, _} ->
+                                    {new_cell({t_pid, Recv2}), NV2};
+                                _ -> 
+                                    {new_cell({t_pid, Recv}), NV2}
+                                end;
                         _ ->
                             {new_cell({t_pid, new_cell(undefined)}), NV2}
                     end
@@ -1694,7 +1697,8 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
         case TypF of
             _ when is_pid(TypF) ->
                 case get_cell(TypF) of
-                    {t_receiver, Recv, App} ->
+                    {t_receiver, Recv, _App} ->
+                        {App, _} = deep_copy_type(_App, maps:new()),
                         case typ_apply_no_recv(Env, Lvl, App,
                                                NextVar, Args, Line) of
                             {error, _}=Err -> Err;
@@ -1706,25 +1710,29 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
                     _ ->
                         typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
                 end;
-            {t_receiver, Recv, App} ->
-                case typ_apply_no_recv(Env, Lvl, App, NextVar, Args, Line) of
+            {t_receiver, Recv, _App} ->
+                %% Ensure that the receive type and body use the same reference
+                %% cells for the same type variables:
+                {{t_receiver, R2, A2}, _} = deep_copy_type(TypF, maps:new()),
+                case typ_apply_no_recv(Env, Lvl, A2, NextVar, Args, Line) of
                     {error, _}=Err -> Err;
                     {Typ, NV} ->
                         case get_cell(Typ) of
                             {t_receiver, Recv2, RetTyp} ->
-                                case unify(Recv, Recv2, Env, Line) of
+                                case unify(R2, Recv, Env, Line) of
                                     {error, _}=Err -> Err;
                                     ok ->
-                                        NewRec = {t_receiver, Recv, RetTyp},
+                                        NewRec = {t_receiver, R2, RetTyp},
                                         {NewRec, NV}
                                 end;
                             _ ->
-                                NewRec = {t_receiver, Recv, Typ},
+                                NewRec = {t_receiver, R2, Typ},
                                 {NewRec, NV}
                         end
                 end;
             _ ->
-                typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line)
+                {TypF2, _} = deep_copy_type(TypF, maps:new()),
+                typ_apply_no_recv(Env, Lvl, TypF2, NextVar, Args, Line)
         end,
     Result.
 
@@ -1734,7 +1742,10 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% force every other application to unify with them
     %% where the other callers may be expecting a
     %% polymorphic function.  See Pierce's TAPL, chapter 22.
-    {CopiedTypF, _} = deep_copy_type(TypF, maps:new()),
+
+    %{CopiedTypF, _} = deep_copy_type(TypF, maps:new()),
+    %% placeholder:
+    CopiedTypF = TypF,
 
     case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
         {error, _}=Err -> Err;
@@ -2987,8 +2998,7 @@ polymorphic_process_as_return_value_test() ->
         "  let u = send :a p in\n"
         "  p",
     Res = module_typ_and_parse(Code),
-    io:format("~w~n", [Res]),
-    ?assertMatch({ok, _}, Res).
+    ?assertMatch({error, {cannot_unify, poly_process, 12, t_float, t_atom}}, Res).
 
 polymorphic_spawn_test() ->
     FunCode = 
@@ -3008,13 +3018,13 @@ polymorphic_spawn_test() ->
                    t_rec}}, 
                  FunType),
     NewBindings = [{"behaviour", FunType}|BaseEnv#env.bindings],
-    NewModule = #mlfe_module{functions=[FunExp]},
+    NewModule = #mlfe_module{functions=[FunExp#mlfe_fun_def{type=FunType}]},
     EnvWithFun = BaseEnv#env{bindings=NewBindings, current_module=NewModule},
     SpawnCode = "let f x y = x +. y in spawn behaviour 1.0 f",
     {ok, SpawnExp} = mlfe_ast_gen:parse(mlfe_scanner:scan(SpawnCode)),
     {SpawnType, _} = typ_of(EnvWithFun,  SpawnExp),
                             
-    ?assertMatch({}, SpawnType).
+    ?assertMatch({t_pid, t_float}, SpawnType).
 
 
 %%% ### Process Interaction Typing Tests
