@@ -247,10 +247,6 @@ deep_copy_type({t_list, A}, RefMap) ->
     {NewList, Map} = copy_type_list(A, RefMap),
     {{t_list, NewList}, Map};
 
-%%% Deep copying is used only for function application so we extract the
-%%% arrow for typing here:
-%deep_copy_type({t_receiver, _, {t_arrow, _, _}=Arrow}, RefMap) ->
-                                                %    deep_copy_type(Arrow, RefMap);
 deep_copy_type({t_receiver, A, B}, RefMap) ->
     {B2, M2} = deep_copy_type(B, RefMap),
     {A2, M3} = copy_type(A, M2),
