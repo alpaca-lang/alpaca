@@ -248,6 +248,12 @@ deep_copy_type({t_list, A}, RefMap) ->
     {{t_list, NewList}, Map};
 
 deep_copy_type({t_receiver, A, B}, RefMap) ->
+    %% Here we're copying the body of the receiver first and then the
+    %% receiver type itself, explicitly with a method that pulls existing 
+    %% reference cells for named type variables from the map returned by 
+    %% the body's deep copy operation.  This ensures that when the same 
+    %% type variable occurs in body the body and receive types we use the
+    %% same reference cell.
     {B2, M2} = deep_copy_type(B, RefMap),
     {A2, M3} = copy_type(A, M2),
     {{t_receiver, A2, B2}, M3};
