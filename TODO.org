@@ -1,6 +1,7 @@
 * Records
-OCaml and Elm's approach to row polymorphism would be ideal here, biased towards concrete specification of records up front rather than ad-hoc.  Something like the following:
+Along the lines of row polymorphism in OCaml and Elm.  We should be able to specify concrete record types up front but also create them in an ad-hoc manner.  Addition and removal of record members is not something I'm planning on including at the moment.
 
+Up front:
 #+BEGIN_SRC
 type rec1 = {x: float, y: int, z: atom}
 type rec2 = {x: float, y: int}
@@ -11,14 +12,21 @@ add_two_xs a b =
     ({x = x1}, {x = x2}) -> x1 + x2
 #+END_SRC
 
-The following should fail to type if all three records are in the same namespace (module) since ~rec3~ breaks the union of all occurrences of ~x~ _unless_ there's an ADT in scope that unions ~int~ and ~float~:
+Or ad-hoc:
 #+BEGIN_SRC
-type rec1 = {x: float, y: int, z: atom}
-type rec2 = {x: float, y: int}
-type rec3 = {x: int, y: int}
+add_two_xs a b = 
+  match (a, b) with
+    ({x = x1}, {x = x2}) -> x1 + x2
+
+{- Results in the integer `3` without any specific record types
+   defined prior to this call:
+-}
+add_two_xs {x=2, y=3} {x=1}
 #+END_SRC
 
-Compiling these as maps probably is easiest but there may be a case (speed?  rigour?) for doing so as tuples at the expense of more compiler-generated code.
+Compiling records as maps probably is easiest but in talking with others there seems to be a case (speed, natural ordering) for compiling to tuples at the expense of more compiler-generated code.  This precludes binary dependencies as the compiler must be able to build record handling code for any records sent from a user's program to a dependency that expects records.
+
+A compiler switch to optionally compile to maps might be helpful for those concerned with hot code reloading.
 
 * Type Ascriptions/Specifications
 It would be good if we could *partially* specify the types of functions, leaving it up to the inferencer to fill in the blanks.  There are two options at the moment:

@@ -1,3 +1,10 @@
+* v0.2.3
+- comment syntax fixes:  https://github.com/danabr
+- formatting and cleanup:  https://github.com/tuncer
+- polymorphic ADT unification fix: https://github.com/danabr
+- renamed ~call_erlang~ to ~beam~ for clarity:  https://github.com/tuncer
+- built-in parametric types (e.g. list, map) can be parameterized by ADTs:  https://github.com/danabr
+- fix for polymorphic process spawning:  https://github.com/j14159
 * v0.2.2
 - Haskell-style comments, from https://github.com/tuncer
 - nested comments are errors, from https://github.com/yurrriq
