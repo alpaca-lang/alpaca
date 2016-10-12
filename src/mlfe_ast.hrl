@@ -172,6 +172,14 @@
                         | mlfe_list_type()
                         | mlfe_map_type().
 
+-record(mlfe_record_type_member, {
+          line=-1 :: integer(),
+          name=undefined :: atom(),
+          type=undefined :: mlfe_types()}).
+-type mlfe_record_type_member() :: #mlfe_record_type_member{}.
+
+-type mlfe_record_type() :: {mlfe_record_type, list(mlfe_record_type_member())}.
+
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ() | mlfe_type(),
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
@@ -183,16 +191,18 @@
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
+-type mlfe_types() :: mlfe_type()
+                    | mlfe_type_tuple()
+                    | mlfe_base_type()
+                    | mlfe_list_type()
+                    | mlfe_map_type().
+
 -record(mlfe_type, {
           module=undefined :: atom(),
           name={type_name, -1, ""} :: mlfe_type_name(),
           vars=[]                  :: list(mlfe_type_var()),
           members=[]               :: list(mlfe_constructor()
-                                           | mlfe_type()
-                                           | mlfe_type_tuple()
-                                           | mlfe_base_type()
-                                           | mlfe_list_type()
-                                           | mlfe_map_type())
+                                           | mlfe_types())
          }).
 -type mlfe_type() :: #mlfe_type{}.
 
@@ -243,6 +253,20 @@
                      values=[] :: list(mlfe_expression())
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
+
+%%% ### Records
+
+-record(mlfe_record_member, {
+          line=-1 :: integer(),
+          name=undefined :: atom(),
+          type=undefined :: mlfe_type(),
+          val={symbol, -1, ""} :: mlfe_value_expression()}).
+-type mlfe_record_member() :: #mlfe_record_member{}.
+
+-record(mlfe_record, {arity=0 :: integer(),
+                      members=[] :: list(mlfe_record_member())}).
+-type mlfe_record() :: #mlfe_record{}.
+
 
 %%% Pattern Matching
 

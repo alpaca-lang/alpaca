@@ -28,6 +28,11 @@ cons literal_cons_items
 binary bin_segments bin_segment bin_qualifier bin_qualifiers
 map_literal map_add map_literal_pairs map_pair
 
+%% For literal records:
+record_member record_members record
+%% For pre-defined record types:
+record_type_member record_type_members record_type
+
 term terms
 unit tuple tuple_list
 defn binding
@@ -56,7 +61,8 @@ symbol module_fun
 assign int_math float_math minus plus
 '[' ']' cons_infix
 bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
-map_open close_brace map_arrow
+open_brace close_brace
+map_open map_arrow
 match with '|' '->'
 
 send
@@ -104,6 +110,16 @@ poly_type -> symbol type_expressions :
   Members = '$2',
   Vars = [V || {type_var, _, _}=V <- Members],
   #mlfe_type{name={type_name, L, N}, members=Members, vars=Vars}.
+
+record_type_member -> symbol ':' type_expr : 
+  {symbol, L, N} = '$1',
+  #mlfe_record_type_member{name=N, line=L, type='$3'}.
+
+record_type_members -> record_type_member : ['$1'].
+record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'].
+
+record_type -> open_brace record_type_members close_brace : 
+  {mlfe_record_type, '$2'}.
 
 type_expr -> type_var : '$1'.
 type_expr -> poly_type : '$1'.
@@ -245,6 +261,16 @@ map_literal -> map_open map_literal_pairs close_brace :
 %% Adding a pair to a map, e.g. #{:a => "b" :: existing_map}
 map_add -> map_open map_pair '|' term close_brace:
   #mlfe_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
+
+record_member -> symbol assign simple_expr:
+  {symbol, L, N} = '$1',
+  #mlfe_record_member{line=L, name=N, val='$3'}.
+
+record_members -> record_member: ['$1'].
+record_members -> record_member ',' record_members: ['$1' | '$3'].
+
+record -> open_brace record_members close_brace:
+  #mlfe_record{arity=length('$2'), members='$2'}.
 
 unit -> '(' ')':
   {_, L} = '$1',
