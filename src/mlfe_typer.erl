@@ -1252,7 +1252,8 @@ typ_of(Env, Lvl, #mlfe_record{members=Members}) ->
         end,
     {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
     {RowVar, Env3} = new_var(Lvl, Env2),
-    {#t_record{members=lists:reverse(Members2), row_var=RowVar}, Env3#env.next_var};
+    Res = new_cell(#t_record{members=lists:reverse(Members2), row_var=RowVar}),
+    {Res, Env3#env.next_var};
 
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
