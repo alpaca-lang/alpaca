@@ -75,6 +75,7 @@
              | t_binary
              | t_list()
              | t_map()
+             | t_record()
              | t_tuple()
              | t_clause()
              | t_pid()
@@ -172,13 +173,20 @@
                         | mlfe_list_type()
                         | mlfe_map_type().
 
--record(mlfe_record_type_member, {
-          line=-1 :: integer(),
-          name=undefined :: atom(),
-          type=undefined :: mlfe_types()}).
--type mlfe_record_type_member() :: #mlfe_record_type_member{}.
+%%% ### Record Type Tracking
+%%%
+%%% These will do double-duty for both defining record types for ADTs
+%%% as well as to type records as they occur.
+-record(t_record_member, {name=undefined :: atom(),
+                          type=undefined :: mlfe_types()}).
+-type t_record_member() :: #t_record_member{}.
 
--type mlfe_record_type() :: {mlfe_record_type, list(mlfe_record_type_member())}.
+-record(t_record, {members=[] :: list(t_record_member()),
+                           row_var=undefined :: typ()}).
+                           
+-type t_record() :: #t_record{}.
+
+%%% ADT Type Tracking
 
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ() | mlfe_type(),
@@ -254,12 +262,12 @@
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
 
-%%% ### Records
+%%% ### Record AST Nodes
 
 -record(mlfe_record_member, {
           line=-1 :: integer(),
           name=undefined :: atom(),
-          type=undefined :: mlfe_type(),
+          type=undefined :: typ(),
           val={symbol, -1, ""} :: mlfe_value_expression()}).
 -type mlfe_record_member() :: #mlfe_record_member{}.
 
@@ -351,6 +359,7 @@
                                | mlfe_binary()
                                | mlfe_map()
                                | mlfe_map_add()
+                               | mlfe_record()
                                | mlfe_tuple()
                                | mlfe_apply()
                                | mlfe_type_apply()

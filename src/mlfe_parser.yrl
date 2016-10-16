@@ -264,7 +264,7 @@ map_add -> map_open map_pair '|' term close_brace:
 
 record_member -> symbol assign simple_expr:
   {symbol, L, N} = '$1',
-  #mlfe_record_member{line=L, name=N, val='$3'}.
+  #mlfe_record_member{line=L, name=list_to_atom(N), val='$3'}.
 
 record_members -> record_member: ['$1'].
 record_members -> record_member ',' record_members: ['$1' | '$3'].
@@ -291,6 +291,7 @@ term -> cons : '$1'.
 term -> binary : '$1'.
 term -> map_literal : '$1'.
 term -> map_add : '$1'.
+term -> record : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.

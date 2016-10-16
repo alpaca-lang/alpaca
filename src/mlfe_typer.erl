@@ -991,6 +991,11 @@ unwrap({t_list, T}) ->
     {t_list, unwrap(T)};
 unwrap({t_map, K, V}) ->
     {t_map, unwrap(K), unwrap(V)};
+unwrap(#t_record{members=Ms, row_var=RV}) ->
+    F = fun(#t_record_member{type=T}=RM) ->
+                RM#t_record_member{type=unwrap(T)}
+        end,
+    #t_record{members=lists:map(F, Ms), row_var=unwrap(RV)};
 unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
     ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs],
             members=[unwrap(M) || M <- Ms]};
@@ -1233,6 +1238,21 @@ typ_of(Env, Lvl, #mlfe_map_add{line=L, to_add=A, existing=B}) ->
                                 fun(_) -> {MTyp, Env3#env.next_var} end)
                 end)
       end);
+
+%% Record typing:
+typ_of(Env, Lvl, #mlfe_record{members=Members}) ->
+    F = fun(#mlfe_record_member{name=N, val=V}, {Members, E}) ->
+                case typ_of(E, Lvl, V) of
+                    {error, _}=Err -> 
+                        erlang:error(Err);
+                    {VTyp, NextVar} ->
+                        MTyp = #t_record_member{name=N, type=VTyp},
+                        {[MTyp|Members], update_counter(NextVar, E)}
+                end
+        end,
+    {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
+    {RowVar, Env3} = new_var(Lvl, Env2),
+    {#t_record{members=lists:reverse(Members2), row_var=RowVar}, Env3#env.next_var};
 
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
@@ -1915,6 +1935,22 @@ add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
             end
     end;
 
+add_bindings(#mlfe_record{}=R, Env, Lvl, NameNum) ->
+    {R2, NameNum2} = rename_wildcards(R, NameNum),
+    F = fun(#mlfe_record_member{val=V}=M, {E, N}) ->
+                case add_bindings(V, E, Lvl, N) of
+                    {error, _}=Err  -> erlang:error(Err);
+                    {_, _, E2, N2} -> {E2, N2}
+                end
+        end,
+    case lists:foldl(F, {Env, NameNum}, R2#mlfe_record.members) of
+        {Env2, NameNum2} ->
+            case typ_of(Env2, Lvl, R2) of
+                {error, _}=Err -> erlang:error(Err);
+                {Typ, NV} -> {Typ, R2, update_counter(NV, Env2), NameNum2}
+            end
+    end;
+
 add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
     case typ_of(Env, Lvl, T) of
         {error, _}=Err -> Err;
@@ -1972,6 +2008,14 @@ rename_wildcards(#mlfe_map_pair{key=K, val=V}=P, NameNum) ->
     {K2, N1} = rename_wildcards(K, NameNum),
     {V2, N2} = rename_wildcards(V, N1),
     {P#mlfe_map_pair{key=K2, val=V2}, N2};
+
+rename_wildcards(#mlfe_record{members=Ms}=R, NameNum) ->
+    {Ms2, NameNum2} = rename_wildcards(Ms, NameNum),
+    {R#mlfe_record{members=Ms2}, NameNum2};
+rename_wildcards(#mlfe_record_member{val=V}=RM, NameNum) ->
+    {V2, NameNum2} = rename_wildcards(V, NameNum),
+    {RM#mlfe_record_member{val=V2}, NameNum2};
+
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
                      {NewOther, NewN} = rename_wildcards(V, N),
@@ -3318,6 +3362,29 @@ send_message_test_() ->
                  {error, {cannot_unify, _, _, undefined, t_int}},
                  module_typ_and_parse(Code))
       end
+    ].
+
+%% Tests for records
+
+record_inference_test_() ->
+    [?_assertMatch({#t_record{
+                      members=[#t_record_member{name=x, type=t_int},
+                               #t_record_member{name=y, type=t_float}],
+                      row_var={unbound, _, _}}, _},
+                   top_typ_of("{x=1, y=2.0}")),
+     fun() ->
+             Code =
+                 "f r = match r with\n"
+                 "  {x = x1} -> x1 + 1",
+             ?assertMatch({{t_arrow, 
+                            [#t_record{
+                                 members=[#t_record_member{
+                                             name=x,
+                                             type=t_int}],
+                                 row_var={unbound, _, _}}],
+                            t_int}, _},
+                          top_typ_of(Code))
+     end
     ].
 
 no_process_leak_test() ->
