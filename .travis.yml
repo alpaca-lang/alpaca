@@ -24,6 +24,6 @@ before_install:
 before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
-  - if [ "$TRAVIS_OTP_RELEASE" != "19.0" ]; then rebar3 dialyzer; else echo "dialyzer disabled on OTP 19.0"; fi
+  - if [ "$TRAVIS_OTP_RELEASE" != "19.1" ]; then echo  "dialyzer disabled on OTP < 19.1"; else rebar3 dialyzer; fi
   - rebar3 xref
   - rebar3 eunit
