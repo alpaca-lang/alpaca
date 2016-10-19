@@ -113,15 +113,16 @@ poly_type -> symbol type_expressions :
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, L, N} = '$1',
-  #mlfe_record_type_member{name=N, line=L, type='$3'}.
+  #t_record_member{name=list_to_atom(N), type='$3'}.
 
 record_type_members -> record_type_member : ['$1'].
 record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'].
 
 record_type -> open_brace record_type_members close_brace : 
-  {mlfe_record_type, '$2'}.
+  #t_record{members='$2'}.
 
 type_expr -> type_var : '$1'.
+type_expr -> record_type : '$1'.
 type_expr -> poly_type : '$1'.
 type_expr -> symbol :
   {symbol, L, N} = '$1',

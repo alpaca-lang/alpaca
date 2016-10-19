@@ -635,6 +635,8 @@ unify_adt(C1, C2, #adt{}=A, {t_list, _LType}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(C1, C2, #adt{}=A, {t_map, _, _}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, #t_record{}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(_, _, A, B, Env, L) ->
     unify_error(Env, L, A, B).
 
@@ -850,6 +852,29 @@ inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
             end
     end;
 
+inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
+    #t_record{members=Ms, row_var=RV} = R,
+    {RVC, Env2} = case RV of
+                      undefined -> 
+                          {V, E} = new_var(0, Env),
+                          {new_cell(V), E};
+                      {unbound, _, _}=V ->
+                          {new_cell(V), Env};
+                      _ ->
+                          {RV, Env}
+                  end,
+    F = fun(#t_record_member{type=T}=M, {NewMems, E}) ->
+                case inst_type_members(ADT, [T], Env, []) of
+                    {error, _}=Err -> 
+                        erlang:error(Err);
+                    {ok, E2, _, [InstT]} -> 
+                        {[M#t_record_member{type=InstT}|NewMems], E2}
+                end
+        end,
+    {NewMems, Env3} = lists:foldl(F, {[], Env2}, Ms),
+    NewT = new_cell(#t_record{members=lists:reverse(NewMems), row_var=RVC}),
+    inst_type_members(ADT, Rem, Env3, [NewT|Memo]);
+
 inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err ->
@@ -948,6 +973,15 @@ inst_constructor_arg({mlfe_list, ElementType}, Vs) ->
 inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs),
                      inst_constructor_arg(ValType, Vs)});
+inst_constructor_arg(#t_record{members=Ms}=R, Vs) ->
+    F = fun(#t_record_member{type=T}=M) ->
+                case inst_constructor_arg(T, Vs) of
+                    {error, _}=E -> erlang:error(E);
+                    T2           -> M#t_record_member{type=T2}
+                end
+        end,
+    new_cell(R#t_record{members=lists:map(F, Ms)});
+
 inst_constructor_arg({mlfe_pid, MsgType}, Vs) ->
     new_cell({t_pid, inst_constructor_arg(MsgType, Vs)});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
@@ -1136,7 +1170,6 @@ type_module(#mlfe_module{functions=Fs,
                         type_imports=Imports,
                         tests=Tests}=M,
            #env{modules=Modules}=Env) ->
-
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
                       (_, [{error, _}=Err|_]) -> Err;
@@ -2028,10 +2061,10 @@ add_bindings(#mlfe_record{}=R, Env, Lvl, NameNum) ->
                 end
         end,
     case lists:foldl(F, {Env, NameNum}, R2#mlfe_record.members) of
-        {Env2, NameNum2} ->
+        {Env2, NameNum3} ->
             case typ_of(Env2, Lvl, R2) of
                 {error, _}=Err -> erlang:error(Err);
-                {Typ, NV} -> {Typ, R2, update_counter(NV, Env2), NameNum2}
+                {Typ, NV} -> {Typ, R2, update_counter(NV, Env2), NameNum3}
             end
     end;
 
@@ -3514,7 +3547,53 @@ record_inference_test_() ->
                    top_typ_of("f () = "
                               "  let g r = match r with "
                               "    {x=x1, y=y1} -> x1 + y1 in "
-                              "  g {x=1}"))
+                              "  g {x=1}")),
+     fun() ->
+             Code =
+                 "module record_inference_record_adt_test\n\n"
+                 "type my_adt 'a = Adt | {x: int, a: 'a}\n\n"
+                 "f r = match r with \n"
+                 "    {x=x1, a=a1} -> x1 + a1\n"
+                 "  | Adt -> 0",
+             ?assertMatch(
+                {ok, 
+                 #mlfe_module{
+                    functions=[#mlfe_fun_def{
+                                  type={t_arrow,
+                                        [#adt{
+                                            name="my_adt",
+                                            vars=[{"a", t_int}],
+                                            members=[#t_record{
+                                                        members=[#t_record_member{
+                                                                    name=x,
+                                                                    type=t_int},
+                                                                 #t_record_member{
+                                                                    name=a,
+                                                                    type=t_int}],
+                                                        row_var={unbound, _, _}},
+                                                    {t_adt_cons, "Adt"}]
+                                                       }],
+                                            t_int}}]}}, 
+                    module_typ_and_parse(Code))
+     end,
+     fun() ->
+             %% The following uses a constructor argument only to force
+             %% typing to the ADT.
+             Code =
+                 "module nested_record_adt_test\n\n"
+                 "type nested = Nested {fname: string, "
+                 "                      lname: string, "
+                 "                      address: {street: string,"
+                 "                                city: string}}\n\n"
+                 "fname r = match r with\n"
+                 "  Nested {address={street=s}}, is_string s ->  s",
+             ?assertMatch({ok, #mlfe_module{
+                                  functions=[#mlfe_fun_def{
+                                                type={t_arrow,
+                                                      [#adt{name="nested"}],
+                                                      t_string}}]}},
+                          module_typ_and_parse(Code))
+     end
     ].
 
 no_process_leak_test() ->

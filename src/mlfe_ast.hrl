@@ -32,7 +32,7 @@
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
 
--type t_adt_constructor() :: {t_adt_con, string()}.
+-type t_adt_constructor() :: {t_adt_cons, string()}.
 
 %% Processes that are spawned with functions that are not receivers are not
 %% allowed to be sent messages.
