@@ -271,7 +271,8 @@ record_members -> record_member: ['$1'].
 record_members -> record_member ',' record_members: ['$1' | '$3'].
 
 record -> open_brace record_members close_brace:
-  #mlfe_record{arity=length('$2'), members='$2'}.
+  {_, L} = '$1',
+  #mlfe_record{line=L, arity=length('$2'), members='$2'}.
 
 unit -> '(' ')':
   {_, L} = '$1',
@@ -473,6 +474,7 @@ term_line(Term) ->
         #mlfe_cons{line=L} -> L;
         #mlfe_map_pair{line=L} -> L;
         #mlfe_map{line=L} -> L;
+        #mlfe_record{members=[#mlfe_record_member{line=L}|_]} -> L;
         #mlfe_tuple{values=[H|_]} -> term_line(H);
         #mlfe_type_apply{name=N} -> term_line(N)
     end.

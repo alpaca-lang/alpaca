@@ -568,16 +568,23 @@ make_bindings(NV, MN, M, #mlfe_map_pair{key=K, val=V}=P) ->
             end
     end;
 
+%% Records can be compiled as maps so we need the is_pattern parameter
+%% on their AST nodes set correctly here too.
 make_bindings(NV, MN, M, #mlfe_record{members=Members}=R) ->
     F = fun(#mlfe_record_member{val=V}=RM, {NewVs, NextVar, Map}) ->
                 case make_bindings(NextVar, MN, Map, V) of
-                    {error, _}=Err -> erlang:error(Err);
+                    {error, _}=Err -> 
+                        erlang:error(Err);
                     {NextVar2, Map2, V2} -> 
-                        {[RM#mlfe_record_member{val=V2}|NewVs], NextVar2, Map2}
+                        NewR = RM#mlfe_record_member{val=V2},
+                        {[NewR|NewVs], NextVar2, Map2}
                 end
         end,
     {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
-    {NV2, M2, R#mlfe_record{members=lists:reverse(Members2)}};
+    NewR = R#mlfe_record{
+             members=lists:reverse(Members2),
+             is_pattern=true},
+    {NV2, M2, NewR};
 
 make_bindings(NV, _MN, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of

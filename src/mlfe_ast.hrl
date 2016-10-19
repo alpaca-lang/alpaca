@@ -272,6 +272,8 @@
 -type mlfe_record_member() :: #mlfe_record_member{}.
 
 -record(mlfe_record, {arity=0 :: integer(),
+                      line=0 :: integer(),
+                      is_pattern=false :: boolean(),
                       members=[] :: list(mlfe_record_member())}).
 -type mlfe_record() :: #mlfe_record{}.
 

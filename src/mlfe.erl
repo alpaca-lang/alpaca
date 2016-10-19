@@ -243,4 +243,15 @@ higher_order_function_test() ->
     ?assertEqual({'Some', value}, M:lookup(key, Dict1)),
     ?assertEqual('None', M:lookup(anotherkey, Dict1)),
     code:delete(M).
+
+simple_record_test() ->
+    [M] = compile_and_load(["test_files/simple_records.mlfe"], []),
+    ?assertEqual({<<"sample">>, <<"person">>}, M:sample_person({})),
+    code:delete(M).
+
+polymorphic_record_test() ->
+    [M] = compile_and_load(["test_files/polymorphic_record_test.mlfe"], []),
+    ?assertEqual(<<"bar">>, M:with_y({})),
+    code:delete(M).
+    
 -endif.

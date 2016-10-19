@@ -1476,7 +1476,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
         {error, _} = Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, #env{next_var=NextVar2}}  ->
             %% unify the expression with the unified pattern:
-            case unify(ETyp, PTyp, Env, Line) of
+            case unify(PTyp, ETyp, Env, Line) of
                 {error, _} = Err -> Err;
                 %% only need to return the result type of the unified
                 %% clause types:
@@ -2341,7 +2341,7 @@ list_test_() ->
                      "f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_float}},
+     ?_assertMatch({error, {cannot_unify, undefined, 3, t_float, t_int}},
                    top_typ_of(
                      "f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
