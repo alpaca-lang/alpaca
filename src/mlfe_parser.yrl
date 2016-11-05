@@ -28,6 +28,11 @@ cons literal_cons_items
 binary bin_segments bin_segment bin_qualifier bin_qualifiers
 map_literal map_add map_literal_pairs map_pair
 
+%% For literal records:
+record_member record_members record
+%% For pre-defined record types:
+record_type_member record_type_members record_type
+
 term terms
 unit tuple tuple_list
 defn binding
@@ -56,7 +61,8 @@ symbol module_fun
 assign int_math float_math minus plus
 '[' ']' cons_infix
 bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
-map_open close_brace map_arrow
+open_brace close_brace
+map_open map_arrow
 match with '|' '->'
 
 send
@@ -105,7 +111,18 @@ poly_type -> symbol type_expressions :
   Vars = [V || {type_var, _, _}=V <- Members],
   #mlfe_type{name={type_name, L, N}, members=Members, vars=Vars}.
 
+record_type_member -> symbol ':' type_expr : 
+  {symbol, L, N} = '$1',
+  #t_record_member{name=list_to_atom(N), type='$3'}.
+
+record_type_members -> record_type_member : ['$1'].
+record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'].
+
+record_type -> open_brace record_type_members close_brace : 
+  #t_record{members='$2'}.
+
 type_expr -> type_var : '$1'.
+type_expr -> record_type : '$1'.
 type_expr -> poly_type : '$1'.
 type_expr -> symbol :
   {symbol, L, N} = '$1',
@@ -246,6 +263,17 @@ map_literal -> map_open map_literal_pairs close_brace :
 map_add -> map_open map_pair '|' term close_brace:
   #mlfe_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
 
+record_member -> symbol assign simple_expr:
+  {symbol, L, N} = '$1',
+  #mlfe_record_member{line=L, name=list_to_atom(N), val='$3'}.
+
+record_members -> record_member: ['$1'].
+record_members -> record_member ',' record_members: ['$1' | '$3'].
+
+record -> open_brace record_members close_brace:
+  {_, L} = '$1',
+  #mlfe_record{line=L, arity=length('$2'), members='$2'}.
+
 unit -> '(' ')':
   {_, L} = '$1',
   {unit, L}.
@@ -265,6 +293,7 @@ term -> cons : '$1'.
 term -> binary : '$1'.
 term -> map_literal : '$1'.
 term -> map_add : '$1'.
+term -> record : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.
@@ -445,6 +474,7 @@ term_line(Term) ->
         #mlfe_cons{line=L} -> L;
         #mlfe_map_pair{line=L} -> L;
         #mlfe_map{line=L} -> L;
+        #mlfe_record{members=[#mlfe_record_member{line=L}|_]} -> L;
         #mlfe_tuple{values=[H|_]} -> term_line(H);
         #mlfe_type_apply{name=N} -> term_line(N)
     end.

@@ -1,0 +1,23 @@
+module simple_records
+
+export fname/1, lname/1, sample_person/1
+
+fname r =
+  match r with
+    {fname=f}, is_string f -> f
+
+lname r =
+  match r with
+    {lname=l}, is_string l -> l
+
+make_person fname lname =
+  {fname=fname, lname=lname}
+
+{- Make an example person and extract first and last names in a tuple.
+   Purpose here is to ensure everything type checks correctly as well
+   as being able to destructure a record.
+ -}
+sample_person () =
+  let r = make_person "sample" "person" in
+  (fname r, lname r)
+  

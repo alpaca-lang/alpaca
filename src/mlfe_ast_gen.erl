@@ -387,6 +387,18 @@ rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
         {error, _} = Err -> Err;
         {NV, M, Vals2} -> {NV, M, T#mlfe_tuple{values=Vals2}}
     end;
+
+rename_bindings(NextVar, MN, Map, #mlfe_record{members=Members}=R) ->
+    F = fun(#mlfe_record_member{val=V}=RM, {NewMembers, NV, M}) ->
+                case rename_bindings(NV, MN, M, V) of
+                    {error, _}=E -> erlang:error(E);
+                    {NV2, M2, V2} ->
+                        {[RM#mlfe_record_member{val=V2}|NewMembers], NV2, M2}
+                end
+        end,
+    {NewMembers, NextVar2, Map2} = lists:foldl(F, {[], NextVar, Map}, Members),
+    {NextVar2, Map2, R#mlfe_record{members=lists:reverse(NewMembers)}};
+
 rename_bindings(NextVar, _MN, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
         undefined -> {NextVar, Map, S};
@@ -528,7 +540,7 @@ make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
 %%% the following to work:
 %%%
 %%%     get my_key my_map = match my_map with
-%%%       #{my_key => v} => v
+%%%       #{my_key => v} -> v
 %%%
 %%% Map patterns require the key to be something exact already.
 make_bindings(NextVar, MN, BindingMap, #mlfe_map{pairs=Ps}=Map) ->
@@ -555,6 +567,24 @@ make_bindings(NV, MN, M, #mlfe_map_pair{key=K, val=V}=P) ->
                     {NV3, M3, P#mlfe_map_pair{is_pattern=true, key=K2, val=V2}}
             end
     end;
+
+%% Records can be compiled as maps so we need the is_pattern parameter
+%% on their AST nodes set correctly here too.
+make_bindings(NV, MN, M, #mlfe_record{members=Members}=R) ->
+    F = fun(#mlfe_record_member{val=V}=RM, {NewVs, NextVar, Map}) ->
+                case make_bindings(NextVar, MN, Map, V) of
+                    {error, _}=Err -> 
+                        erlang:error(Err);
+                    {NextVar2, Map2, V2} -> 
+                        NewR = RM#mlfe_record_member{val=V2},
+                        {[NewR|NewVs], NextVar2, Map2}
+                end
+        end,
+    {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
+    NewR = R#mlfe_record{
+             members=lists:reverse(Members2),
+             is_pattern=true},
+    {NV2, M2, NewR};
 
 make_bindings(NV, _MN, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of

@@ -32,7 +32,7 @@
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
 
--type t_adt_constructor() :: {t_adt_con, string()}.
+-type t_adt_constructor() :: {t_adt_cons, string()}.
 
 %% Processes that are spawned with functions that are not receivers are not
 %% allowed to be sent messages.
@@ -75,6 +75,7 @@
              | t_binary
              | t_list()
              | t_map()
+             | t_record()
              | t_tuple()
              | t_clause()
              | t_pid()
@@ -172,6 +173,21 @@
                         | mlfe_list_type()
                         | mlfe_map_type().
 
+%%% ### Record Type Tracking
+%%%
+%%% These will do double-duty for both defining record types for ADTs
+%%% as well as to type records as they occur.
+-record(t_record_member, {name=undefined :: atom(),
+                          type=undefined :: mlfe_types()}).
+-type t_record_member() :: #t_record_member{}.
+
+-record(t_record, {members=[] :: list(t_record_member()),
+                           row_var=undefined :: typ()}).
+                           
+-type t_record() :: #t_record{}.
+
+%%% ADT Type Tracking
+
 -type mlfe_constructor_name() :: {type_constructor, integer(), string()}.
 -record(mlfe_constructor, {type=undefined :: typ() | mlfe_type(),
                            name={type_constructor, 0, ""} :: mlfe_constructor_name(),
@@ -183,16 +199,18 @@
                           }).
 -type mlfe_constructor() :: #mlfe_constructor{}.
 
+-type mlfe_types() :: mlfe_type()
+                    | mlfe_type_tuple()
+                    | mlfe_base_type()
+                    | mlfe_list_type()
+                    | mlfe_map_type().
+
 -record(mlfe_type, {
           module=undefined :: atom(),
           name={type_name, -1, ""} :: mlfe_type_name(),
           vars=[]                  :: list(mlfe_type_var()),
           members=[]               :: list(mlfe_constructor()
-                                           | mlfe_type()
-                                           | mlfe_type_tuple()
-                                           | mlfe_base_type()
-                                           | mlfe_list_type()
-                                           | mlfe_map_type())
+                                           | mlfe_types())
          }).
 -type mlfe_type() :: #mlfe_type{}.
 
@@ -243,6 +261,22 @@
                      values=[] :: list(mlfe_expression())
                     }).
 -type mlfe_tuple() :: #mlfe_tuple{}.
+
+%%% ### Record AST Nodes
+
+-record(mlfe_record_member, {
+          line=-1 :: integer(),
+          name=undefined :: atom(),
+          type=undefined :: typ(),
+          val={symbol, -1, ""} :: mlfe_value_expression()}).
+-type mlfe_record_member() :: #mlfe_record_member{}.
+
+-record(mlfe_record, {arity=0 :: integer(),
+                      line=0 :: integer(),
+                      is_pattern=false :: boolean(),
+                      members=[] :: list(mlfe_record_member())}).
+-type mlfe_record() :: #mlfe_record{}.
+
 
 %%% Pattern Matching
 
@@ -327,6 +361,7 @@
                                | mlfe_binary()
                                | mlfe_map()
                                | mlfe_map_add()
+                               | mlfe_record()
                                | mlfe_tuple()
                                | mlfe_apply()
                                | mlfe_type_apply()

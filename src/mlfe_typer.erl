@@ -126,7 +126,7 @@ copy_cell(Cell, RefMap) ->
                         {RM2, [M2|Memo]}
                 end,
             {RefMap2, Members2} = lists:foldl(F, {RefMap, []}, Members),
-            {{t_tuple, Members2}, RefMap2};
+            {{t_tuple, lists:reverse(Members2)}, RefMap2};
         {t_list, C} ->
             {C2, Map2} = copy_cell(C, RefMap),
             {new_cell({t_list, C2}), Map2};
@@ -311,6 +311,25 @@ unify_error(Env, Line, Typ1, Typ2) ->
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
 %%% errors.
+%%% 
+%%% For the purposes of record unification, T1 is considered to be the lower 
+%%% bound for unification.  Example:
+%%% 
+%%% a: {x: int, y: int}  -- a row variable `A` is implied.
+%%% f: {x: int|F} -> (int, {x: int|F})
+%%% 
+%%% Calling f(a) given the above poses no problem.  The two `x` members unify
+%%% and the `F` in f's type unifies with `y: int|A`.  But:
+%%% 
+%%% b: {x: int}  - a row variable `B` is implied.
+%%% f: {x: int, y: int|F} -> (int, {x: int, y: int|F})
+%%% 
+%%% Here `f` is more specific than `b` and _requires_ a `y: int` member.  Its 
+%%% type must serve as a lower bound for unification, we don't want `f(b)` to 
+%%% succeed if the implied row variable `B` does not contain a `y: int`.
+%%% 
+%%% Some of the packing into and unpacking from row variables is likely to get
+%%% a little hairy in the first implementation here.
 -spec unify(typ(), typ(), env(), integer()) -> ok | {error, term()}.
 unify(T1, T2, Env, Line) ->
     case {unwrap_cell(T1), unwrap_cell(T2)} of
@@ -464,6 +483,9 @@ unify(T1, T2, Env, Line) ->
                     end
             end;
 
+        {#t_record{}=LowerBound, #t_record{}=Target} ->
+            unify_records(LowerBound, Target, Env, Line);
+
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
 
@@ -613,6 +635,8 @@ unify_adt(C1, C2, #adt{}=A, {t_list, _LType}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(C1, C2, #adt{}=A, {t_map, _, _}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, #t_record{}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(_, _, A, B, Env, L) ->
     unify_error(Env, L, A, B).
 
@@ -709,6 +733,66 @@ try_types(T1, T2, [Candidate|Tail], Env, L, {M1, none}=Memo) ->
 try_types(_, _, [], _, _, _) ->
     no_match.
 
+unify_records(LowerBound, Target, Env, Line) ->
+    %% unify each member of the lower bound with the others
+    #t_record{members=LowerM, row_var=LowerRow} = flatten_record(LowerBound),
+    #t_record{members=TargetM, row_var=TargetRow} = flatten_record(Target),
+
+    %% we operate on the target's members so that if the unification
+    %% with the lower bound's members succeeds, we have a list of exactly
+    %% what needs to unify with the lower's row variable.
+    KeyedTarget = lists:map(fun(#t_record_member{name=X}=TRM) -> {X, TRM} end, TargetM),
+    RemainingTarget = unify_record_members(LowerM, KeyedTarget, Env, Line),
+
+    %% unify the row variables
+    case RemainingTarget of
+        [] -> 
+            unify(LowerRow, TargetRow, Env, Line);
+        _ ->
+            NewTarget = new_cell(#t_record{members=RemainingTarget, row_var=TargetRow}),
+            unify(LowerRow, NewTarget, Env, Line)
+    end.
+
+unify_record_members([], TargetRem, Env, Line) ->
+    lists:map(fun({_, X}) -> X end, TargetRem);
+unify_record_members([LowerBound|Rem], TargetRem, Env, Line) ->
+    #t_record_member{name=N, type=T} = LowerBound,
+    case proplists:get_value(N, TargetRem) of
+        undefined ->
+            erlang:error({missing_record_field, Line, N});
+        #t_record_member{type=T2} ->
+            case unify(T, T2, Env, Line) of
+                {error, _}=Err -> 
+                    erlang:error(Err);
+                ok -> 
+                    NewTargetRem = proplists:delete(N, TargetRem),
+                    unify_record_members(Rem, NewTargetRem, Env, Line)
+            end
+    end.
+
+%% Record types are basically linked lists where the `row_var` portion
+%% could be either an unbound type variable or another record type.  We
+%% need to unpack these row variables to unify records predictably and
+%% also upon completion of typing.  Problems could occur when unifying the
+%% following:
+%% 
+%% #t_record{members={x, t_int}, row_var=#t_record{members={y, t_int}}, ...}
+%% #t_record{members={y, t_int}, row_var=#t_record{members={x, t_int}}, ...}
+%%
+%% Because the members that need unifying (coming from either record to the
+%% other) are effectively hidden in their respective row variables, 
+%% unify_record_members won't see them directly.
+flatten_record(#t_record{members=Ms, row_var=#t_record{}=Inner}) ->
+    #t_record{members=InnerMs, row_var=InnerRow} = Inner,
+    flatten_record(#t_record{members=Ms ++ InnerMs, row_var=InnerRow});
+flatten_record(#t_record{row_var=P}=R) when is_pid(P) ->
+    case get_cell(P) of
+        #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
+        {link, L}=Link    -> flatten_record(R#t_record{row_var=L});
+        _                 -> R
+    end;
+flatten_record(#t_record{}=R) ->
+    R.
 
 %%% To search for a potential union, a type's variables all need to be
 %%% instantiated and its members that are other types need to use the
@@ -767,6 +851,29 @@ inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
                     inst_type_members(ADT, Rem, Env3, [NewT|Memo])
             end
     end;
+
+inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
+    #t_record{members=Ms, row_var=RV} = R,
+    {RVC, Env2} = case RV of
+                      undefined -> 
+                          {V, E} = new_var(0, Env),
+                          {new_cell(V), E};
+                      {unbound, _, _}=V ->
+                          {new_cell(V), Env};
+                      _ ->
+                          {RV, Env}
+                  end,
+    F = fun(#t_record_member{type=T}=M, {NewMems, E}) ->
+                case inst_type_members(ADT, [T], Env, []) of
+                    {error, _}=Err -> 
+                        erlang:error(Err);
+                    {ok, E2, _, [InstT]} -> 
+                        {[M#t_record_member{type=InstT}|NewMems], E2}
+                end
+        end,
+    {NewMems, Env3} = lists:foldl(F, {[], Env2}, Ms),
+    NewT = new_cell(#t_record{members=lists:reverse(NewMems), row_var=RVC}),
+    inst_type_members(ADT, Rem, Env3, [NewT|Memo]);
 
 inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
@@ -866,6 +973,15 @@ inst_constructor_arg({mlfe_list, ElementType}, Vs) ->
 inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs),
                      inst_constructor_arg(ValType, Vs)});
+inst_constructor_arg(#t_record{members=Ms}=R, Vs) ->
+    F = fun(#t_record_member{type=T}=M) ->
+                case inst_constructor_arg(T, Vs) of
+                    {error, _}=E -> erlang:error(E);
+                    T2           -> M#t_record_member{type=T2}
+                end
+        end,
+    new_cell(R#t_record{members=lists:map(F, Ms)});
+
 inst_constructor_arg({mlfe_pid, MsgType}, Vs) ->
     new_cell({t_pid, inst_constructor_arg(MsgType, Vs)});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
@@ -991,6 +1107,12 @@ unwrap({t_list, T}) ->
     {t_list, unwrap(T)};
 unwrap({t_map, K, V}) ->
     {t_map, unwrap(K), unwrap(V)};
+unwrap(#t_record{}=R) ->
+    #t_record{members=Ms, row_var=RV} = flatten_record(R),
+    F = fun(#t_record_member{type=T}=RM) ->
+                RM#t_record_member{type=unwrap(T)}
+        end,
+    #t_record{members=lists:map(F, Ms), row_var=unwrap(RV)};
 unwrap(#adt{vars=Vs, members=Ms}=ADT) ->
     ADT#adt{vars=[{Name, unwrap(V)} || {Name, V} <- Vs],
             members=[unwrap(M) || M <- Ms]};
@@ -1048,7 +1170,6 @@ type_module(#mlfe_module{functions=Fs,
                         type_imports=Imports,
                         tests=Tests}=M,
            #env{modules=Modules}=Env) ->
-
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
                       (_, [{error, _}=Err|_]) -> Err;
@@ -1234,6 +1355,22 @@ typ_of(Env, Lvl, #mlfe_map_add{line=L, to_add=A, existing=B}) ->
                 end)
       end);
 
+%% Record typing:
+typ_of(Env, Lvl, #mlfe_record{members=Members}) ->
+    F = fun(#mlfe_record_member{name=N, val=V}, {Members, E}) ->
+                case typ_of(E, Lvl, V) of
+                    {error, _}=Err -> 
+                        erlang:error(Err);
+                    {VTyp, NextVar} ->
+                        MTyp = #t_record_member{name=N, type=VTyp},
+                        {[MTyp|Members], update_counter(NextVar, E)}
+                end
+        end,
+    {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
+    {RowVar, Env3} = new_var(Lvl, Env2),
+    Res = new_cell(#t_record{members=lists:reverse(Members2), row_var=RowVar}),
+    {Res, Env3#env.next_var};
+
 typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
@@ -1339,7 +1476,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
         {error, _} = Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, #env{next_var=NextVar2}}  ->
             %% unify the expression with the unified pattern:
-            case unify(ETyp, PTyp, Env, Line) of
+            case unify(PTyp, ETyp, Env, Line) of
                 {error, _} = Err -> Err;
                 %% only need to return the result type of the unified
                 %% clause types:
@@ -1915,6 +2052,22 @@ add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
             end
     end;
 
+add_bindings(#mlfe_record{}=R, Env, Lvl, NameNum) ->
+    {R2, NameNum2} = rename_wildcards(R, NameNum),
+    F = fun(#mlfe_record_member{val=V}=M, {E, N}) ->
+                case add_bindings(V, E, Lvl, N) of
+                    {error, _}=Err  -> erlang:error(Err);
+                    {_, _, E2, N2} -> {E2, N2}
+                end
+        end,
+    case lists:foldl(F, {Env, NameNum}, R2#mlfe_record.members) of
+        {Env2, NameNum3} ->
+            case typ_of(Env2, Lvl, R2) of
+                {error, _}=Err -> erlang:error(Err);
+                {Typ, NV} -> {Typ, R2, update_counter(NV, Env2), NameNum3}
+            end
+    end;
+
 add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
     case typ_of(Env, Lvl, T) of
         {error, _}=Err -> Err;
@@ -1972,6 +2125,14 @@ rename_wildcards(#mlfe_map_pair{key=K, val=V}=P, NameNum) ->
     {K2, N1} = rename_wildcards(K, NameNum),
     {V2, N2} = rename_wildcards(V, N1),
     {P#mlfe_map_pair{key=K2, val=V2}, N2};
+
+rename_wildcards(#mlfe_record{members=Ms}=R, NameNum) ->
+    {Ms2, NameNum2} = rename_wildcards(Ms, NameNum),
+    {R#mlfe_record{members=Ms2}, NameNum2};
+rename_wildcards(#mlfe_record_member{val=V}=RM, NameNum) ->
+    {V2, NameNum2} = rename_wildcards(V, NameNum),
+    {RM#mlfe_record_member{val=V2}, NameNum2};
+
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
                      {NewOther, NewN} = rename_wildcards(V, N),
@@ -2180,7 +2341,7 @@ list_test_() ->
                      "f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_float}},
+     ?_assertMatch({error, {cannot_unify, undefined, 3, t_float, t_int}},
                    top_typ_of(
                      "f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
@@ -3318,6 +3479,121 @@ send_message_test_() ->
                  {error, {cannot_unify, _, _, undefined, t_int}},
                  module_typ_and_parse(Code))
       end
+    ].
+
+%% Tests for records
+
+record_inference_test_() ->
+    [?_assertMatch({#t_record{
+                      members=[#t_record_member{name=x, type=t_int},
+                               #t_record_member{name=y, type=t_float}],
+                      row_var={unbound, _, _}}, _},
+                   top_typ_of("{x=1, y=2.0}")),
+     fun() ->
+             Code =
+                 "f r = match r with\n"
+                 "  {x = x1} -> x1 + 1",
+             ?assertMatch({{t_arrow, 
+                            [#t_record{
+                                 members=[#t_record_member{
+                                             name=x,
+                                             type=t_int}],
+                                 row_var={unbound, _, _}}],
+                            t_int}, _},
+                          top_typ_of(Code))
+     end,
+     fun() ->
+             Code =
+                 "module record_inference_test_unify\n\n"
+                 "f r = match r with\n"
+                 "  {x = x1} -> (x1 * 2, r)\n\n"
+                 "g () = f {x=1, y=2}",
+             ?assertMatch({ok, 
+                           #mlfe_module{
+                              functions=[#mlfe_fun_def{
+                                            name={symbol, _, "f"},
+                                            type={t_arrow,
+                                                  [#t_record{
+                                                      members=[#t_record_member{
+                                                                  name=x,
+                                                                  type=t_int}],
+                                                      row_var={unbound, A, _}}],
+                                                  {t_tuple,
+                                                   [t_int,
+                                                    #t_record{
+                                                       members=[#t_record_member{
+                                                                   name=x,
+                                                                   type=t_int}],
+                                                       row_var={unbound, A, _}}]}}},
+                                         #mlfe_fun_def{
+                                            name={symbol, _, "g"},
+                                            type={t_arrow,
+                                                  [t_unit],
+                                                  {t_tuple,
+                                                   [t_int,
+                                                    #t_record{
+                                                       members=[#t_record_member{
+                                                                   name=x,
+                                                                   type=t_int},
+                                                                #t_record_member{
+                                                                   name=y,
+                                                                   type=t_int}],
+                                                       row_var={unbound, B, _}}]}}
+                                           }]
+                             }},
+                          module_typ_and_parse(Code))
+     end,
+     ?_assertException(error, {missing_record_field, 1, y},
+                   top_typ_of("f () = "
+                              "  let g r = match r with "
+                              "    {x=x1, y=y1} -> x1 + y1 in "
+                              "  g {x=1}")),
+     fun() ->
+             Code =
+                 "module record_inference_record_adt_test\n\n"
+                 "type my_adt 'a = Adt | {x: int, a: 'a}\n\n"
+                 "f r = match r with \n"
+                 "    {x=x1, a=a1} -> x1 + a1\n"
+                 "  | Adt -> 0",
+             ?assertMatch(
+                {ok, 
+                 #mlfe_module{
+                    functions=[#mlfe_fun_def{
+                                  type={t_arrow,
+                                        [#adt{
+                                            name="my_adt",
+                                            vars=[{"a", t_int}],
+                                            members=[#t_record{
+                                                        members=[#t_record_member{
+                                                                    name=x,
+                                                                    type=t_int},
+                                                                 #t_record_member{
+                                                                    name=a,
+                                                                    type=t_int}],
+                                                        row_var={unbound, _, _}},
+                                                    {t_adt_cons, "Adt"}]
+                                                       }],
+                                            t_int}}]}}, 
+                    module_typ_and_parse(Code))
+     end,
+     fun() ->
+             %% The following uses a constructor argument only to force
+             %% typing to the ADT.
+             Code =
+                 "module nested_record_adt_test\n\n"
+                 "type nested = Nested {fname: string, "
+                 "                      lname: string, "
+                 "                      address: {street: string,"
+                 "                                city: string}}\n\n"
+                 "fname r = match r with\n"
+                 "  Nested {address={street=s}}, is_string s ->  s",
+             ?assertMatch({ok, #mlfe_module{
+                                  functions=[#mlfe_fun_def{
+                                                type={t_arrow,
+                                                      [#adt{name="nested"}],
+                                                      t_string}}]}},
+                          module_typ_and_parse(Code))
+     end
     ].
 
 no_process_leak_test() ->

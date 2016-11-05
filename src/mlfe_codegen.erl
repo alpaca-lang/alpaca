@@ -147,6 +147,8 @@ gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
       [], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
 gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
     cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
+gen_expr(Env, #mlfe_record{}=R) ->
+    gen_expr(Env, record_to_map(R));
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
     cerl:c_call(
       cerl:c_atom('erlang'),
@@ -236,7 +238,8 @@ gen_expr(_Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
 gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
     cerl:c_tuple([cerl:c_atom(N), gen_expr(Env, A)]);
 %% Expressions, Clauses
-gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}) ->
+gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}=Match) ->
+    io:format("Match output:  ~w~n", [Match]),
     cerl:c_case(gen_expr(Env, E), [gen_expr(Env, X) || X <- Cs]);
 
 gen_expr(Env, #mlfe_spawn{from_module=M,
@@ -340,6 +343,16 @@ literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
                               cerl:c_cons(cerl:c_atom(big), cerl:c_nil())))
         end,
     [F(I) || I <- binary_to_list(Bin)].
+
+record_to_map(#mlfe_record{line=RL, is_pattern=Patt, members=Ms}) ->
+    F = fun(#mlfe_record_member{name=N, val=V, line=L}) ->
+                MapV = record_to_map(V),
+                MapK = {atom, L, atom_to_list(N)},
+                #mlfe_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
+        end,
+    #mlfe_map{is_pattern=Patt, line=RL, pairs=lists:map(F, Ms)};
+record_to_map(NotRecord) ->
+    NotRecord.
 
 
 -ifdef(TEST).

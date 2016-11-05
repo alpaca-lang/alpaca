@@ -28,6 +28,13 @@ Compiling records as maps probably is easiest but in talking with others there s
 
 A compiler switch to optionally compile to maps might be helpful for those concerned with hot code reloading.
 
+Initial compilation support is targetting only maps as this is the fastest path to deliver something we can actually try out.
+
+Still TODO:
+- field punning, ~{x, y}~ in a match instead of ~{x=x1, y=y1}~ so we don't have to bind completely separate variable names when there's no overlap.
+- field access, e.g. ~foo.x~ to access the ~x~ member instead of needing a pattern match to get to it.
+- compilation to tuples.  This will require keeping a global record of all explicit (and distinct) record instantiations from each module so that we can generate every pattern required.
+
 * Type Ascriptions/Specifications
 It would be good if we could *partially* specify the types of functions, leaving it up to the inferencer to fill in the blanks.  There are two options at the moment:
 - types as part of documentation
