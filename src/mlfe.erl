@@ -253,5 +253,14 @@ polymorphic_record_test() ->
     [M] = compile_and_load(["test_files/polymorphic_record_test.mlfe"], []),
     ?assertEqual(<<"bar">>, M:with_y({})),
     code:delete(M).
+
+%% A pattern match that matches records and maps with the same key should
+%% correctly distinguish between maps and records that are compiled as
+%% maps.
+record_vs_map_match_order_test() ->
+    [M] = compile_and_load(["test_files/record_map_match_order.mlfe"], []),
+    ?assertEqual(1, M:check_map({})),
+    ?assertEqual(2, M:check_record({})),
+    code:delete(M).
     
 -endif.

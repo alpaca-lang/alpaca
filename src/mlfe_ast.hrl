@@ -242,9 +242,16 @@
                         val=undefined :: mlfe_value_expression()}).
 -type mlfe_map_pair() :: #mlfe_map_pair{}.
 
+%% The `structure` field tracks what we're actually using the map for.
+%% The code generation stage will add a member to the compiled map that
+%% indicates what the purpose of the map is so that pattern matches can
+%% be correct, e.g. we don't want the order of maps and records to matter
+%% in a pattern match because then compilation details are a concern for
+%% a user.
 -record(mlfe_map, {type=undefined :: typ(),
                    line=0 :: integer(),
                    is_pattern=false :: boolean(),
+                   structure=map :: map | record,
                    pairs=[] :: list(mlfe_map_pair())}).
 -type mlfe_map() :: #mlfe_map{}.
 

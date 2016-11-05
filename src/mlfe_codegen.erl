@@ -126,10 +126,10 @@ gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
     cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
 gen_expr(Env, #mlfe_binary{segments=Segs}) ->
     cerl:c_binary(gen_bits(Env, Segs));
-gen_expr(Env, #mlfe_map{is_pattern=true, pairs=Pairs}) ->
-    cerl:c_map_pattern([gen_expr(Env, P) || P <- Pairs]);
-gen_expr(Env, #mlfe_map{pairs=Pairs}) ->
-    cerl:c_map([gen_expr(Env, P) || P <- Pairs]);
+gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
+    cerl:c_map_pattern([gen_expr(Env, P) || P <- annotate_map_type(M)]);
+gen_expr(Env, #mlfe_map{}=M) ->
+    cerl:c_map([gen_expr(Env, P) || P <- annotate_map_type(M)]);
 gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     %% In R19 creating map expression like core erlang's parser does
     %% doesn't seem to work for me, neither with ann_c_map nor a simple
@@ -350,10 +350,18 @@ record_to_map(#mlfe_record{line=RL, is_pattern=Patt, members=Ms}) ->
                 MapK = {atom, L, atom_to_list(N)},
                 #mlfe_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
         end,
-    #mlfe_map{is_pattern=Patt, line=RL, pairs=lists:map(F, Ms)};
+    #mlfe_map{is_pattern=Patt, 
+              structure=record,
+              line=RL, 
+              pairs=lists:map(F, Ms)};
 record_to_map(NotRecord) ->
     NotRecord.
 
+annotate_map_type(#mlfe_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
+    V = {atom, 0, atom_to_list(S)},
+    K = {atom, 0, "__struct__"},
+    P = #mlfe_map_pair{is_pattern=IsP, key=K, val=V},
+    [P|Ps].
 
 -ifdef(TEST).
 

@@ -1,0 +1,14 @@
+module record_map_match_order
+
+export check_map/1, check_record/1
+
+type record_map_union = map atom int | {x: int}
+
+get_x rec_or_map =
+  match rec_or_map with
+      #{:x => xx} -> xx
+    | {x = xx}    -> xx
+
+check_map () = get_x #{:x => 1}
+
+check_record () = get_x {x=2}
