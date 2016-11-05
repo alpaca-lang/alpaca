@@ -11,3 +11,11 @@ with_y () =
   match res with
     (_, {foo=ff}) -> ff
 
+{- `x=_` here is causing an error in compilation due to multiple
+   occurences of `_`.
+ -}
+{- with_y_and_throwaway_x() =
+  let res = f {x=1, foo="bar"} in
+  match res with
+    (_, {x=_, foo=ff}) -> ff -}
+    
