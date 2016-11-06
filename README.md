@@ -8,8 +8,7 @@ ML-flavoured Erlang.
 Make sure the following are installed:
 
 - Erlang OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use OTP 19 locally from [kerl](https://github.com/kerl/kerl)
-of late)
+but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
 - [Rebar3](https://rebar3.org)
 
 Make a new project with `rebar3 new app your_app_name` and in the
@@ -49,8 +48,8 @@ suggest possible union types if there isn't an appropriate one in scope.
 
 ## What Works Already
 
-- type inferencer with ADTs.  Tuples and maps for product types and
-  unions for sum.
+- type inferencer with ADTs.  Tuples, maps, and records for product types and
+  unions for sum.  Please note that MLFE's records are not compatible with Erlang records as the former are currently compiled to maps.
 - compile type-checked source to `.beam` binaries
 - simple FFI to Erlang
 - type-safe message flows for processes defined inside MLFE
@@ -116,7 +115,7 @@ especially with respect to comments.
 
 # Using It
 It's not very usable yet but the tests should give a relatively clear picture as to
-where I'm going.  `test_files` contains some example source files used
+where we're going.  `test_files` contains some example source files used
 in unit tests.  You can call `mlfe:compile({files,
 [List, Of, File, Names, As, Strings]}, [list, of, options])` or `mlfe:compile({text,
 CodeAsAString}, [options, again])` for now.
@@ -133,12 +132,8 @@ tests in `mlfe_typer.erl`.
 You will generally want the following two things installed:
 
 - Erlang/OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use OTP 19 locally from [kerl](https://github.com/kerl/kerl)
-of late)
+but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
 - [Rebar3](https://rebar3.org)
-
-Note: While MLFE builds and all tests pass on OTP 19, dialyzer fails due to a spec bug that
-has been fixed in OTP master.
 
 ## Writing MLFE with Rebar3
 Thanks to [@tsloughter](https://github.com/tsloughter)'s
@@ -227,7 +222,8 @@ Most of the basic Erlang data types are supported:
   32798: type=int, size=16, signed=false>>`, etc
 - tuples, `("a", :tuple, "of arity", 4)`
 - maps (basic support), e.g. `#{:atom_key => "string value"}`.  These
-  are statically typed as lists are (generics, parametric polymorphism).
+are statically typed as lists are (generics, parametric polymorphism).
+- records (basic support), these look a bit like OCaml and Elm records, e.g. `{x=1, hello="world"}` will produce a record with an `x: int` and `hello: string` field.  Please see the  [language tour](https://github.com/j14159/mlfe/blob/master/Tour.md) for more details.
 - pids, these are also parametric (like lists, "generics").  If you're
   including them in a type you can do something like `type t = int |
   pid int` for a type that covers integers and processes that receive integers.
@@ -290,13 +286,12 @@ and
 
 will type to a tuple of `integer`, `float`.
 
-Since strings are currently just lists of characters as in Erlang
-proper, only the first clause will ever match:
+Since strings are currently compiled as UTF-8 Erlang binaries, only the first clause will ever match:
 
-    type my_list_string_union = list int | string
+    type my_binary_string_union = binary | string
 
     match "Hello, world" with
-        l, is_list l -> l
+        b, is_binary b -> b
       | s, is_string s -> s
 
 Further, nullary type constructors are encoded as atoms and unary
@@ -465,7 +460,6 @@ A very incomplete list:
 - support for typing anything other than a raw source file.  I need to
   investigate reading/writing beam file annotations to help with this
   I suspect.
-- records, especially with structural matching.
 - pattern matching in function declarations directly rather than in
   the body.
 - type annotations/restrictions/ascriptions.  I'm toying with the idea
