@@ -176,6 +176,70 @@ Maps are type-checked as lists are but have separate types for their keys vs the
  -}
 #{:key1 => "value 1", "key 2" => "value 2"}
 #+END_SRC
+*** Records
+Records can be created ad-hoc wherever you like as in OCaml and Elm and you can pattern match on the structure of records as well.
+#+BEGIN_SRC
+{x=1, hello="world"}  -- a literal record
+
+-- we have basic structural matching:
+match {x=1, hello="world"} with
+  {x=xx} -> xx
+
+{- We have "row polymorphism" which means that if you call the following
+   function with {x=1, hello="world"}, the return type does not lose the
+   information about the hello field.  The return type of calling the
+   function below with that record will be (int, {x: int, hello: string}).
+-}
+x_in_a_tuple my_rec = 
+  match my_rec with
+    {x=xx} -> (xx, my_rec)
+#+END_SRC
+
+**** What's Row Polymorphism?
+The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
+#+BEGIN_SRC
+public interface IHasX {
+    public int getX();
+}
+
+public class HasXY implements IHasX {
+    public final int x;
+    public final String hello;
+        
+    public HasXY(int x, String hello) {
+        this.x = x;
+        this.hello = hello;  
+    }
+
+    public int getX() { return x; }
+    public String getHello() { return hello; }
+}
+
+public IHasX identity(IHasX i) {
+    return i;
+}
+#+END_SRC
+
+The return of ~identity(new HasXY(1, "world"))~ "loses" the information that the passed-in argument has a ~hello~ member of type ~String~.  
+
+#+BEGIN_SRC
+identity my_rec =
+  match my_rec with
+    {x=_} -> my_rec
+#+END_SRC
+
+The return of ~identity({x=1, hello="world"})~ above is still the type ~{x: int, hello: string}~ in MLFE  even though the function ~identity~ only cares about the field ~x: int~.
+
+**** What's Missing?
+There's not yet a way to access individual fields of a record without pattern matching (e.g. ~let my_rec = {x=1, hello="world"} in x.x~) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
+#+BEGIN_SRC
+-- add an integer field named z to a record with x and y:
+let xy = {x=1, y=2} in
+{xy | z=3}
+#+END_SRC
+We should be able to use the above to both "update" fields in a record and also to extend a record with new fields.
+
+There are currently no plans to enable the removal of record fields.
 *** PIDs
 Process identifiers (references to processes to which we can send messages) are typed with the kind of messages they are able to receive.  The type of process that only knows how to receive strings can be expressed as ~pid string~.  We'll cover processes and PIDs in a bit more detail later but if you're unfamiliar with them from Erlang, [[http://learnyousomeerlang.com/the-hitchhikers-guide-to-concurrency][The Hitchhiker's Guide to Concurrency]] from Learn You Some Erlang is a great place to start.
 * Functions

@@ -29,7 +29,8 @@
 <li><a href="#sec-3-2-1">3.2.1. Tuples</a></li>
 <li><a href="#sec-3-2-2">3.2.2. Lists</a></li>
 <li><a href="#sec-3-2-3">3.2.3. Maps</a></li>
-<li><a href="#sec-3-2-4">3.2.4. PIDs</a></li>
+<li><a href="#sec-3-2-4">3.2.4. Records</a></li>
+<li><a href="#sec-3-2-5">3.2.5. PIDs</a></li>
 </ul>
 </li>
 </ul>
@@ -93,22 +94,22 @@ Here's a simple example of a module:
 
     module my_module
     
-    // one function that takes a single argument will be publicly accessible:
+    -- one function that takes a single argument will be publicly accessible:
     export double/1
     
-    /* Our double function defines an "add" function inside of itself.
+    {- Our double function defines an "add" function inside of itself.
        Comments for now are C-style.
-     */
+     -}
     double x =
       let add a b = a + b in
       add x x
     
     test "doubling 2 is 4" = some_test_checker (double 2) 4
     
-    // Basic ADT with type constructors:
+    -- Basic ADT with type constructors:
     type even_or_odd = Even int | Odd int
     
-    // A function from integers to our ADT:
+    -- A function from integers to our ADT:
     even_or_odd x =
       let rem = x % 2 in
       match rem with
@@ -129,10 +130,10 @@ Just `true` and `false`, not atoms as in Erlang although they're encoded as such
 
 MLFE has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
 
-    1 + 2       // integer
-    1.0 +. 2.0  // float
-    1 +. 2      // type error, +. is only for floats
-    1 +. 2.0    // type error, can't mix integers and floats
+    1 + 2       -- integer
+    1.0 +. 2.0  -- float
+    1 +. 2      -- type error, +. is only for floats
+    1 +. 2.0    -- type error, can't mix integers and floats
 
 ### Atoms<a id="sec-3-1-3" name="sec-3-1-3"></a>
 
@@ -156,12 +157,12 @@ If you're not familiar with binaries, there's some [good coverage](http://learny
     <<"this text is assumed to be UTF-8">>
     <<"But we can also be explicit": type=utf8>>
     
-    /* endian, sign, units and size all work, here's how we might encode
+    {- endian, sign, units and size all work, here's how we might encode
      * a 32-bit, big-endian, unsigned integer:
-     */
+     -}
     <<SomeInteger: type=int, size=8, unit=4, end=big, sign=false>>
     
-    // of course we can just list off integers and floats too:
+    -- of course we can just list off integers and floats too:
     <<1, 2, 3.14, 4, 5, 6.0>>
 
 Endian settings can be `big`, `little`, or `native` as in Erlang.
@@ -182,23 +183,23 @@ Tuples, like functions, have a specific arity (number of contained elements).  I
       match my_tuple with
         (_, _, x), is_string x -> x
     
-    third (1, 2, 3) // will return the integer 3
+    third (1, 2, 3) -- will return the integer 3
     
-    /* The following will fail compilation with a type error because
+    {- The following will fail compilation with a type error because
      * third_string/1 only takes tuples that have strings as their
      * third element:
-     */
+     -}
     third_string (1, 2, 3)
     
-    /* Both of the following will also fail compilation since the function
+    {- Both of the following will also fail compilation since the function
      * third/1 requires tuples with exactly 3 elements:
-     */
+     -}
     third (1, 2)
     third (1, 2, 3, 4)
     
-    /* This function will also fail to compile because tuples of arity 2
+    {- This function will also fail to compile because tuples of arity 2
      * those of arity 3 are fundamentally different types:
-     */
+     -}
     second_or_third my_tuple =
       match my_tuple with
           (_, _, x) -> x
@@ -215,7 +216,7 @@ We can build lists up with the cons operator `::` or as literals:
     "end" :: "a" :: "cons'd" :: "list" :: "with the nil literal []" :: []
     ["or just put", "it", "in", "square brackets"]
     
-    // type error:
+    -- type error:
     [:atom, "and a string"]
 
 Let's revisit pattern matching here as well with both forms:
@@ -234,14 +235,78 @@ Let's revisit pattern matching here as well with both forms:
 
 Maps are type-checked as lists are but have separate types for their keys vs their values.  If we wanted a map with atom keys and string values, it could be expressed as the type `map atom string`.  Functionality is relatively limited still but we can construct literal maps, add single key-value pairs to maps, and pattern match on them.  
 
-    #{:key => "value"}  // a literal
+    #{:key => "value"}  -- a literal
     
-    /* This will cause a type error because the types of the keys
+    {- This will cause a type error because the types of the keys
      * don't match:
-     */
+     -}
     #{:key1 => "value 1", "key 2" => "value 2"}
 
-### PIDs<a id="sec-3-2-4" name="sec-3-2-4"></a>
+### Records<a id="sec-3-2-4" name="sec-3-2-4"></a>
+
+Records can be created ad-hoc wherever you like as in OCaml and Elm and you can pattern match on the structure of records as well.
+
+    {x=1, hello="world"}  -- a literal record
+    
+    -- we have basic structural matching:
+    match {x=1, hello="world"} with
+      {x=xx} -> xx
+    
+    {- We have "row polymorphism" which means that if you call the following
+       function with {x=1, hello="world"}, the return type does not lose the
+       information about the hello field.  The return type of calling the
+       function below with that record will be (int, {x: int, hello: string}).
+    -}
+    x_in_a_tuple my_rec = 
+      match my_rec with
+        {x=xx} -> (xx, my_rec)
+
+#### What's Row Polymorphism?
+
+The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
+    
+        public interface IHasX {
+            public int getX();
+        }
+        
+        public class HasXY implements IHasX {
+            public final int x;
+            public final String hello;
+                
+            public HasXY(int x, String hello) {
+                this.x = x;
+                this.hello = hello;  
+            }
+        
+            public int getX() { return x; }
+            public String getHello() { return hello; }
+        }
+        
+        public IHasX identity(IHasX i) {
+            return i;
+        }
+    
+The return of `identity(new HasXY(1, "world"))` "loses" the information that the passed-in argument has a `hello` member of type `String`.  
+    
+        identity my_rec =
+          match my_rec with
+            {x=_} -> my_rec
+    
+The return of `identity({x=1, hello="world"})` above is still the type `{x: int, hello: string}` in MLFE even though the function `identity` only cares about the field `x: int`.
+
+#### What's Missing?
+
+There's not yet a way to access individual fields of a record without pattern matching (e.g. `let my_rec = {x=1, hello="world"} in x.x`) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
+    
+        -- add an integer field named z to a record with x and y:
+        let xy = {x=1, y=2} in
+        {xy | z=3}
+    
+    We should be able to use the above to both "update" fields in a record and also to extend a record with new fields.
+    
+    There are currently no plans to enable the removal of record fields.
+
+### PIDs<a id="sec-3-2-5" name="sec-3-2-5"></a>
 
 Process identifiers (references to processes to which we can send messages) are typed with the kind of messages they are able to receive.  The type of process that only knows how to receive strings can be expressed as `pid string`.  We'll cover processes and PIDs in a bit more detail later but if you're unfamiliar with them from Erlang, [The Hitchhiker's Guide to Concurrency](http://learnyousomeerlang.com/the-hitchhikers-guide-to-concurrency) from Learn You Some Erlang is a great place to start.
 
@@ -250,18 +315,18 @@ Process identifiers (references to processes to which we can send messages) are 
 Inside of a function we can define both immutable variables and new functions:
 
     f x =
-      let double y = y + y in      // this is a single argument function
-      let doubled_x = double x in  // a variable named "double_x"
-      doubled_x + x                // the expression returned as a result
+      let double y = y + y in      -- this is a single argument function
+      let doubled_x = double x in  -- a variable named "double_x"
+      doubled_x + x                -- the expression returned as a result
 
 As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
 
-    /* Because the body of this function multiplies the parameter by a float,
+    {- Because the body of this function multiplies the parameter by a float,
        the compiler knows that this function takes floats and returns floats
        (float -> float).  If we were to call this function with something other
        than a float (e.g. an integer or string), the compiler would fail with
        a type error.
-    */
+    -}
     double x = x *. 2.0
 
 Explicit type specifications for variables and functions is a planned feature for version 0.3.0.
@@ -292,9 +357,10 @@ The basic infix comparisons are all available and can be used in pattern matchin
 
 Some simple examples:
 
-    1 == 1     // true
-    1 == 2     // false
-    1 == 1.0   // type error
+    1 == 1     -- true
+    1 == 2     -- false
+    1 == 1.0   -- type error
+    :a == :a   -- true
 
 The basic arithmetic functions also exist, `+`, `-`, `*`, `/`, and `%` for modulo.  The base forms are all for integers, just add `.` to them for the float versions except for modulo (e.g. `+.` or `/.`).
 
@@ -328,23 +394,23 @@ And here we will always get a list instead of a character list (same ADT restric
 
 We can currently specify new types by combining existing ones, creating [algebraic data types (ADTs)](https://en.wikipedia.org/wiki/Algebraic_data_type).  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 
-    // a union:
+    -- a union:
     type number = int | float
 
 We can also use "type constructors" and type variables to be a bit more expressive.  Type constructors start with an uppercase letter (e.g. `Like` `These`) and can have a single associated value.  Type variables start with a single apostrophe like 'this.  Here's a simple example of an option type that's also polymorphic/generic (like lists and maps):
 
-    /* `Some` has a single associated value, `None` stands alone.  Note that
+    {- `Some` has a single associated value, `None` stands alone.  Note that
        we have the type variable 'a here that lets us be particular about which
        items in the type's members are polymorphic.
-    */
+    -}
     type opt 'a = Some 'a | None
     
-    /* Here's a map "get value by key" function that uses the new `opt` type.
+    {- Here's a map "get value by key" function that uses the new `opt` type.
        It's polymorphic in that if we give this function a `map string int`
        and a string for `key`, the return type will be an `opt int`.  If we 
        instead give it a `map atom (list string)` and an atom for the key, 
-       the return type will be `opt list string`.
-    */
+       the return type will be `opt (list string)`.
+    -}
     map_get key the_map =
       match the_map with
           #{key => value} -> Some value
@@ -404,10 +470,10 @@ While the above test is type checked and will happily be compiled, we lack asser
     
     test "add 2 2 should result in 4" = test_equal (add 2 2) 4
     
-    /* Test the equality of two terms, throwing an exception if they're
+    {- Test the equality of two terms, throwing an exception if they're
        not equal.  The two terms will need to be the same type for any
        call to this to succeed:
-     */
+     -}
     test_equal x y =
       match (x == y) with
           true -> :passed
@@ -415,7 +481,7 @@ While the above test is type checked and will happily be compiled, we lack asser
             let msg = format_msg "Not equal:  ~w and ~w" x y in
             beam :erlang :error [msg] with _ -> :failed
     
-    // formats a failure message:
+    -- formats a failure message:
     format_msg base x y =
       let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
       beam :lists :flatten [m] with msg, is_chars msg -> msg
@@ -437,17 +503,17 @@ A basic example will probably help:
           "add" -> a_counting_function x + 1
         | "sub" -> a_counting_function x - 1 
     
-    /* If a_counting_function/1 is exported from the module, the following
+    {- If a_counting_function/1 is exported from the module, the following
      * will spawn a `pid string`, that is, a "process that can receive 
      * strings".  Note that this is not a valid top-level entry for a module,
      * we just want a few simple examples.
-     */
-    my_pid = spawn a_counting_function 0
+     -}
+    let my_pid = spawn a_counting_function 0
     
-    // send "add" to `my_pid`:
+    -- send "add" to `my_pid`:
     send "add" my_pid
     
-    // type error, `my_pid` only knows how to receive strings:
+    -- type error, `my_pid` only knows how to receive strings:
     send :add my_pid
 
 The type inferencer looks at the entire call graph of the function being spawned to determine type of messages that the process is capable of receiving.  Any expression that contains a call to `receive` becomes a "receiver" that carries the type of messages handled so if we have something like `let x = receive with i, is_integer i -> i`, that entire expression is a receiver.  If a function contains it like this:
@@ -470,7 +536,7 @@ Mutually recursive functions can be spawned as well provided that **if** they're
           "a" -> a ()
         | _ -> b ()
     
-    // The above will fail compilation unless the following ADT is in scope:
+    -- The above will fail compilation unless the following ADT is in scope:
     type a_and_b = string | atom
 
 As an aside, both the functions `a/1` and `b/1` above have the return type `rec`, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in MLFE.

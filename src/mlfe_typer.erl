@@ -75,7 +75,8 @@ cell(TypVal) ->
 
 -spec new_cell(typ()) -> pid().
 new_cell(Typ) ->
-    spawn_link(?MODULE, cell, [Typ]).
+    Pid = spawn_link(?MODULE, cell, [Typ]),
+    Pid.
 
 -spec get_cell(t_cell()|typ()) -> typ().
 get_cell(Cell) when is_pid(Cell) ->
@@ -134,13 +135,28 @@ copy_cell(Cell, RefMap) ->
             {K2, Map2} = copy_cell(K, RefMap),
             {V2, Map3} = copy_cell(V, Map2),
             {new_cell({t_map, K2, V2}), Map3};
-        #adt{vars=TypeVars}=ADT ->
+        #adt{vars=TypeVars, members=Members}=ADT ->
+            %% copy the type variables:
             Folder = fun({TN, C}, {L, RM}) ->
                              {C2, NM} = copy_cell(C, RM),
                              {[{TN, C2}|L], NM}
                      end,
             {NewTypeVars, Map2} = lists:foldl(Folder, {[], RefMap}, TypeVars),
-            {new_cell(ADT#adt{vars=NewTypeVars}), Map2};
+
+            %% and then copy the members:
+            F2 = fun(M, {L, RM}) ->
+                         {M2, NM} = copy_cell(M, RM),
+                         {[M2|L], NM}
+                 end,
+
+            {NewMembers, Map3} = lists:foldl(F2, {[], Map2}, Members),
+
+            {new_cell(ADT#adt{vars=lists:reverse(NewTypeVars),
+                              members=lists:reverse(NewMembers)}), Map3};
+        {t_adt_cons, _}=Constructor ->
+            {Constructor, RefMap};
+        P when is_pid(P) ->
+            copy_cell(P, RefMap);
         V ->
             {new_cell(V), RefMap}
     end.
@@ -246,6 +262,10 @@ deep_copy_type({t_arrow, A, B}, RefMap) ->
 deep_copy_type({t_list, A}, RefMap) ->
     {NewList, Map} = copy_type_list(A, RefMap),
     {{t_list, NewList}, Map};
+deep_copy_type({t_map, K, V}, RefMap) ->
+    {NewK, Map2} = copy_type(K, RefMap),
+    {NewV, Map3} = copy_type(V, Map2),
+    {{t_map, NewK, NewV}, Map3};
 
 deep_copy_type({t_receiver, A, B}, RefMap) ->
     %% Here we're copying the body of the receiver first and then the
@@ -546,6 +566,7 @@ unify(T1, T2, Env, Line) ->
         {_A, {t_receiver, _Recv, _ResB}} ->
             unify(T2, T1, Env, Line);
         {_T1, _T2} ->
+            io:format("Find covering for ~w ~w~n", [T1, T2]),
             case find_covering_type(_T1, _T2, Env, Line) of
                 {error, _}=Err ->
                     io:format("UNIFY FAIL:  ~w AND ~w~n",
@@ -640,7 +661,7 @@ unify_adt(C1, C2, #adt{}=A, #t_record{}=ToCheck, Env, L) ->
 unify_adt(_, _, A, B, Env, L) ->
     unify_error(Env, L, A, B).
 
-unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
+unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) when is_pid(ToCheck) ->
     %% Try to find an ADT member that will unify with the passed in
     %% polymorphic type:
     F = fun(_, ok) -> ok;
@@ -654,7 +675,12 @@ unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
                 end
         end,
     Seed = unify_error(Env, L, A, ToCheck),
-    lists:foldl(F, Seed, Ms).
+    lists:foldl(F, Seed, Ms);
+%% ToCheck needs to be in a reference cell for unification and we're not 
+%% worried about losing the cell at this level since C1 and C2 are what
+%% will actually be manipulated.
+unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, new_cell(ToCheck), Env, L).
 
 %%% Given two different types, find a type in the set of currently available
 %%% types that can unify them or fail.
@@ -3097,18 +3123,35 @@ typed_tests_test() ->
                          tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
                  Res).
 
-polymorphic_list_as_return_value_test() ->
-    Code =
-        "module list_tests\n\n"
-        "is_empty l =\n"
-        "    match l with\n"
-        "        []   -> true\n"
-        "    | _ :: _ -> false\n\n"
-        "a () = is_empty []\n\n"
-        "b () = is_empty [:ok]\n\n"
-        "c () = is_empty [1]",
-    Res = module_typ_and_parse(Code),
-    ?assertMatch({ok, _}, Res).
+polymorphic_list_as_return_value_test_() ->
+    [fun() ->
+             Code =
+                 "module list_tests\n\n"
+                 "is_empty l =\n"
+                 "    match l with\n"
+                 "        []   -> true\n"
+                 "    | _ :: _ -> false\n\n"
+                 "a () = is_empty []\n\n"
+                 "b () = is_empty [:ok]\n\n"
+                 "c () = is_empty [1]",
+             Res = module_typ_and_parse(Code),
+             ?assertMatch({ok, _}, Res)
+     end
+    ,fun() ->
+             Code =
+                 "module poly_list_head\n\n"
+                 "head l =\n"
+                 "  match l with\n"
+                 "    a :: _ -> a\n\n"
+                 "foo () = head [1, 2]",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{},
+                                   #mlfe_fun_def{
+                                      type={t_arrow, [t_unit], t_int}}]}},
+                module_typ_and_parse(Code))
+     end
+    ].
 
 polymorphic_adt_as_return_value_test() ->
     Code =
@@ -3124,18 +3167,40 @@ polymorphic_adt_as_return_value_test() ->
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, _}, Res).
 
-polymorphic_map_as_return_value_test() ->
-    Code =
-        "module empty_map\n\n"
-        "is_empty m =\n"
-        "    match m with\n"
-        "        #{} -> true\n"
-        "        | _ -> false\n\n"
-        "a () = is_empty #{}\n\n"
-        "b () = is_empty #{:a => 1}\n\n"
-        "c () = is_empty #{1 => :a}\n\n",
-    Res = module_typ_and_parse(Code),
-    ?assertMatch({ok, _}, Res).
+polymorphic_map_as_return_value_test_() ->
+    [fun() ->
+             Code =
+                 "module empty_map\n\n"
+                 "is_empty m =\n"
+                 "    match m with\n"
+                 "        #{} -> true\n"
+                 "        | _ -> false\n\n"
+                 "a () = is_empty #{}\n\n"
+                 "b () = is_empty #{:a => 1}\n\n"
+                 "c () = is_empty #{1 => :a}\n\n",
+             Res = module_typ_and_parse(Code),
+             ?assertMatch({ok, _}, Res)
+     end
+     , fun() ->
+               Code =
+                   "module poly_map\n\n"
+                   "get_a m =\n"
+                   "  match m with\n"
+                   "    #{:a => a} -> a\n\n"
+                   "foo () = get_a #{:a => 1}",
+               ?assertMatch(
+                  {ok, #mlfe_module{
+                          functions=[#mlfe_fun_def{
+                                       type={t_arrow,
+                                             [{t_map, t_atom, {unbound, A, _}}],
+                                             {unbound, A, _}}},
+                                    #mlfe_fun_def{
+                                       type={t_arrow, [t_unit], t_int}
+                                      }]
+                         }},
+                  module_typ_and_parse(Code))
+       end
+    ].
 
 polymorphic_tuple_as_return_value_test() ->
     Code =
@@ -3592,6 +3657,143 @@ record_inference_test_() ->
                                                 type={t_arrow,
                                                       [#adt{name="nested"}],
                                                       t_string}}]}},
+                          module_typ_and_parse(Code))
+     end
+    ].
+
+%% In the sample test file record_map_match_order.mlfe the ordering of maps
+%% and records in the definition of a type impacts the unification and thus
+%% inference of a function's return type.  This test is to check for multiple
+%% orderings and regressions.
+%% 
+%% The root error appears to have been arising because in unify_adt_and_poly
+%% one of the target type members was unwrapped from its reference cell.  Since
+%% the unification was actually impacting the top level cells, we could re-cell
+%% the type and not worry about throwing that away later.
+adt_ordering_test_() ->
+    [fun() ->
+             Code = 
+                 "module simple_adt_order_1\n\n"
+                 "type t 'a = Some 'a | None\n\n"
+                 "f x = match x with\n"
+                 "    None -> :none\n"
+                 "  | Some a -> :an_a",
+             ?assertMatch({ok, 
+                           #mlfe_module{
+                              functions=[#mlfe_fun_def{
+                                            type={t_arrow,
+                                                  [#adt{
+                                                    vars=[{"a", {unbound, A, _}}],
+                                                      members=[{t_adt_cons, "None"},
+                                                               {t_adt_cons, "Some"}]}],
+                                                 t_atom}}]}},
+                          module_typ_and_parse(Code))
+     end
+    ,fun() ->
+             Code = 
+                 "module simple_adt_order_2\n\n"
+                 "type t 'a = None | Some 'a\n\n"
+                 "f x = match x with\n"
+                 "    None -> :none\n"
+                 "  | Some a -> :an_a",
+             ?assertMatch({ok, 
+                           #mlfe_module{
+                              functions=[#mlfe_fun_def{
+                                            type={t_arrow,
+                                                  [#adt{
+                                                      vars=[{"a", {unbound, A, _}}],
+                                                      members=[{t_adt_cons, "Some"},
+                                                               {t_adt_cons, "None"}]}],
+                                                 t_atom}}]}},
+                          module_typ_and_parse(Code))
+     end
+     ,fun() ->
+              Code =
+                  "module list_and_map_order_1\n\n"
+                  "type t 'a = list 'a | map atom 'a\n\n"
+                  "f x = match x with\n"
+                  "    a :: _ -> a\n"
+                  "  | #{:a => a} -> a\n\n"
+                  "g () = f #{:a => 1, :b => 2}\n\n"
+                  "h () = f [1, 2]",
+              ?assertMatch(
+                 {ok, 
+                  #mlfe_module{
+                     functions=[#mlfe_fun_def{
+                                   type={t_arrow,
+                                         [#adt{
+                                             vars=[{"a", {unbound, A, _}}],
+                                             members=[{t_map, t_atom, {unbound, A, _}},
+                                                      {t_list, {unbound, A, _}}]
+                                            }],
+                                         {unbound, A, _}}},
+                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
+                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+                 module_typ_and_parse(Code))
+      end
+    ,fun() ->
+              Code =
+                 "module list_and_map_order_2\n\n"
+                 "type t 'a = map atom 'a | list 'a \n\n"
+                 "f x = match x with\n"
+                 "    #{:a => a} -> a\n"
+                 "  | a :: _ -> a\n\n"
+                 "g () = f #{:a => 1, :b => 2}\n\n"
+                 "h () = f [1, 2]",
+              ?assertMatch(
+                 {ok, 
+                  #mlfe_module{
+                     functions=[#mlfe_fun_def{
+                                   type={t_arrow,
+                                         [#adt{
+                                             vars=[{"a", {unbound, A, _}}],
+                                             members=[{t_list, {unbound, A, _}},
+                                                      {t_map, t_atom, {unbound, A, _}}]
+                                            }],
+                                         {unbound, A, _}}},
+                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
+                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+
+                           module_typ_and_parse(Code))
+     end
+    ,fun() ->
+             Code =
+                 "module record_and_map_order_1\n\n"
+                 "type record_map_union 'a = map atom int | {x: int}\n\n"
+                 "get_x rec_or_map =\n"
+                 "  match rec_or_map with\n"
+                 "      #{:x => xx} -> xx\n"
+                 "    | {x = xx}    -> xx\n\n"
+                 "check_map () = get_x #{:x => 1}\n\n"
+                 "check_record () = get_x {x=2}",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      type={t_arrow,
+                                            [#adt{}],
+                                            t_int}},
+                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
+                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+                module_typ_and_parse(Code))
+     end
+    ,fun() ->
+             Code =
+                 "module record_and_map_order_2\n\n"
+                 "type record_map_union 'a = {x: 'a} | map atom 'a\n\n"
+                 "get_x rec_or_map =\n"
+                 "  match rec_or_map with\n"
+                 "      #{:x => xx} -> xx\n"
+                 "    | {x = xx}    -> xx\n\n"
+                 "check_map () = get_x #{:x => 1}\n\n"
+                 "check_record () = get_x {x=:b}",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      type={t_arrow,
+                                            [#adt{vars=[{"a", {unbound, A, _}}]}],
+                                            {unbound, A, _}}},
+                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
+                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_atom}}]}},
                           module_typ_and_parse(Code))
      end
     ].
