@@ -965,7 +965,9 @@ inst_type_members(ADT, [_|T], Env, Memo) ->
 %%% arrow will have the correct variables instantiated.
 -spec inst_type_arrow(Env::env(), Name::mlfe_constructor_name()) ->
                              {ok, env(), {typ_arrow, typ(), t_adt()}} |
-                             {error, {bad_constructor, integer(), string()}}.
+                             {error, {bad_constructor, integer(), string()}} |
+                             {error, {unknown_type, string()}} |
+                             {error, {bad_constructor_arg,term()}}.
 inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
     %% 20160603:  I have an awful lot of case ... of all over this
     %% codebase, trying a lineup of functions specific to this
@@ -979,42 +981,62 @@ inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
                 ({C, {ok, Env, ADT, _}}) ->
                      #adt{vars=Vs} = get_cell(ADT),
                      #mlfe_constructor{arg=Arg} = C,
-                     Arrow = {type_arrow, inst_constructor_arg(Arg, Vs), ADT},
+                     Types = EnvIn#env.current_types,
+                     Arrow = {type_arrow, inst_constructor_arg(Arg, Vs, Types), ADT},
                      {Env, Arrow}
              end,
     Default = {error, {bad_constructor, Line, Name}},
     C = proplists:get_value(Name, EnvIn#env.type_constructors, Default),
-    Cons_f(ADT_f(C)).
+    try Cons_f(ADT_f(C))
+    catch
+        throw:{error, _}=Error -> Error
+    end.
 
-inst_constructor_arg(none, _) ->
+inst_constructor_arg(none, _, _) ->
     t_unit;
-inst_constructor_arg(AtomType, _) when is_atom(AtomType) ->
+inst_constructor_arg(AtomType, _, _) when is_atom(AtomType) ->
     AtomType;
-inst_constructor_arg({type_var, _, N}, Vs) ->
+inst_constructor_arg({type_var, _, N}, Vs, _) ->
     proplists:get_value(N, Vs);
-inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs) ->
-    new_cell({t_tuple, [inst_constructor_arg(M, Vs) || M <- Ms]});
-inst_constructor_arg({mlfe_list, ElementType}, Vs) ->
-    new_cell({t_list, inst_constructor_arg(ElementType, Vs)});
-inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs) ->
-    new_cell({t_map, inst_constructor_arg(KeyType, Vs),
-                     inst_constructor_arg(ValType, Vs)});
-inst_constructor_arg(#t_record{members=Ms}=R, Vs) ->
+inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types) ->
     F = fun(#t_record_member{type=T}=M) ->
-                case inst_constructor_arg(T, Vs) of
+                case inst_constructor_arg(T, Vs, Types) of
                     {error, _}=E -> erlang:error(E);
                     T2           -> M#t_record_member{type=T2}
                 end
         end,
     new_cell(R#t_record{members=lists:map(F, Ms)});
-
-inst_constructor_arg({mlfe_pid, MsgType}, Vs) ->
-    new_cell({t_pid, inst_constructor_arg(MsgType, Vs)});
-inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars}, Vs) ->
+inst_constructor_arg(#mlfe_constructor{name={type_constructor, _, N}},
+                     _Vs, _Types) ->
+    {t_adt_cons, N};
+inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs, Types) ->
+    new_cell({t_tuple, [inst_constructor_arg(M, Vs, Types) || M <- Ms]});
+inst_constructor_arg({mlfe_list, ElementType}, Vs, Types) ->
+    new_cell({t_list, inst_constructor_arg(ElementType, Vs, Types)});
+inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs, Types) ->
+    new_cell({t_map, inst_constructor_arg(KeyType, Vs, Types),
+                     inst_constructor_arg(ValType, Vs, Types)});
+inst_constructor_arg({mlfe_pid, MsgType}, Vs, Types) ->
+    new_cell({t_pid, inst_constructor_arg(MsgType, Vs, Types)});
+inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars, members=M1},
+                     Vs, Types) ->
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
-    new_cell(#adt{name=N, vars=ADT_vars});
-inst_constructor_arg(Arg, _) ->
-    {error, {bad_constructor_arg, Arg}}.
+    #mlfe_type{vars = V2, members=M2} = find_type(N, Types),
+    Vs2 = replace_vars(M1, V2, Vs),
+    Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
+    new_cell(#adt{name=N, vars=ADT_vars, members=Members});
+inst_constructor_arg(Arg, _, _) ->
+    throw({error, {bad_constructor_arg, Arg}}).
+
+find_type(Name, []) -> throw({error, {unknown_type, Name}});
+find_type(Name, [#mlfe_type{name={type_name, _, Name}}=T|_]) -> T;
+find_type(Name, [_|Types]) -> find_type(Name, Types).
+
+replace_vars([], _, _) -> [];
+replace_vars([{type_var, _, N}|Ms], [{type_var, _, V}|Vs], PropagatedVs) ->
+    [{V,proplists:get_value(N, PropagatedVs)}|replace_vars(Ms, Vs, PropagatedVs)];
+replace_vars([M|Ms], [{type_var, _, V}|Vs], PropagatedVs) ->
+    [{V,M}|replace_vars(Ms, Vs, PropagatedVs)].
 
 %% Unify two parameter lists, e.g. from a function arrow.
 unify_list(As, Bs, Env, L) ->
@@ -2827,7 +2849,7 @@ type_constructor_test_() ->
                           arg=none}]}])),
      ?_assertMatch(
         {{t_arrow,
-          [{unbound, V, _}],
+          [{unbound, _, _}],
           #adt{name="t", vars=[]}},
          _},
         top_typ_with_types(
@@ -2840,7 +2862,7 @@ type_constructor_test_() ->
                           arg={mlfe_list, t_int}}]}])),
      ?_assertMatch(
         {{t_arrow,
-          [{unbound, V, _}],
+          [{unbound, _, _}],
           #adt{name="t", vars=[]}},
          _},
         top_typ_with_types(
@@ -2850,7 +2872,24 @@ type_constructor_test_() ->
               vars=[],
               members=[#mlfe_constructor{
                           name={type_constructor, 1, "Constructor"},
-                          arg={mlfe_map, t_int, t_string}}]}]))
+                          arg={mlfe_map, t_int, t_string}}]}])),
+     ?_assertMatch(
+        {{t_arrow,
+          [{unbound, _, _}],
+          #adt{name="t", vars=[]}},
+         _},
+        top_typ_with_types(
+          "f x = Constructor 1",
+          [#mlfe_type{
+              name={type_name, 1, "t"},
+              vars=[],
+              members=[#mlfe_constructor{
+                          name={type_constructor, 1, "Constructor"},
+                          arg=#mlfe_type{name={type_name, 1, "union"}}}]},
+           #mlfe_type{
+              name={type_name, 1, "union"},
+              vars=[],
+              members=[t_int, t_float]}]))
     ].
 
 type_constructor_with_pid_arg_test() ->
@@ -2859,6 +2898,26 @@ type_constructor_with_pid_arg_test() ->
            "a x = receive with i -> x + i\n\n"
            "make () = Constructor (spawn a 2)",
      ?assertMatch({ok, _}, module_typ_and_parse(Code)).
+
+
+type_constructor_multi_level_type_alias_arg_test() ->
+    Code =
+        "module constructor\n\n"
+        "type twotuplelist 'a 'b = list ('a, 'b)\n\n"
+        "type proplist 'v = twotuplelist atom 'v\n\n"
+        "type checklist = proplist bool\n\n"
+        "type constructor = Constructor checklist\n\n",
+    Valid = Code ++ "make () = Constructor [(:test_passed, true)]",
+    BadKey = Code ++ "make () = Constructor [(1, true)]",
+    BadVal = Code ++ "make () = Constructor [(:test_passed, 1)]",
+    BadArg = Code ++ "make () = Constructor 1",
+    ?assertMatch({ok, #mlfe_module{}}, module_typ_and_parse(Valid)),
+    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+                 module_typ_and_parse(BadKey)),
+    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+                 module_typ_and_parse(BadVal)),
+    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+                 module_typ_and_parse(BadArg)).
 
 %%% Type constructors that use underscores in pattern matches to discard actual
 %%% values should work, depends on correct recursive renaming.
