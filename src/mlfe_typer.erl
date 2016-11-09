@@ -1020,8 +1020,21 @@ inst_constructor_arg({mlfe_pid, MsgType}, Vs, Types) ->
     new_cell({t_pid, inst_constructor_arg(MsgType, Vs, Types)});
 inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars, members=M1},
                      Vs, Types) ->
-    ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- Vars],
     #mlfe_type{vars = V2, members=M2} = find_type(N, Types),
+
+    %% when a polymorphic ADT occurs in another type's definition it might
+    %% have concrete types assigned rather than variables and thus we want
+    %% to find the original/biggest list of vars for the type.  E.g.
+    %% 
+    %% type option 'a = Some 'a | None
+    %% type either_int 'a = Left 'a | Right option int
+    %% 
+    VarsToUse = case length(V2) > length(Vars) of
+                    true -> V2;
+                    false -> Vars
+                end,
+
+    ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- VarsToUse],
     Vs2 = replace_vars(M1, V2, Vs),
     Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
     new_cell(#adt{name=N, vars=ADT_vars, members=Members});
@@ -1043,7 +1056,7 @@ unify_list(As, Bs, Env, L) ->
     unify_list(As, Bs, {[], []}, Env, L).
 
 arity_error(Env, L) ->
-    {error, {module_name(Env), L}}.
+    erlang:error({error, {arity_error, module_name(Env), L}}).
 
 unify_list([], [], {MemoA, MemoB}, _, _) ->
     {lists:reverse(MemoA), lists:reverse(MemoB)};
@@ -2918,6 +2931,41 @@ type_constructor_multi_level_type_alias_arg_test() ->
                  module_typ_and_parse(BadVal)),
     ?assertMatch({error, {cannot_unify, _, _, _, _}},
                  module_typ_and_parse(BadArg)).
+
+type_var_replacement_test_() ->
+    [fun() ->
+             Code =
+                 "module nested\n\n"
+                 "type option 'a = Some 'a | None\n\n"
+                 "type either 'a = Left 'a | Right option int\n\n"
+                 "foo x =\n"
+                 "  match x with\n"
+                 "    Right Some a -> a\n\n"
+                 "tester () = foo Right Some 1",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{},
+                                   #mlfe_fun_def{
+                                      type={t_arrow, [t_unit], t_int}}]}},
+                module_typ_and_parse(Code))
+     end
+    ,fun() ->
+             Code =
+                 "module nested\n\n"
+                 "type option 'a = Some 'a | None\n\n"
+                 "type either 'a = Left 'a | Right option 'a\n\n"
+                 "foo x =\n"
+                 "  match x with\n"
+                 "    Right Some a -> a\n\n"
+                 "tester () = foo Right Some 1",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{},
+                                   #mlfe_fun_def{
+                                      type={t_arrow, [t_unit], t_int}}]}},
+                module_typ_and_parse(Code))
+     end
+    ].
 
 %%% Type constructors that use underscores in pattern matches to discard actual
 %%% values should work, depends on correct recursive renaming.
