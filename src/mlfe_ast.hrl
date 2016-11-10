@@ -210,6 +210,7 @@
           name={type_name, -1, ""} :: mlfe_type_name(),
           vars=[]                  :: list(mlfe_type_var()),
           members=[]               :: list(mlfe_constructor()
+                                           | mlfe_type_var()
                                            | mlfe_types())
          }).
 -type mlfe_type() :: #mlfe_type{}.
