@@ -1,3 +1,7 @@
+* v0.2.4
+- fixes for type aliases and unions involving them:  https://github.com/danabr
+- early record support with row polymorphism
+- fixes for unification of the value type portion of maps
 * v0.2.3
 - comment syntax fixes:  https://github.com/danabr
 - formatting and cleanup:  https://github.com/tuncer
