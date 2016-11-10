@@ -1,0 +1,16 @@
+module circles
+
+export new/1, area/1
+
+type radius = float
+
+type circle = Circle radius
+
+new r =
+  Circle r
+
+area c =
+  let pi = 3.14159 in
+  match c with
+    Circle r -> pi *. (r *. r)
+  

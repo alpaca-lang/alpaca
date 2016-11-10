@@ -254,6 +254,18 @@ polymorphic_record_test() ->
     ?assertEqual(<<"bar">>, M:with_y({})),
     code:delete(M).
 
+circle_module_test() ->
+    [M] = compile_and_load(["test_files/circles.mlfe"], []),
+    ?assertEqual(12.56636, M:area(M:new(2))),
+    code:delete(M).
+
+records_with_x_module_test() ->
+    [M] = compile_and_load(["test_files/records_with_x.mlfe"], []),
+    ?assertEqual(2, M:get_x(M:make_xyz(2, 3, 4))),
+    ?assertEqual(5, M:get_x(M:make_xy(5, 6))),
+    code:delete(M).
+
+
 %% A pattern match that matches records and maps with the same key should
 %% correctly distinguish between maps and records that are compiled as
 %% maps.

@@ -1,0 +1,24 @@
+module records_with_x
+
+export make_xy/2, make_xyz/3, get_x/1, get_x_and_the_record/1
+
+make_xy x y = {x=x, y=y}
+
+make_xyz x y z = {x=x, y=y, z=z}
+
+get_x rec =
+  match rec with
+    {x=x} -> x
+
+{- No matter what type of record you pass in, the record in the
+   returned tuple will always remember the full set of its fields
+   in the return type.  E.g. if you pass in {x=1, y=2, z=3}, the
+   return type won't forget about y and z, the full type returned
+   by this function will be (if you pass that exact record):
+
+   (int, {x: int, y: int, z: int})
+
+-}
+get_x_and_the_record rec =
+  match rec with
+    {x=x} -> (x, rec)
