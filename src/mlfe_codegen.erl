@@ -27,15 +27,22 @@
 %% Tracks:
 %%   - names of top-level functions with their arity
 %%   - incrementing variable number for wildcard variables (underscores)
+%% 
+%% The top-level functions get looked up for correct Core Erlang call 
+%% construction.  Renaming instances of "_" (the wildcard or "don't care"
+%% variable name) is necessary because "_" is actually a legitimate variable
+%% name in Core Erlang.  If we don't rename it when there are multiple 
+%% occurrences in the same pattern there will be a compilation error from
+%% the 'cerl' module.
 -record(env, {
-          compiled_funs=[] :: list({string(), integer()}),
+          module_funs=[] :: list({string(), integer()}),
           wildcard_num=0 :: integer()
          }).
 
 make_env(#mlfe_module{functions=Funs}=Mod) ->
     TopLevelFuns = [{N, length(Args)}
            || #mlfe_fun_def{name={symbol, _, N}, args=Args} <- Funs],
-    #env{compiled_funs=TopLevelFuns, wildcard_num=0}.
+    #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
 gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
@@ -130,7 +137,7 @@ gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
     %% compiling forms later due to duplicate names.
     Name = list_to_atom("_" ++ integer_to_list(N)),
     {Env#env{wildcard_num=N+1}, cerl:c_var(Name)};
-gen_expr(#env{compiled_funs=Funs}=Env, {symbol, _, V}) ->
+gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
     case proplists:get_value(V, Funs) of
         Arity when is_integer(Arity) ->
             {Env, cerl:c_fname(list_to_atom(V), Arity)};
@@ -208,13 +215,13 @@ gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
-    FName = case proplists:get_value(Name, Env#env.compiled_funs) of
+    FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined -> cerl:c_var(list_to_atom(Name));
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
-    FName = case proplists:get_value(Name, Env#env.compiled_funs) of
+    FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
@@ -341,13 +348,13 @@ gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
     {_, MExp} = gen_expr(Env, M),
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
-gen_expr(#env{compiled_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
+gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
     Arity = case A of
                 [{unit, _}] -> 1;
                 L -> length(L)
             end,
-    NewEnv = Env#env{compiled_funs=[{N, Arity}|Funs]},
+    NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
     {_, Exp} = gen_expr(NewEnv, E),
     {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};
 gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
