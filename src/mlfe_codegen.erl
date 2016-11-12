@@ -333,8 +333,8 @@ gen_expr(Env, #mlfe_receive{
                                       {E2, C2} = gen_expr(E, C),
                                       {E2, [C2|CC]}
                               end, {Env, []}, Cs),
-
-    {Env2, cerl:c_receive(lists:reverse(Cs2), X, gen_expr(Env, TA))};
+    {_, TA2} = gen_expr(Env, TA),
+    {Env2, cerl:c_receive(lists:reverse(Cs2), X, TA2)};
 
 gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
     {_, PExp} = gen_expr(Env, P),
