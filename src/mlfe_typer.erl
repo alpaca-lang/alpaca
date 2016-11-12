@@ -2106,10 +2106,10 @@ add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
              end,
     case lists:foldl(Folder, {Env, NN}, M2#mlfe_map.pairs) of
         {error, _}=Err -> Err;
-        {Env2, NN2} ->
+        {Env2, NN3} ->
             case typ_of(Env2, Lvl, M2) of
                 {error, _}=Err -> Err;
-                {Typ, NV} -> {Typ, M2, update_counter(NV, Env2), NN2}
+                {Typ, NV} -> {Typ, M2, update_counter(NV, Env2), NN3}
             end
     end;
 

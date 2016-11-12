@@ -252,6 +252,18 @@ simple_record_test() ->
 polymorphic_record_test() ->
     [M] = compile_and_load(["test_files/polymorphic_record_test.mlfe"], []),
     ?assertEqual(<<"bar">>, M:with_y({})),
+    ?assertEqual(<<"baz">>, M:with_y_and_throwaway_x({})),
+    code:delete(M).
+
+multiple_underscore_test() ->
+    [M] = compile_and_load(["test_files/multiple_underscore_test.mlfe"], []),
+    ?assertEqual(list, M:list_check({})),
+    %% Compiler adds the __struct__ tag to distinguish between records
+    %% and maps:
+    Map = #{'__struct__' => 'map', x => 1, y => 2},
+    ?assertEqual(<<"just two">>, M:map_check(Map)),
+    ?assertEqual(<<"all three">>, M:map_check(Map#{z => 3})),
+    ?assertEqual(<<"three">>, M:tuple_check({1, 2, 3})),
     code:delete(M).
 
 circle_module_test() ->
