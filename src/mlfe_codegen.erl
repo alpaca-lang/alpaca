@@ -23,14 +23,34 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% Simple code generation environment.
+%% Tracks:
+%%   - names of top-level functions with their arity
+%%   - incrementing variable number for wildcard variables (underscores)
+%% 
+%% The top-level functions get looked up for correct Core Erlang call 
+%% construction.  Renaming instances of "_" (the wildcard or "don't care"
+%% variable name) is necessary because "_" is actually a legitimate variable
+%% name in Core Erlang.  If we don't rename it when there are multiple 
+%% occurrences in the same pattern there will be a compilation error from
+%% the 'cerl' module.
+-record(env, {
+          module_funs=[] :: list({string(), integer()}),
+          wildcard_num=0 :: integer()
+         }).
+
+make_env(#mlfe_module{functions=Funs}=Mod) ->
+    TopLevelFuns = [{N, length(Args)}
+           || #mlfe_fun_def{name={symbol, _, N}, args=Args} <- Funs],
+    #env{module_funs=TopLevelFuns, wildcard_num=0}.
+
 gen(#mlfe_module{}=Mod, Opts) ->
     #mlfe_module{
        name=ModuleName,
        function_exports=Exports,
        functions=Funs,
        tests=Tests} = Mod,
-    Env = [{N, length(Args)}
-           || #mlfe_fun_def{name={symbol, _, N}, args=Args} <- Funs],
+    Env = make_env(Mod),
     {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledTests = gen_tests(Env2, Tests),
 
@@ -70,12 +90,12 @@ gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
-    B = gen_expr(Env, Body),
+    {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
 gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
     FName = cerl:c_fname(list_to_atom(N), length(Args)),
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
-    B = gen_expr(Env, Body),
+    {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)}.
 
 gen_tests(Env, Tests) ->
@@ -85,7 +105,7 @@ gen_tests(_Env, [], Memo) ->
     Memo;
 gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
     FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
-    Body = gen_expr(Env, E),
+    {_, Body} = gen_expr(Env, E),
     TestFun = {FName, cerl:c_fun([], Body)},
     gen_tests(Env, Rem, [TestFun|Memo]).
 
@@ -95,104 +115,128 @@ clean_test_name(N) ->
     Base = lists:map(fun(32) -> 95; (C) -> C end, N),
     Base ++ "_test".
 
-gen_expr(_, {add, _}) ->
-    cerl:c_atom('+');
-gen_expr(_, {minus, _}) ->
-    cerl:c_atom('-');
-gen_expr(_, {int, _, I}) ->
-    cerl:c_int(I);
-gen_expr(_, {float, _, F}) ->
-    cerl:c_float(F);
-gen_expr(_, {boolean, _, B}) ->
-    cerl:c_atom(B);
-gen_expr(_, {atom, _, A}) ->
-    cerl:c_atom(list_to_atom(A));
-gen_expr(_, {chars, _, Cs}) ->
-    cerl:c_string(Cs);
-gen_expr(_, {string, _, S}) ->
-    cerl:c_binary(literal_binary(S, utf8));
-gen_expr(_, {'_', _}) ->
-    cerl:c_var('_');
-gen_expr(Env, {symbol, _, V}) ->
-    case proplists:get_value(V, Env) of
+gen_expr(Env, {add, _}) ->
+    {Env, cerl:c_atom('+')};
+gen_expr(Env, {minus, _}) ->
+    {Env, cerl:c_atom('-')};
+gen_expr(Env, {int, _, I}) ->
+    {Env, cerl:c_int(I)};
+gen_expr(Env, {float, _, F}) ->
+    {Env, cerl:c_float(F)};
+gen_expr(Env, {boolean, _, B}) ->
+    {Env, cerl:c_atom(B)};
+gen_expr(Env, {atom, _, A}) ->
+    {Env, cerl:c_atom(list_to_atom(A))};
+gen_expr(Env, {chars, _, Cs}) ->
+    {Env, cerl:c_string(Cs)};
+gen_expr(Env, {string, _, S}) ->
+    {Env, cerl:c_binary(literal_binary(S, utf8))};
+gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
+    %% We produce a unique variable name for each wildcard
+    %% "throwaway" variable.  Not doing so causes errors when
+    %% compiling forms later due to duplicate names.
+    Name = list_to_atom("_" ++ integer_to_list(N)),
+    {Env#env{wildcard_num=N+1}, cerl:c_var(Name)};
+gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
+    case proplists:get_value(V, Funs) of
         Arity when is_integer(Arity) ->
-            cerl:c_fname(list_to_atom(V), Arity);
+            {Env, cerl:c_fname(list_to_atom(V), Arity)};
         undefined ->
-            cerl:c_var(list_to_atom(V))
+            {Env, cerl:c_var(list_to_atom(V))}
     end;
-gen_expr(_, {nil, _}) ->
-    cerl:c_nil();
+gen_expr(Env, {nil, _}) ->
+    {Env, cerl:c_nil()};
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
-    cerl:c_cons(gen_expr(Env, H), gen_expr(Env, T));
+    {Env2, H2} = gen_expr(Env, H),
+    {Env3, T2} = gen_expr(Env2, T),
+    {Env3, cerl:c_cons(H2, T2)};
 gen_expr(Env, #mlfe_binary{segments=Segs}) ->
-    cerl:c_binary(gen_bits(Env, Segs));
+    {Env2, Bits} = gen_bits(Env, Segs), 
+    {Env2, cerl:c_binary(Bits)};
 gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
-    cerl:c_map_pattern([gen_expr(Env, P) || P <- annotate_map_type(M)]);
+    Annotated = annotate_map_type(M),
+    F = fun(P, {E, Ps}) -> 
+                {E2, P2} = gen_expr(E, P),
+                {E2, [P2|Ps]}
+        end,
+    {Env2, Pairs} = lists:foldl(F, {Env, []}, Annotated),
+    {Env2, cerl:c_map_pattern(lists:reverse(Pairs))};
 gen_expr(Env, #mlfe_map{}=M) ->
-    cerl:c_map([gen_expr(Env, P) || P <- annotate_map_type(M)]);
+    %% If the map isn't a pattern we're not worried about underscores:
+    Pairs = [PP || {_, PP} <- [gen_expr(Env, P) || P <- annotate_map_type(M)]],
+    {Env, cerl:c_map(Pairs)};
 gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     %% In R19 creating map expression like core erlang's parser does
     %% doesn't seem to work for me, neither with ann_c_map nor a simple
     %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
     %% a convenience:
-    M = gen_expr(Env, B),
-    cerl:c_call(cerl:c_atom(maps),
-                cerl:c_atom(put),
-                [gen_expr(Env, K), gen_expr(Env, V), M]);
+    {_, M} = gen_expr(Env, B),
+    {_, KExp} = gen_expr(Env, K),
+    {_, VExp} = gen_expr(Env, V),
+    {Env, cerl:c_call(cerl:c_atom(maps), cerl:c_atom(put), [KExp, VExp, M])};
 gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
+    {Env2, KExp} = gen_expr(Env, K),
+    {Env3, VExp} = gen_expr(Env2, V),
+
     %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
     %% the following but that doesn't work for 18.2 nor 18.3.
     %% The LFE source put me on to the following:
-    cerl:ann_c_map_pair(
-      [], cerl:abstract(exact), gen_expr(Env, K), gen_expr(Env, V));
+    {Env3, cerl:ann_c_map_pair([], cerl:abstract(exact), KExp, VExp)};
 gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
-    cerl:c_map_pair(gen_expr(Env, K), gen_expr(Env, V));
+    {_, K2} = gen_expr(Env, K),
+    {_, V2} = gen_expr(Env, V),
+    {Env, cerl:c_map_pair(K2, V2)};
 gen_expr(Env, #mlfe_record{}=R) ->
-    gen_expr(Env, record_to_map(R));
+    {_, RExp} = gen_expr(Env, record_to_map(R)),
+    {Env, RExp};
 gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      cerl:c_atom('is_binary'),
-      [gen_expr(Env, S)]);
+    {_, Exp} = gen_expr(Env, S),
+    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_binary'), [Exp]),
+    {Env, TC};
 gen_expr(Env, #mlfe_type_check{type=is_chars, expr={symbol, _, _}=S}) ->
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      cerl:c_atom('is_list'),
-      [gen_expr(Env, S)]);
+    {_, Exp} = gen_expr(Env, S),
+    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_list'), [Exp]),
+    {Env, TC};
 gen_expr(Env, #mlfe_type_check{type=T, expr={symbol, _, _}=S}) ->
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      cerl:c_atom(T),
-      [gen_expr(Env, S)]);
+    {_, Exp} = gen_expr(Env, S),
+    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom(T), [Exp]),
+    {Env, TC};
 gen_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
-    cerl:c_call(
-      cerl:c_atom(Module),
-      cerl:c_atom(FName),
-      [gen_expr(Env, E) || E <- Args]);
+    Apply = cerl:c_call(
+              cerl:c_atom(Module),
+              cerl:c_atom(FName),
+              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+    {Env, Apply};
 gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
     FName = cerl:c_atom(N),
-    cerl:c_call(
-      cerl:c_atom(Module),
-      FName,
-      [gen_expr(Env, E) || E <- Args]);
-
+    Apply = cerl:c_call(
+              cerl:c_atom(Module),
+              FName,
+              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+    {Env, Apply};
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
-    FName = case proplists:get_value(Name, Env) of
+    FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined -> cerl:c_var(list_to_atom(Name));
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
-    cerl:c_apply(FName, [cerl:c_atom(unit)]);
+    {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
 gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
-    FName = case proplists:get_value(Name, Env) of
+    FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
                     cerl:c_fname(list_to_atom(Name), Arity)
             end,
-    cerl:c_apply(FName, [gen_expr(Env, E) || E <- Args]);
+    Apply = cerl:c_apply(
+              FName, 
+              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+    {Env, Apply};
 gen_expr(Env, #mlfe_apply{name={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
-    cerl:c_apply(FName, [gen_expr(Env, E) || E <- Args]);
+    Apply = cerl:c_apply(
+              FName, 
+              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+    {Env, Apply};
 
 gen_expr(Env, #mlfe_ffi{}=FFI) ->
     #mlfe_ffi{
@@ -201,63 +245,89 @@ gen_expr(Env, #mlfe_ffi{}=FFI) ->
        args=Cons,
        clauses=Clauses} = FFI,
 
+    {Env2, MExp} = gen_expr(Env, M),
+    {Env3, FNExp} = gen_expr(Env2, FN),
+    {Env4, ConsExp} = gen_expr(Env3, Cons),
     %% calling apply/3 with the compiled cons cell is simpler
     %% than unpacking the cons cell into an actual list of args:
     Apply = cerl:c_call(
               cerl:c_atom('erlang'),
               cerl:c_atom('apply'),
-              [gen_expr(Env, M),
-               gen_expr(Env, FN),
-               gen_expr(Env, Cons)]),
+              [MExp, FNExp, ConsExp]),
 
-    cerl:c_case(Apply, [gen_expr(Env, X) || X <- Clauses]);
+    F = fun(C, {E, Cs}) ->
+                {E2, C2} = gen_expr(E, C),
+                {E2, [C2|Cs]}
+        end,
+    {Env5, Clauses2} = lists:foldl(F, {Env4, []}, Clauses),
+
+    {Env5, cerl:c_case(Apply, lists:reverse(Clauses2))};
 
 %% Pattern, expression
 gen_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
-    cerl:c_clause([gen_expr(Env, P)], gen_expr(Env, E));
+    {Env2, PExp} = gen_expr(Env, P),
+    {Env3, EExp} = gen_expr(Env2, E),
+    {Env3, cerl:c_clause([PExp], EExp)};
 gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
     NestG = fun(G, Acc) ->
+                    {_, GExp} = gen_expr(Env, G),
+                    io:format("GUARD ~w ~w~n", [G, GExp]),
                     cerl:c_call(
                       cerl:c_atom('erlang'),
                       cerl:c_atom('and'),
-                      [gen_expr(Env, G), Acc])
+                      [GExp, Acc])
             end,
     F = fun([], G) -> G;
            (G, Acc) -> NestG(G, Acc)
         end,
     [H|T] = lists:reverse(Gs),
-    G = lists:foldl(F, gen_expr(Env, H), T),
-    cerl:c_clause([gen_expr(Env, P)],
-                  G,
-                  gen_expr(Env, E));
+    {_, HExp} = gen_expr(Env, H),
+    G = lists:foldl(F, HExp, T),
+
+    {Env2, PExp} = gen_expr(Env, P),
+    {Env3, EExp} = gen_expr(Env2, E),
+    {Env3, cerl:c_clause([PExp], G, EExp)};
 
 gen_expr(Env, #mlfe_tuple{values=Vs}) ->
-    cerl:c_tuple([gen_expr(Env, E) || E <- Vs]);
-gen_expr(_Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
-    cerl:c_atom(N);
+    {Env2, Vs2} = lists:foldl(fun(V, {E, VV}) ->
+                                      {E2, V2} = gen_expr(E, V),
+                                      {E2, [V2|VV]}
+                              end, {Env, []}, Vs),
+    {Env2, cerl:c_tuple(lists:reverse(Vs2))};
+gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
+    {Env, cerl:c_atom(N)};
 gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
-    cerl:c_tuple([cerl:c_atom(N), gen_expr(Env, A)]);
+    {Env2, AExp} = gen_expr(Env, A),
+    {Env2, cerl:c_tuple([cerl:c_atom(N), AExp])};
 %% Expressions, Clauses
-gen_expr(Env, #mlfe_match{match_expr=E, clauses=Cs}=Match) ->
-    io:format("Match output:  ~w~n", [Match]),
-    cerl:c_case(gen_expr(Env, E), [gen_expr(Env, X) || X <- Cs]);
+gen_expr(Env, #mlfe_match{match_expr=Exp, clauses=Cs}) ->
+    {Env2, EExp} = gen_expr(Env, Exp),
+    {Env3, Cs2} = lists:foldl(fun(C, {E, CC}) ->
+                                      {E2, C2} = gen_expr(E, C),
+                                      {E2, [C2|CC]}
+                              end, {Env2, []}, Cs),
+    {Env3, cerl:c_case(EExp, lists:reverse(Cs2))};
 
 gen_expr(Env, #mlfe_spawn{from_module=M,
                           module=undefined,
                           function={symbol, _, FN},
                           args=Args}) ->
 
-    ArgCons = lists:foldl(
-                fun(A, L) -> cerl:c_cons(gen_expr(Env, A), L) end,
-                cerl:c_nil(),
-                lists:reverse(Args)),
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      cerl:c_atom('spawn'),
-      [cerl:c_atom(M), cerl:c_atom(FN), ArgCons]);
+    ArgCons = lists:foldl(fun(A, L) -> 
+                                  {_, AExp} = gen_expr(Env, A),
+                                  cerl:c_cons(AExp, L) 
+                          end, cerl:c_nil(), lists:reverse(Args)),
+    {Env, cerl:c_call(
+            cerl:c_atom('erlang'),
+            cerl:c_atom('spawn'),
+            [cerl:c_atom(M), cerl:c_atom(FN), ArgCons])};
 
 gen_expr(Env, #mlfe_receive{clauses=Cs, timeout_action=undefined}) ->
-    cerl:c_receive([gen_expr(Env, E)||E <- Cs]);
+    {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
+                                      {E2, C2} = gen_expr(E, C),
+                                      {E2, [C2|CC]}
+                              end, {Env, []}, Cs),
+    {Env2, cerl:c_receive(lists:reverse(Cs2))};
 gen_expr(Env, #mlfe_receive{
                  clauses=Cs,
                  timeout=TO,
@@ -266,27 +336,31 @@ gen_expr(Env, #mlfe_receive{
             infinity -> cerl:c_atom(TO);
             I -> cerl:c_int(I)
         end,
-    cerl:c_receive([gen_expr(Env, E)||E <- Cs], X, gen_expr(Env, TA));
+    {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
+                                      {E2, C2} = gen_expr(E, C),
+                                      {E2, [C2|CC]}
+                              end, {Env, []}, Cs),
+    {_, TA2} = gen_expr(Env, TA),
+    {Env2, cerl:c_receive(lists:reverse(Cs2), X, TA2)};
 
 gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
-    cerl:c_call(
-      cerl:c_atom('erlang'),
-      cerl:c_atom('!'),
-      [gen_expr(Env, P), gen_expr(Env, M)]);
+    {_, PExp} = gen_expr(Env, P),
+    {_, MExp} = gen_expr(Env, M),
+    {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
-gen_expr(Env, #fun_binding{def=F, expr=E}) -> %{defn, Args, Body}, E}) ->
+gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
     #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
     Arity = case A of
                 [{unit, _}] -> 1;
                 L -> length(L)
             end,
-    NewEnv = [{N, Arity}|Env],
-    cerl:c_letrec([gen_fun(NewEnv, F)], gen_expr(NewEnv, E));
+    NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
+    {_, Exp} = gen_expr(NewEnv, E),
+    {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};
 gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    %% TODO:  environment supporting vars
-    cerl:c_let([cerl:c_var(list_to_atom(N))],
-               gen_expr(Env, E1),
-               gen_expr(Env, E2)).
+    {_, E1Exp} = gen_expr(Env, E1),
+    {_, E2Exp} = gen_expr(Env, E2),
+    {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}.
 
 module_info0(ModuleName) ->
     gen_module_info(ModuleName, []).
@@ -303,14 +377,15 @@ gen_module_info(ModuleName, Params) ->
 
 gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 
-gen_bits(_Env, [], AllSegs) ->
-    lists:reverse(AllSegs);
+gen_bits(Env, [], AllSegs) ->
+    {Env, lists:reverse(AllSegs)};
 gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs)
   when T == binary; T == utf8 ->
     #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
-    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_atom('all'), cerl:c_int(8),
+    {Env2, VExp} = gen_expr(Env, V),
+    B = cerl:c_bitstr(VExp, cerl:c_atom('all'), cerl:c_int(8),
                       get_bits_type(T), bits_flags(Sign, E)),
-    lists:reverse([B|Segs]);
+    {Env2, lists:reverse([B|Segs])};
 
 gen_bits(Env,
          [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
@@ -320,7 +395,8 @@ gen_bits(Env,
 
 gen_bits(Env, [Bits|Rem], Memo) ->
     #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
-    B = cerl:c_bitstr(gen_expr(Env, V), cerl:c_int(S), cerl:c_int(U),
+    {Env2, VExp} = gen_expr(Env, V),
+    B = cerl:c_bitstr(VExp, cerl:c_int(S), cerl:c_int(U),
                       get_bits_type(T), bits_flags(Sign, E)),
     gen_bits(Env, Rem, [B|Memo]).
 
