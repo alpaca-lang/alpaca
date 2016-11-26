@@ -65,6 +65,7 @@ send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 test        : {token, {'test', TokenLine}}.
+error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
 true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 

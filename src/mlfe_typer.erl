@@ -1327,6 +1327,14 @@ typ_of(Env, Lvl, {symbol, _, N}) ->
 typ_of(#env{next_var=VN}, _Lvl, {unit, _}) ->
     {new_cell(t_unit), VN};
 
+%% Errors only type as new variables for the moment to simplify
+%% unification with other terms.  I'm considering typing them as
+%% a kind of effect that wraps enclosing expressions, similar to
+%% how receivers are handled.
+typ_of(Env, Lvl, {raise_error, _, _, _}) ->
+    {T, #env{next_var=NV}} = new_var(Lvl, Env),
+    {T, NV};
+
 typ_of(Env, Lvl, {'_', _}) ->
     {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
     {T, VarNum};
@@ -3904,6 +3912,33 @@ adt_ordering_test_() ->
                           module_typ_and_parse(Code))
      end
     ].
+
+unify_with_error_test_() ->
+    [fun() ->
+             Code = 
+                 "module unify_with_error_test\n\n"
+                 "throw_on_zero x = match x with "
+                 "    0 -> throw :zero"
+                 "  | _ -> x * 2",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      type={t_arrow, [t_int], t_int}}]}},
+                module_typ_and_parse(Code))
+     end
+     , fun() ->
+               Code = 
+                   "module unify_with_error_test\n\n"
+                   "should_not_unify x = match x with "
+                   "    0 -> throw :zero"
+                   "  | 1 -> :one "
+                   "  | _ -> x * 2",
+               ?assertMatch(
+                  {error, {cannot_unify, _, _, t_int, t_atom}},
+                  module_typ_and_parse(Code))
+       end
+    ].
+
 
 no_process_leak_test() ->
     Code =
