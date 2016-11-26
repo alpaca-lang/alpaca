@@ -144,6 +144,11 @@ gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
         undefined ->
             {Env, cerl:c_var(list_to_atom(V))}
     end;
+
+gen_expr(Env, {raise_error, _, Kind, Expr}) ->
+    {Env2, ExprAST} = gen_expr(Env, Expr),
+    {Env2, cerl:c_call(cerl:c_atom(erlang), cerl:c_atom(Kind), [ExprAST])};
+
 gen_expr(Env, {nil, _}) ->
     {Env, cerl:c_nil()};
 gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->

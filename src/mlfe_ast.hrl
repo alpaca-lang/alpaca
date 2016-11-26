@@ -100,6 +100,11 @@
 -type mlfe_bool() :: {bool, integer(), boolean()}.
 -type mlfe_atom() :: {atom, integer(), atom()}.
 
+-type mlfe_error() :: {raise_error, 
+                       integer(), 
+                       throw|error|exit, 
+                       mlfe_value_expression()}.
+
 %%% The variable _, meaning "don't care":
 -type mlfe_any() :: {any, integer()}.
 
@@ -386,7 +391,8 @@
                          | mlfe_type_check()
                          | mlfe_binding()
                          | mlfe_fun_def()
-                         | mlfe_type_import().
+                         | mlfe_type_import()
+                         | mlfe_error().
 
 -record(fun_binding, {def :: mlfe_fun_def(),
                       expr :: mlfe_expression()

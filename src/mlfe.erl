@@ -277,7 +277,6 @@ records_with_x_module_test() ->
     ?assertEqual(5, M:get_x(M:make_xy(5, 6))),
     code:delete(M).
 
-
 %% A pattern match that matches records and maps with the same key should
 %% correctly distinguish between maps and records that are compiled as
 %% maps.
@@ -287,4 +286,15 @@ record_vs_map_match_order_test() ->
     ?assertEqual(2, M:check_record({})),
     code:delete(M).
     
+raise_errors_test() ->
+    [M] = compile_and_load(["test_files/error_tests.mlfe"], []),
+    ?assertException(throw, <<"this should be a throw">>, M:raise_throw(unit)),
+    ?assertException(exit, <<"exit here">>, M:raise_exit(unit)),
+    ?assertException(error, <<"and an error">>, M:raise_error(unit)),
+
+    ?assertException(throw, <<"oh no zero!">>, M:throw_or_int(0)),
+    ?assertEqual(4, M:throw_or_int(2)),
+    code:delete(M).
+    
+
 -endif.

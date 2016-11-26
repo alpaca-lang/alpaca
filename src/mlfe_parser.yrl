@@ -43,6 +43,8 @@ send_to
 receive_block
 spawn_pid
 
+error
+
 compare type_check guard guards
 ffi_call
 expr simple_expr.
@@ -64,6 +66,8 @@ bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encodi
 open_brace close_brace
 map_open map_arrow
 match with '|' '->'
+
+raise_error
 
 send
 receive after
@@ -285,6 +289,11 @@ tuple -> '(' tuple_list ')' :
 
 infix -> term op term : make_infix('$2', '$1', '$3').
 
+%% ----- Errors (including throw, exit) --------------
+error -> raise_error term:
+  {_, L, Kind} = '$1',
+  {raise_error, L, list_to_atom(Kind), '$2'}.
+
 term -> const : '$1'.
 term -> tuple : '$1'.
 term -> infix : '$1'.
@@ -297,6 +306,7 @@ term -> record : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.
+term -> error : '$1'.
 
 terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
