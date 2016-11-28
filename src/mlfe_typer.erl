@@ -1678,28 +1678,55 @@ typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) -
             end
     end;
 
-typ_of(Env, Lvl, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
-    %% I'm leaving the environment mutation here because the body
-    %% needs the bindings:
-    {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
-    JustTypes = [Typ || {_, Typ} <- ArgTypes],
-    RecursiveType = {t_arrow, JustTypes, new_cell(t_rec)},
-    EnvWithLetRec = update_binding(N, RecursiveType, Env2),
-
-    case typ_of(EnvWithLetRec, Lvl, Body) of
-        {error, _} = Err ->
+typ_of(EnvIn, Lvl, #mlfe_fun_def{name={symbol, L, N}, versions=Vs}) ->
+    F = fun(_, {error, _}=Err) ->
+                Err;
+           ({Args, Body}, {Types, Env}) ->
+                %% I'm leaving the environment mutation here because the body
+                %% needs the bindings:
+                {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
+                JustTypes = [Typ || {_, Typ} <- ArgTypes],
+                RecursiveType = {t_arrow, JustTypes, new_cell(t_rec)},
+                EnvWithLetRec = update_binding(N, RecursiveType, Env2),
+                
+                case typ_of(EnvWithLetRec, Lvl, Body) of
+                    {error, _} = Err ->
+                        Err;
+                    {T, NextVar} ->
+                        JustTypes = [Typ || {_, Typ} <- ArgTypes],
+                        case unwrap(T) of
+                            {t_receiver, Recv, Res} ->
+                                TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
+                                {t_receiver, Recv2, Res2}=collapse_receivers(TRec, Env2, Lvl),
+                                X = {t_receiver, Recv2,
+                                      {t_arrow, JustTypes, Res2}},
+                                {[X|Types], update_counter(NextVar, Env2)};
+                            _ ->
+                                
+                                {[{t_arrow, JustTypes, T}|Types],
+                                 update_counter(NextVar, Env2)}
+                        end
+                end
+        end,
+    case lists:foldl(F, {[], EnvIn}, Vs) of
+        {error, _}=Err ->
             Err;
-        {T, NextVar} ->
-            JustTypes = [Typ || {_, Typ} <- ArgTypes],
-            case unwrap(T) of
-                {t_receiver, Recv, Res} ->
-                    TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
-                    {t_receiver, Recv2, Res2}=collapse_receivers(TRec, Env, Lvl),
-                    X = {{t_receiver, Recv2,
-                          {t_arrow, JustTypes, Res2}}, NextVar},
-                    X;
-                _ ->
-                    {{t_arrow, JustTypes, T}, NextVar}
+        {RevVersions, Env2} ->
+            [H|TypedVersions] = lists:reverse(RevVersions),
+            Unified = lists:foldl(
+                        fun(_, {error, _}=Err) ->
+                                Err;
+                           (T1, T2) ->
+                                case unify(T1, T2, Env2, L) of
+                                    {error, _}=Err -> Err;
+                                    ok -> T2
+                                end
+                        end, 
+                        H, 
+                        TypedVersions),
+            case Unified of
+                {error, _}=Err -> Err;
+                Typ -> {Typ, Env2#env.next_var}
             end
     end;
 
@@ -2005,8 +2032,8 @@ get_fun(Module, FunName, Arity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, args=Args}=Fun|_], FN, A)
-  when length(Args) =:= A, N =:= FN ->
+filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
+  when Arity =:= A, N =:= FN ->
     {ok, Fun};
 filter_to_fun([_|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).

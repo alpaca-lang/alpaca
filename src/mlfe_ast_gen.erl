@@ -26,7 +26,7 @@ parse_module(NextVarNum, Text) when is_list(Text) ->
 parse_module([], #mlfe_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #mlfe_module{name=N, functions=Funs, types=Ts}=M) ->
-    OrderedFuns = lists:reverse(Funs),
+    OrderedFuns = group_funs(Funs),
     TypesWithModule = [T#mlfe_type{module=N} || T <- Ts],
     {ok, M#mlfe_module{functions=OrderedFuns,
                        types = TypesWithModule}};
@@ -44,6 +44,21 @@ parse_module(Tokens, Mod) ->
                     Err
             end
     end.
+
+%% Group all functions by name and arity:
+group_funs(Funs) ->
+    lists:reverse(Funs),
+    F = fun(#mlfe_fun_def{name=N, arity=A, versions=V}, Acc) ->
+                Key = {N, A},
+                Existing = maps:get(Key, Acc, []),
+                maps:put(Key, V ++ Existing, Acc)
+        end,
+    Grouped = lists:foldl(F, maps:new(), Funs),
+    lists:map(
+      fun({{N, A}, Defs}) -> 
+              #mlfe_fun_def{name=N, arity=A, versions=lists:reverse(Defs)}
+      end, 
+      maps:to_list(Grouped)).
 
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
@@ -187,19 +202,25 @@ next_batch([Token|Tail], Memo) ->
         MN::atom(),
         TopLevel::mlfe_fun_def()) -> {integer(), map(), mlfe_fun_def()} |
                                      {error, term()}.
-rename_bindings(NextVar, MN,
-                #mlfe_fun_def{name={symbol, _, Name}, args=As}=TopLevel) ->
+rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
+    #mlfe_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
     SeedMap = #{Name => Name},
-    case rebind_args(NextVar, MN, SeedMap, As) of
-        {NV, M, Args} ->
-            case rename_bindings(NV, MN, M, TopLevel#mlfe_fun_def.body) of
-                {NV2, M2, E} -> {NV2, M2, TopLevel#mlfe_fun_def{
-                                            body=E,
-                                            args=Args}};
-                {error, _} = Err -> Err
-            end;
-        {error, _} = E -> E
-    end.
+
+    F = fun({As, Body}, {Var, M, Versions}) ->
+                case rebind_args(Var, MN, SeedMap, As) of
+                    {NV, M2, Args} ->
+                        case rename_bindings(NV, MN, M2, Body) of
+                            {NV2, M3, E} -> 
+                                {NV2, M3, [{Args, E}|Versions]};
+                            {error, _} = Err -> 
+                                erlang:throw(Err)
+                        end;
+                    {error, _} = E -> throw(E)
+                end
+        end,
+
+    {NV, M2, Vs2} = lists:foldl(F, {NextVar, maps:new(), []}, Vs),
+    {NV, M2, TopLevel#mlfe_fun_def{versions=Vs2}}.
 
 rebind_args(NextVar, _MN, Map, Args) ->
     F = fun({error, _} = E, _) -> E;
@@ -212,7 +233,7 @@ rebind_args(NextVar, _MN, Map, Args) ->
                         , [{symbol, L, Synth}|Syms]
                         };
                     _ ->
-                        {error, {duplicate_definition, N, L}}
+                        throw({duplicate_definition, N, L})
                 end;
            ({unit, _}=U, {NV, AccMap, Syms}) ->
                 {NV, AccMap, [U|Syms]}
@@ -233,28 +254,33 @@ rename_bindings(NextVar, MN, Map, #fun_binding{def=Def, expr=E}) ->
                                                 #fun_binding{def=Def2, expr=E2}}
                           end
     end;
-rename_bindings(NV, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
-    #mlfe_fun_def{args=Args, body=Body} = Def,
-    case maps:get(Name, M, undefined) of
-        undefined ->
-            Synth = next_var(NV),
-            M2 = maps:put(Name, Synth, M),
-            case rebind_args(NV+1, MN, M2, Args) of
-                {error, _}=Err ->
-                    Err;
-                {NV3, M3, Args2} ->
-                    case rename_bindings(NV3, MN, M3, Body) of
-                        {error, _}=Err -> Err;
-                        {NV4, M4, Body2} ->
-                            {NV4, M4, #mlfe_fun_def{
-                                         name={symbol, L, Synth},
-                                         args=Args2,
-                                         body=Body2}}
-                    end
-            end;
-        _ ->
-            {error, {duplicate_definition, Name, L}}
-    end;
+rename_bindings(NextVar, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
+    #mlfe_fun_def{versions=Vs}=Def,
+    {NewName, M2} = case maps:get(Name, M, undefined) of
+                        undefined ->
+                            Synth = next_var(NextVar),
+                            {Synth, maps:put(Name, Synth, M)};
+                        _ ->
+                            throw({duplicate_definition, Name, L})
+                    end,
+
+    F = fun({Args, Body}, {Map, NV, NewVersions}) ->
+                case rebind_args(NV+1, MN, Map, Args) of
+                    {error, _}=Err ->
+                        throw(Err);
+                    {NV3, M3, Args2} ->
+                        case rename_bindings(NV3, MN, M3, Body) of
+                            {error, _}=Err -> 
+                                throw(Err);
+                            {NV4, M4, Body2} ->
+                                {NV4, M4, [{Args2, Body2}|NewVersions]}
+                        end
+                end
+           end,
+    {NextVar2, Map2, Vs2} = lists:foldl(F, {M2, NextVar, []}, Vs),
+    NewDef = Def#mlfe_fun_def{name={symbol, L, NewName}, versions=lists:reverse(Vs2)},
+    {NextVar2, Map2, NewDef};
+    
 rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
     #var_binding{name={symbol, L, N},
                  to_bind=TB,
@@ -278,7 +304,7 @@ rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
                     end
             end;
         _ ->
-            {error, {duplicate_definition, N, L}}
+            throw({duplicate_definition, N, L})
     end;
 
 rename_bindings(NextVar, MN, Map, #mlfe_apply{name=N, args=Args}=App) ->
@@ -592,7 +618,7 @@ make_bindings(NV, _MN, M, {symbol, L, Name}) ->
             Synth = next_var(NV),
             {NV+1, maps:put(Name, Synth, M), {symbol, L, Synth}};
         _ ->
-            {error, {duplicate_definition, Name, L}}
+            throw({duplicate_definition, Name, L})
     end;
 make_bindings(NV, _MN, M, Expression) ->
     {NV, M, Expression}.
@@ -667,24 +693,24 @@ defn_test_() ->
      %% at the top level when they're not allowed in let forms.
      %% Strikes me as potentially quite confusing.
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "x"},
-                                      args=[],
-                                      body={int, 1, 5}}},
+                                      versions=[{[], {int, 1, 5}}]}},
                    parse(mlfe_scanner:scan("x=5"))),
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "double"},
-                                      args=[{symbol, 1, "x"}],
-                                      body=#mlfe_apply{
-                                              type=undefined,
-                                              name={bif, '+', 1, erlang, '+'},
-                                              args=[{symbol, 1, "x"},
-                                                    {symbol, 1, "x"}]}}},
+                                      versions=[{[{symbol, 1, "x"}],
+                                                 #mlfe_apply{
+                                                    type=undefined,
+                                                    name={bif, '+', 1, erlang, '+'},
+                                                    args=[{symbol, 1, "x"},
+                                                          {symbol, 1, "x"}]}}]}},
                    parse(mlfe_scanner:scan("double x = x + x"))),
      ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "add"},
-                                      args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
-                                      body=#mlfe_apply{
-                                              type=undefined,
-                                              name={bif, '+', 1, erlang, '+'},
-                                              args=[{symbol, 1, "x"},
-                                                    {symbol, 1, "y"}]}}},
+                                      versions=[{[{symbol, 1, "x"}, 
+                                                  {symbol, 1, "y"}],
+                                                 #mlfe_apply{
+                                                    type=undefined,
+                                                    name={bif, '+', 1, erlang, '+'},
+                                                    args=[{symbol, 1, "x"},
+                                                          {symbol, 1, "y"}]}}]}},
                    parse(mlfe_scanner:scan("add x y = x + y")))
     ].
 
@@ -700,12 +726,12 @@ let_binding_test_() ->
         {ok, #fun_binding{
                 def=#mlfe_fun_def{
                        name={symbol, 1, "double"},
-                       args=[{symbol, 1, "x"}],
-                       body=#mlfe_apply{
-                               type=undefined,
-                               name={bif, '+', 1, erlang, '+'},
-                               args=[{symbol, 1, "x"},
-                                     {symbol, 1, "x"}]}},
+                       versions=[{[{symbol, 1, "x"}],
+                                  #mlfe_apply{
+                                     type=undefined,
+                                     name={bif, '+', 1, erlang, '+'},
+                                     args=[{symbol, 1, "x"},
+                                           {symbol, 1, "x"}]}}]},
                 expr=#mlfe_apply{
                         name={symbol, 1, "double"},
                         args=[{int, 1, 2}]}}},
@@ -722,54 +748,55 @@ let_binding_test_() ->
      ?_assertMatch(
         {ok, #mlfe_fun_def{
                 name={symbol, 1, "doubler"},
-                args=[{symbol, 1, "x"}],
-                body=#fun_binding{
-                        def=#mlfe_fun_def{
-                               name={symbol, 2, "double"},
-                               args=[{symbol, 2, "x"}],
-                               body=#mlfe_apply{
-                                       type=undefined,
-                                       name={bif, '+', 2, erlang, '+'},
-                                       args=[{symbol, 2, "x"},
-                                             {symbol, 2, "x"}]}},
-                        expr=#mlfe_apply{
-                                name={symbol, 3, "double"},
-                                args=[{int, 3, 2}]}}}},
+                versions=[{[{symbol, 1, "x"}],
+                           #fun_binding{
+                              def=#mlfe_fun_def{
+                                     name={symbol, 2, "double"},
+                                     versions=[{[{symbol, 2, "x"}],
+                                                #mlfe_apply{
+                                                   type=undefined,
+                                                   name={bif, '+', 2, erlang, '+'},
+                                                   args=[{symbol, 2, "x"},
+                                                         {symbol, 2, "x"}]}}]},
+                              expr=#mlfe_apply{
+                                      name={symbol, 3, "double"},
+                                      args=[{int, 3, 2}]}}}]}},
         parse(mlfe_scanner:scan(
                 "doubler x =\n"
                 "  let double x = x + x in\n"
                 "  double 2"))),
      ?_assertMatch(
-        {ok, #mlfe_fun_def{
-                name={symbol,1,"my_fun"},
-                args=[{symbol,1,"x"},{symbol,1,"y"}],
-                body=#fun_binding{
-                        def=#mlfe_fun_def{
-                               name={symbol,1,"xer"},
-                               args=[{symbol,1,"a"}],
-                               body=#mlfe_apply{
-                                       type=undefined,
-                                       name={bif, '+', 1, erlang, '+'},
-                                       args=[{symbol,1,"a"},
-                                             {symbol,1,"a"}]}},
-                        expr=#fun_binding{
-                                def=#mlfe_fun_def{
-                                       name={symbol,1,"yer"},
-                                       args=[{symbol,1,"b"}],
-                                       body=#mlfe_apply{
+        {ok, 
+         #mlfe_fun_def{
+            name={symbol,1,"my_fun"},
+            versions=[{[{symbol,1,"x"},{symbol,1,"y"}],
+                       #fun_binding{
+                          def=#mlfe_fun_def{
+                                 name={symbol,1,"xer"},
+                                 versions=[{[{symbol,1,"a"}],
+                                            #mlfe_apply{
                                                type=undefined,
                                                name={bif, '+', 1, erlang, '+'},
-                                               args=[{symbol,1,"b"},
-                                                     {symbol,1,"b"}]}},
-                                expr=#mlfe_apply{
-                                        type=undefined,
-                                        name={bif, '+', 1, erlang, '+'},
-                                        args=[#mlfe_apply{
-                                                 name={symbol,1,"xer"},
-                                                 args=[{symbol,1,"x"}]},
-                                              #mlfe_apply{
-                                                 name={symbol,1,"yer"},
-                                                 args=[{symbol,1,"y"}]}]}}}}},
+                                               args=[{symbol,1,"a"},
+                                                     {symbol,1,"a"}]}}]},
+                          expr=#fun_binding{
+                                  def=#mlfe_fun_def{
+                                         name={symbol,1,"yer"},
+                                         versions=[{[{symbol,1,"b"}],
+                                                    #mlfe_apply{
+                                                       type=undefined,
+                                                       name={bif, '+', 1, erlang, '+'},
+                                                       args=[{symbol,1,"b"},
+                                                             {symbol,1,"b"}]}}]},
+                                  expr=#mlfe_apply{
+                                          type=undefined,
+                                          name={bif, '+', 1, erlang, '+'},
+                                          args=[#mlfe_apply{
+                                                   name={symbol,1,"xer"},
+                                                   args=[{symbol,1,"x"}]},
+                                                #mlfe_apply{
+                                                   name={symbol,1,"yer"},
+                                                   args=[{symbol,1,"y"}]}]}}}}]}},
         parse(mlfe_scanner:scan(
                 "my_fun x y ="
                 "  let xer a = a + a in"
@@ -849,21 +876,21 @@ module_with_let_test() ->
            functions=[
                       #mlfe_fun_def{
                          name={symbol,5,"add"},
-                         args=[{symbol,5,"svar_0"},{symbol,5,"svar_1"}],
-                         body=#fun_binding{
-                                 def=#mlfe_fun_def{
-                                        name={symbol,6,"svar_2"},
-                                        args=[{symbol,6,"svar_3"},
-                                              {symbol,6,"svar_4"}],
-                                        body=#mlfe_apply{
-                                                type=undefined,
-                                                name={bif, '+', 6, erlang, '+'},
-                                                args=[{symbol,6,"svar_3"},
-                                                      {symbol,6,"svar_4"}]}},
-                                 expr=#mlfe_apply{
-                                         name={symbol,7,"svar_2"},
-                                         args=[{symbol,7,"svar_0"},
-                                               {symbol,7,"svar_1"}]}}}]}},
+                         versions=[{[{symbol,5,"svar_0"},{symbol,5,"svar_1"}],
+                                    #fun_binding{
+                                       def=#mlfe_fun_def{
+                                              name={symbol,6,"svar_2"},
+                                              versions=[{[{symbol,6,"svar_3"},
+                                                          {symbol,6,"svar_4"}],
+                                                         #mlfe_apply{
+                                                            type=undefined,
+                                                            name={bif, '+', 6, erlang, '+'},
+                                                            args=[{symbol,6,"svar_3"},
+                                                                  {symbol,6,"svar_4"}]}}]},
+                                       expr=#mlfe_apply{
+                                               name={symbol,7,"svar_2"},
+                                               args=[{symbol,7,"svar_0"},
+                                                     {symbol,7,"svar_1"}]}}}]}]}},
        parse_module(0, Code)).
 
 match_test_() ->
@@ -1054,31 +1081,31 @@ simple_module_test() ->
            functions=[
                       #mlfe_fun_def{
                          name={symbol, 5, "adder"},
-                         args=[{symbol, 5, "svar_0"},
-                               {symbol,5 , "svar_1"}],
-                         body=#mlfe_apply{type=undefined,
-                                          name={bif, '+', 5, erlang, '+'},
-                                          args=[{symbol, 5, "svar_0"},
-                                                {symbol,5,"svar_1"}]}},
+                         versions=[{[{symbol, 5, "svar_0"},
+                                     {symbol,5 , "svar_1"}],
+                                    #mlfe_apply{type=undefined,
+                                                name={bif, '+', 5, erlang, '+'},
+                                                args=[{symbol, 5, "svar_0"},
+                                                      {symbol,5,"svar_1"}]}}]},
                       #mlfe_fun_def{
                          name={symbol,7,"add1"},
-                         args=[{symbol,7,"svar_2"}],
-                         body=#mlfe_apply{name={symbol,7,"adder"},
-                                          args=[{symbol,7,"svar_2"},
-                                                {int,7,1}]}},
+                         versions=[{[{symbol,7,"svar_2"}],
+                                    #mlfe_apply{name={symbol,7,"adder"},
+                                                args=[{symbol,7,"svar_2"},
+                                                      {int,7,1}]}}]},
                       #mlfe_fun_def{
                          name={symbol,9,"add"},
-                         args=[{symbol,9,"svar_3"},{symbol,9,"svar_4"}],
-                         body=#mlfe_apply{name={symbol,9,"adder"},
-                                          args=[{symbol,9,"svar_3"},
-                                                {symbol,9,"svar_4"}]}},
+                         versions=[{[{symbol,9,"svar_3"},{symbol,9,"svar_4"}],
+                                    #mlfe_apply{name={symbol,9,"adder"},
+                                                args=[{symbol,9,"svar_3"},
+                                                      {symbol,9,"svar_4"}]}}]},
                       #mlfe_fun_def{
                          name={symbol,11,"sub"},
-                         args=[{symbol,11,"svar_5"},{symbol,11,"svar_6"}],
-                         body=#mlfe_apply{type=undefined,
-                                          name={bif, '-', 11, erlang, '-'},
-                                          args=[{symbol,11,"svar_5"},
-                                                {symbol,11,"svar_6"}]}}]}},
+                         versions=[{[{symbol,11,"svar_5"},{symbol,11,"svar_6"}],
+                                    #mlfe_apply{type=undefined,
+                                                name={bif, '-', 11, erlang, '-'},
+                                                args=[{symbol,11,"svar_5"},
+                                                      {symbol,11,"svar_6"}]}}]}]}},
        parse_module(0, Code)).
 
 rebinding_test_() ->
@@ -1103,58 +1130,62 @@ rebinding_test_() ->
 
     [?_assertMatch({_, _, #mlfe_fun_def{
                              name={symbol, 1, "f"},
-                             args=[{symbol, 1, "svar_0"}],
-                             body=#var_binding{
-                                     name={symbol, 1, "svar_1"},
-                                     to_bind={int, 1, 2},
-                                     expr=#mlfe_apply{
-                                             name={bif, '+', 1, 'erlang', '+'},
-                                             args=[{symbol, 1, "svar_0"},
-                                                   {symbol, 1, "svar_1"}]}}}},
+                             versions=[{[{symbol, 1, "svar_0"}],
+                                        #var_binding{
+                                           name={symbol, 1, "svar_1"},
+                                           to_bind={int, 1, 2},
+                                           expr=#mlfe_apply{
+                                                   name={bif, '+', 1, 'erlang', '+'},
+                                                   args=[{symbol, 1, "svar_0"},
+                                                         {symbol, 1, "svar_1"}]}}}]}},
                    rename_bindings(0, undefined, A)),
-     ?_assertMatch({error, {duplicate_definition, "x", 2}},
-                   rename_bindings(0, undefined, B)),
+     ?_assertException(throw, 
+                       {duplicate_definition, "x", 2},
+                       rename_bindings(0, undefined, B)),
      ?_assertMatch(
         {_, _, #mlfe_fun_def{
                   name={symbol, 1, "f"},
-                  args=[{symbol, 1, "svar_0"}],
-                  body=#mlfe_match{
-                          match_expr={symbol, 1, "svar_0"},
-                          clauses=[#mlfe_clause{
-                                      pattern=#mlfe_tuple{
-                                                 values=[{symbol, 2, "svar_1"},
-                                                         {int, 2, 0}]},
-                                      result={symbol, 2, "svar_1"}},
-                                   #mlfe_clause{
-                                      pattern=#mlfe_tuple{
-                                                 values=[{symbol, 3, "svar_2"},
-                                                         {symbol, 3, "svar_3"}]},
-                                      result={symbol, 3, "svar_3"}}]}}},
+                  versions=[{[{symbol, 1, "svar_0"}],
+                             #mlfe_match{
+                                match_expr={symbol, 1, "svar_0"},
+                                clauses=[#mlfe_clause{
+                                            pattern=#mlfe_tuple{
+                                                       values=[{symbol, 2, "svar_1"},
+                                                               {int, 2, 0}]},
+                                            result={symbol, 2, "svar_1"}},
+                                         #mlfe_clause{
+                                            pattern=#mlfe_tuple{
+                                                       values=[{symbol, 3, "svar_2"},
+                                                               {symbol, 3, "svar_3"}]},
+                                            result={symbol, 3, "svar_3"}}]}}]}},
         rename_bindings(0, undefined, C)),
-     ?_assertMatch({error, {duplicate_definition, "x", 2}},
-                   rename_bindings(0, undefined, D)),
+     ?_assertException(throw,
+                       {duplicate_definition, "x", 2},
+                       rename_bindings(0, undefined, D)),
      ?_assertMatch(
         {_, _,
          #mlfe_fun_def{
-            body=#mlfe_match{
-                    match_expr={symbol, 1, "svar_0"},
-                    clauses=[#mlfe_clause{
-                                pattern=#mlfe_cons{
-                                           head={'_', 2},
-                                           tail=#mlfe_cons{
-                                                   head={symbol, 2, "svar_1"},
-                                                   tail=#mlfe_cons{
-                                                           head={int, 2, 0},
-                                                           tail={nil, 0}}}},
-                                result={symbol, 2, "svar_1"}},
-                             #mlfe_clause{
-                                pattern=#mlfe_cons{
-                                           head={symbol, 3, "svar_2"},
-                                           tail={symbol, 3, "svar_3"}},
-                                result={symbol, 3, "svar_2"}}]}}},
+            versions=[{_, 
+                       #mlfe_match{
+                          match_expr={symbol, 1, "svar_0"},
+                          clauses=[#mlfe_clause{
+                                      pattern=#mlfe_cons{
+                                                 head={'_', 2},
+                                                 tail=#mlfe_cons{
+                                                         head={symbol, 2, "svar_1"},
+                                                         tail=#mlfe_cons{
+                                                                 head={int, 2, 0},
+                                                                 tail={nil, 0}}}},
+                                      result={symbol, 2, "svar_1"}},
+                                   #mlfe_clause{
+                                      pattern=#mlfe_cons{
+                                                 head={symbol, 3, "svar_2"},
+                                                 tail={symbol, 3, "svar_3"}},
+                                      result={symbol, 3, "svar_2"}}]}}]}},
         rename_bindings(0, undefined, E)),
-     ?_assertMatch({error, {duplicate_definition, "y", 2}},
-                   rename_bindings(0, undefined, F))
+     ?_assertException(throw, 
+                       {duplicate_definition, "y", 2},
+                       rename_bindings(0, undefined, F))
     ].
 
 type_expr_in_type_declaration_test() ->

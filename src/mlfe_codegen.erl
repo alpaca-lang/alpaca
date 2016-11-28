@@ -40,8 +40,7 @@
          }).
 
 make_env(#mlfe_module{functions=Funs}=Mod) ->
-    TopLevelFuns = [{N, length(Args)}
-           || #mlfe_fun_def{name={symbol, _, N}, args=Args} <- Funs],
+    TopLevelFuns = [{N, A} || #mlfe_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
 gen(#mlfe_module{}=Mod, Opts) ->
@@ -87,12 +86,12 @@ gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=[{unit, _}], body=Body}) ->
+gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=[{[{unit, _}], Body}]}) ->
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, args=Args, body=Body}) ->
+gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=[{Args, Body}]}) ->
     FName = cerl:c_fname(list_to_atom(N), length(Args)),
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
     {_, B} = gen_expr(Env, Body),
@@ -354,7 +353,7 @@ gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
 gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
-    #mlfe_fun_def{name={symbol, _, N}, args=A} = F,
+    #mlfe_fun_def{name={symbol, _, N}, versions=[{A, _}]} = F,
     Arity = case A of
                 [{unit, _}] -> 1;
                 L -> length(L)
