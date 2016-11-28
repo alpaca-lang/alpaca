@@ -353,11 +353,7 @@ gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
 gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
-    #mlfe_fun_def{name={symbol, _, N}, versions=[{A, _}]} = F,
-    Arity = case A of
-                [{unit, _}] -> 1;
-                L -> length(L)
-            end,
+    #mlfe_fun_def{name={symbol, _, N}, arity=Arity} = F,
     NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
     {_, Exp} = gen_expr(NewEnv, E),
     {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};

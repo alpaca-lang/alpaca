@@ -65,25 +65,19 @@ rebind_and_validate_module(_, {error, _} = Err) ->
 rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{}=Mod}) ->
     validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
 
-rebind_and_validate_functions(NextVarNum, #mlfe_module{
-                                             name=MN,
-                                             functions=Funs}=Mod) ->
+rebind_and_validate_functions(NextVarNum, #mlfe_module{}=Mod) ->
+    #mlfe_module{name=MN, functions=Funs}=Mod,
+
     F = fun(_, {error, _}=Err) ->
                 Err;
            (F, {NV, M, Memo}) ->
-                case rename_bindings(NV, MN, F) of
-                    {error, _}=Err ->
-                        Err;
-                    {NV2, M2, F2} ->
-                        %% We invert the returned map so that it is from
-                        %% synthetic variable name to source code variable
-                        %% name for later lookup:
-                        Inverted = [{V, K}||{K, V} <- maps:to_list(M2)],
-                        { NV2
-                        , maps:merge(M, maps:from_list(Inverted))
-                        , [F2|Memo]
-                        }
-                end
+                {NV2, M2, F2} = rename_bindings(NV, MN, F),
+                    
+                %% We invert the returned map so that it is from
+                %% synthetic variable name to source code variable
+                %% name for later lookup:
+                Inverted = [{V, K}||{K, V} <- maps:to_list(M2)],
+                { NV2, maps:merge(M, maps:from_list(Inverted)), [F2|Memo]}
         end,
     case lists:foldl(F, {NextVarNum, maps:new(), []}, Funs) of
         {error, _}=Err ->
@@ -213,7 +207,7 @@ rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
                             {NV2, M3, E} -> 
                                 {NV2, M3, [{Args, E}|Versions]};
                             {error, _} = Err -> 
-                                erlang:throw(Err)
+                                throw(Err)
                         end;
                     {error, _} = E -> throw(E)
                 end

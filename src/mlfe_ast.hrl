@@ -448,7 +448,7 @@
            type=undefined :: typ(),
            name=undefined :: undefined|mlfe_symbol(),
            arity=0 :: integer(),
-           versions=[] :: list({mlfe_value_expression(),
+           versions=[] :: list({list(mlfe_value_expression()),
                                 mlfe_expression()})
           }).
 
