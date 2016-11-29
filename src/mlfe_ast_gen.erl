@@ -26,7 +26,7 @@ parse_module(NextVarNum, Text) when is_list(Text) ->
 parse_module([], #mlfe_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #mlfe_module{name=N, functions=Funs, types=Ts}=M) ->
-    OrderedFuns = group_funs(Funs),
+    OrderedFuns = group_funs(Funs, N),
     TypesWithModule = [T#mlfe_type{module=N} || T <- Ts],
     {ok, M#mlfe_module{functions=OrderedFuns,
                        types = TypesWithModule}};
@@ -46,7 +46,7 @@ parse_module(Tokens, Mod) ->
     end.
 
 %% Group all functions by name and arity:
-group_funs(Funs) ->
+group_funs(Funs, ModuleName) ->
     OrderedKeys = 
         drop_dupes_preserve_order(
           lists:map(
@@ -54,10 +54,10 @@ group_funs(Funs) ->
             lists:reverse(Funs)),
           []),
     io:format("~nORDERED FUNS:  ~w~n~n", [OrderedKeys]),
-    F = fun(#mlfe_fun_def{name={symbol, _, N}, arity=A, versions=V}, Acc) ->
+    F = fun(#mlfe_fun_def{name={symbol, _, N}, arity=A, versions=[V]}, Acc) ->
                 Key = {N, A},
                 Existing = maps:get(Key, Acc, []),
-                maps:put(Key, V ++ Existing, Acc)
+                maps:put(Key, [V|Existing], Acc)
         end,
     Grouped = lists:foldl(F, maps:new(), Funs),
     lists:map(
@@ -78,6 +78,11 @@ drop_dupes_preserve_order([H|T], [H|_]=Memo) ->
 drop_dupes_preserve_order([H|T], Memo) ->
     drop_dupes_preserve_order(T, [H|Memo]).
 
+rebind_fun_pattern_args([], _NV, _Map, _Env, Memo) ->
+    lists:reverse(Memo);
+rebind_fun_pattern_args([A|T], NV, MN, Map, Memo) ->
+    {NV2, Map2, A2} = make_bindings(NV, MN, Map, A),
+    rebind_fun_pattern_args(T, NV2, MN, Map2, [A2|Memo]).
 
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
@@ -220,10 +225,13 @@ rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
     SeedMap = #{Name => Name},
 
     F = fun(#mlfe_fun_version{args=As, body=Body}=FV, {Var, M, Versions}) ->
-                case rebind_args(Var, MN, SeedMap, As) of
+%                case rebind_args(Var, MN, SeedMap, As) of
+                case make_bindings(Var, MN, SeedMap, As) of
                     {NV, M2, Args} ->
                         case rename_bindings(NV, MN, M2, Body) of
-                            {NV2, M3, E} -> 
+                            {NV2, M3, E} ->
+%                                {NV3, M4, As2} = make_bindings(NV2, MN, M2, Args),
+                                io:format("Args are ~w~n", [Args]),
                                 FV2 = FV#mlfe_fun_version{
                                         args=Args,
                                         body=E},
@@ -540,6 +548,18 @@ rename_clause_list(NV, MN, M, Cs) ->
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
+make_bindings(NV, MN, M, [_|_]=Xs) ->
+    {NV2, M2, Xs2} = lists:foldl(
+                       fun(X, {NextVar, Map, Memo}) ->
+                               case make_bindings(NextVar, MN, Map, X) of
+                                   {error, _}=Err -> throw(Err);
+                                   {NV2, M2, A2} -> {NV2, M2, [A2|Memo]}
+                               end
+                       end,
+                       {NV, M, []},
+                       Xs),
+    {NV2, M2, lists:reverse(Xs2)};
+
 make_bindings(NV, MN, M, #mlfe_tuple{values=Vs}=Tup) ->
     F = fun(_, {error, _}=E) -> E;
            (V, {NextVar, Map, Memo}) ->
@@ -629,6 +649,7 @@ make_bindings(NV, MN, M, #mlfe_record{members=Members}=R) ->
                 end
         end,
     {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
+    io:format("~nMAKE RECORD PATTERN!~n", []),
     NewR = R#mlfe_record{
              members=lists:reverse(Members2),
              is_pattern=true},

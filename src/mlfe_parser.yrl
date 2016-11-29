@@ -278,6 +278,11 @@ record -> open_brace record_members close_brace:
   {_, L} = '$1',
   #mlfe_record{line=L, arity=length('$2'), members='$2'}.
 
+%% Need to permit "empty" records for pattern matches:
+record -> open_brace close_brace:
+  {_, L} = '$1',
+  #mlfe_record{line=L, arity=0, members=[]}.
+
 unit -> '(' ')':
   {_, L} = '$1',
   {unit, L}.

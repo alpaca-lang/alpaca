@@ -1,6 +1,8 @@
 module function_pattern_args
 
-export is_zero/1, both_zero/2
+export is_zero/1, both_zero/2, make_xy/2, make_y/1, get_x/1, get_opt_x/1
+
+export double_maybe_x/1, doubler/1
 
 is_zero 0 = true
 
@@ -9,3 +11,25 @@ is_zero x = false
 both_zero 0 0 = true
 
 both_zero x y = false
+
+make_xy x y = {x=x, y=y}
+
+make_y y = {y=y}
+
+get_x {x=x} = x
+
+type option 'a = None | Some 'a
+
+get_opt_x {x=x} = Some x
+
+get_opt_x {} = None
+
+my_map f None = None
+
+my_map f (Some a) = Some (f a)
+
+double x = x * x
+
+doubler x = my_map double (Some x)
+
+double_maybe_x rec = my_map double (get_opt_x rec)

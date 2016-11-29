@@ -95,16 +95,36 @@ gen_fun(Env,
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, 
-        #mlfe_fun_def{
-           name={symbol, _, N}, 
-           versions=[#mlfe_fun_version{args=Args, body=Body}]}) ->
-    FName = cerl:c_fname(list_to_atom(N), length(Args)),
-    A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
-    {_, B} = gen_expr(Env, Body),
-    {FName, cerl:c_fun(A, B)};
+gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
+    case Vs of
+        %% If there's a single version with only symbol and/or unit
+        %% args, don't compile a pattern match:
+        [#mlfe_fun_version{args=Args, body=Body}] ->
+            case needs_pattern(Args) of
+                false ->
+                    FName = cerl:c_fname(list_to_atom(N), length(Args)),
+                    A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
+                    {_, B} = gen_expr(Env, Body),
+                    {FName, cerl:c_fun(A, B)};
+                true ->
+                    %% our single version has more than symbols and unit:
+                    gen_fun_patterns(Env, Def)
+            end;
+        _ ->
+            %% more than one version:
+            gen_fun_patterns(Env, Def)
+    end.
 
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
+needs_pattern(Args) ->
+    case lists:filter(fun({unit, _})      -> false;
+                         ({symbol, _, _}) -> false;
+                         (_)              -> true
+                      end, Args) of
+        [] -> false;
+        _  -> true
+    end.
+
+gen_fun_patterns(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
     %% We need to manufacture variable names that we'll use in the
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
@@ -118,7 +138,9 @@ gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
     {FName, cerl:c_fun(Args, B)}.
 
 gen_fun_version(Env, #mlfe_fun_version{args=Args, body=Body}) ->
+    io:format("Args for fun version ~w~n", [Args]),
     Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
+    io:format("Args vs pattern are~n~w~n~w~n", [Args, Patt]),
     {_, BodyExp} = gen_expr(Env, Body),
     cerl:c_clause(Patt, BodyExp).
 
@@ -183,6 +205,7 @@ gen_expr(Env, #mlfe_binary{segments=Segs}) ->
     {Env2, Bits} = gen_bits(Env, Segs), 
     {Env2, cerl:c_binary(Bits)};
 gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
+    io:format("Generate map pattern!~n", []),
     Annotated = annotate_map_type(M),
     F = fun(P, {E, Ps}) -> 
                 {E2, P2} = gen_expr(E, P),
@@ -204,6 +227,7 @@ gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     {_, VExp} = gen_expr(Env, V),
     {Env, cerl:c_call(cerl:c_atom(maps), cerl:c_atom(put), [KExp, VExp, M])};
 gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
+    io:format("Generate map pattern!~n", []),
     {Env2, KExp} = gen_expr(Env, K),
     {Env3, VExp} = gen_expr(Env2, V),
 
