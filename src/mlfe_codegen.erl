@@ -86,16 +86,41 @@ gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=[{[{unit, _}], Body}]}) ->
+gen_fun(Env, 
+        #mlfe_fun_def{
+           name={symbol, _, N}, 
+           versions=[#mlfe_fun_version{args=[{unit, _}], body=Body}]}) ->
+
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=[{Args, Body}]}) ->
+gen_fun(Env, 
+        #mlfe_fun_def{
+           name={symbol, _, N}, 
+           versions=[#mlfe_fun_version{args=Args, body=Body}]}) ->
     FName = cerl:c_fname(list_to_atom(N), length(Args)),
     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
     {_, B} = gen_expr(Env, Body),
-    {FName, cerl:c_fun(A, B)}.
+    {FName, cerl:c_fun(A, B)};
+
+gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
+    %% We need to manufacture variable names that we'll use in the
+    %% nested pattern matches:
+    VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
+    %% Nest matches:
+    FName = cerl:c_fname(list_to_atom(N), A),
+    Args = [cerl:c_var(cerl:c_atom(X)) || X <- VarNames],
+    [TopVar|_] = VarNames,
+    B = cerl:c_case(
+          cerl:c_values(Args),
+          [gen_fun_version(Env, Version) || Version <- Vs]),
+    {FName, cerl:c_fun(Args, B)}.
+
+gen_fun_version(Env, #mlfe_fun_version{args=Args, body=Body}) ->
+    Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
+    {_, BodyExp} = gen_expr(Env, Body),
+    cerl:c_clause(Patt, BodyExp).
 
 gen_tests(Env, Tests) ->
     gen_tests(Env, Tests, []).

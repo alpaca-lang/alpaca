@@ -1681,11 +1681,14 @@ typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) -
 typ_of(EnvIn, Lvl, #mlfe_fun_def{name={symbol, L, N}, versions=Vs}) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
-           ({Args, Body}, {Types, Env}) ->
-                %% I'm leaving the environment mutation here because the body
-                %% needs the bindings:
-                {ArgTypes, Env2} = args_to_types(Args, Lvl, Env, []),
-                JustTypes = [Typ || {_, Typ} <- ArgTypes],
+           (#mlfe_fun_version{args=Args, body=Body}, {Types, Env}) ->
+                BindingF = fun(Arg, {Typs, E, VN}) ->
+                                   {AT, _, NE, VN2} = add_bindings(Arg, E, Lvl, VN),
+                                   {[AT|Typs], NE, VN2}
+                           end,
+
+                {RevTyps, Env2, _} = lists:foldl(BindingF, {[], Env, 0}, Args),
+                JustTypes = lists:reverse(RevTyps),
                 RecursiveType = {t_arrow, JustTypes, new_cell(t_rec)},
                 EnvWithLetRec = update_binding(N, RecursiveType, Env2),
                 
@@ -1693,7 +1696,6 @@ typ_of(EnvIn, Lvl, #mlfe_fun_def{name={symbol, L, N}, versions=Vs}) ->
                     {error, _} = Err ->
                         Err;
                     {T, NextVar} ->
-                        JustTypes = [Typ || {_, Typ} <- ArgTypes],
                         case unwrap(T) of
                             {t_receiver, Recv, Res} ->
                                 TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
@@ -2038,23 +2040,7 @@ filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
 filter_to_fun([_|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
-%% Find or make a type for each arg from a function's
-%% argument list.
-args_to_types([], _Lvl, Env, Memo) ->
-    {lists:reverse(Memo), Env};
-args_to_types([{unit, _}|T], Lvl, Env, Memo) ->
-    %% have to give t_unit a name for filtering later:
-    args_to_types(T, Lvl, Env, [{unit, new_cell(t_unit)}|Memo]);
-args_to_types([{symbol, _, N}|T], Lvl, #env{bindings=Bs} = Env, Memo) ->
-    case proplists:get_value(N, Bs) of
-        undefined ->
-            {Typ, Env2} = new_var(Lvl, Env),
-            args_to_types(T, Lvl, update_binding(N, Typ, Env2), [{N, Typ}|Memo]);
-        Typ ->
-            args_to_types(T, Lvl, Env, [{N, Typ}|Memo])
-    end.
-
-%%% For clauses we need to add bindings to the environment for any symbols
+%%% for clauses we need to add bindings to the environment for any symbols
 %%% (variables) that occur in the pattern.  "NameNum" is used to give
 %%% "wildcard" variable names (the '_' throwaway label) sequential and thus
 %%% differing _actual_ variable names.  This is necessary so that two different
@@ -3966,6 +3952,59 @@ unify_with_error_test_() ->
        end
     ].
 
+function_argument_pattern_test_() ->
+    [fun() ->
+             Code =
+                 "module fun_pattern\n\n"
+                 "export f/1\n\n"
+                 "f 0 = :zero\n\n"
+                 "f x = :not_zero",
+             ?assertMatch(
+                {ok, #mlfe_module{
+                        functions=[#mlfe_fun_def{
+                                      versions=[_, _],
+                                      type={t_arrow, [t_int], t_atom}}]}},
+                module_typ_and_parse(Code))
+     end
+     , fun() ->
+               Code =
+                   "module fun_pattern_with_adt\n\n"
+                   "type option 'a = None | Some 'a\n\n"
+               %% parens needed so the parser doesn't assume the _
+               %% belongs to the type constructor:
+                   "my_map (None) _ = None\n\n"
+                   "my_map Some a f = Some (f a)",
+               ?assertMatch(
+                  {ok, #mlfe_module{
+                          functions=[#mlfe_fun_def{
+                                        versions=[_, _],
+                                        type={t_arrow,
+                                              [#adt{vars=[{_, {unbound, A, _}}]},
+                                               {t_arrow,
+                                                [{unbound, A, _}],
+                                                {unbound, B, _}}],
+                                              #adt{vars=[{_, {unbound, B, _}}]}}}]}},
+                  module_typ_and_parse(Code))
+       end
+    , fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)",
+              ?assertMatch(
+                 {ok, #mlfe_module{
+                         functions=[#mlfe_fun_def{
+                                       versions=[_, _],
+                                       type={t_arrow,
+                                             [{t_arrow, 
+                                               [{unbound, A, _}], 
+                                               {unbound, B, _}},
+                                              #adt{vars=[{_, {unbound, A, _}}]}],
+                                             #adt{vars=[{_, {unbound, B, _}}]}}}]}},
+                 module_typ_and_parse(Code))
+      end
+    ].
 
 no_process_leak_test() ->
     Code =

@@ -1,0 +1,11 @@
+module function_pattern_args
+
+export is_zero/1, both_zero/2
+
+is_zero 0 = true
+
+is_zero x = false
+
+both_zero 0 0 = true
+
+both_zero x y = false

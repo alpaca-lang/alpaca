@@ -446,12 +446,18 @@ make_infix(Op, A, B) ->
                 name=Name,
                 args=[A, B]}.
 
-make_define([{symbol, _, _} = Name|A], Expr) ->
+make_define([{symbol, L, _} = Name|A], Expr) ->
     case validate_args(A) of
         {ok, Args} ->
-            #mlfe_fun_def{name=Name, arity=length(Args), versions=[{Args, Expr}]};
-        {error, _} = E ->
-            E
+            #mlfe_fun_def{
+               name=Name, 
+               arity=length(Args), 
+               versions=[#mlfe_fun_version{
+                            line=L,
+                            args=Args,
+                            body=Expr}]}
+%        {error, _} = E ->
+%            E
     end;
 make_define([BadName|Args], _Expr) ->
     {error, {invalid_function_name, BadName, Args}}.
@@ -466,13 +472,15 @@ validate_args(Args) ->
 
 validate_args([], GoodArgs) ->
     {ok, lists:reverse(GoodArgs)};
-validate_args([{symbol, _, _}=A|T], Memo) ->
-    validate_args(T, [A|Memo]);
-validate_args([NonSymbol|_], _) ->
-    {error, {invalid_fun_parameter, NonSymbol}}.
+validate_args([#mlfe_match{}=E|_], _) ->
+    throw({invalid_fun_parameter, E});
+validate_args([#mlfe_spawn{}=E|_], _) ->
+    throw({invalid_fun_parameter, E});
+validate_args([A|T], Memo) ->
+    validate_args(T, [A|Memo]).
 
 %% Convert a nullary def into a variable binding:
-make_binding(#mlfe_fun_def{name=N, versions=[{[], B}]}, Expr) ->
+make_binding(#mlfe_fun_def{name=N, versions=[#mlfe_fun_version{args=[], body=B}]}, Expr) ->
     #var_binding{name=N, to_bind=B, expr=Expr};
 make_binding(Def, Expr) ->
     #fun_binding{def=Def, expr=Expr}.

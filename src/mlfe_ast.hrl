@@ -444,12 +444,17 @@
                     }).
 -type mlfe_apply() :: #mlfe_apply{}.
 
+-record(mlfe_fun_version, {
+          line=0 :: integer(),
+          args=[] :: list(mlfe_value_expression()),
+          body=undefined :: undefined|mlfe_expression()
+         }).
+
 -record (mlfe_fun_def, {
            type=undefined :: typ(),
            name=undefined :: undefined|mlfe_symbol(),
            arity=0 :: integer(),
-           versions=[] :: list({list(mlfe_value_expression()),
-                                mlfe_expression()})
+           versions=[] :: list(#mlfe_fun_version{})
           }).
 
 -type mlfe_fun_def() :: #mlfe_fun_def{}.
