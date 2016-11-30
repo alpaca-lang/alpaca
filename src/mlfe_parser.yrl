@@ -35,7 +35,7 @@ record_type_member record_type_members record_type
 
 term terms
 unit tuple tuple_list
-defn binding
+defn definfix binding
 module_def export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern
 
@@ -59,7 +59,7 @@ test
 ':'
 use
 boolean int float atom string chars '_'
-symbol module_fun
+symbol infixable module_fun
 assign int_math float_math minus plus
 '[' ']' cons_infix
 bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
@@ -85,6 +85,7 @@ Rootsymbol expr.
 
 Unary 500 minus.
 Unary 500 plus.
+
 
 %% Comments are stripped in the AST assembly right now but I want them
 %% embedded soon.
@@ -293,6 +294,7 @@ tuple -> '(' tuple_list ')' :
   #mlfe_tuple{arity=length('$2'), values='$2'}.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
+infix -> term infixable term : make_infix('$2', '$1', '$3').
 
 %% ----- Errors (including throw, exit) --------------
 error -> raise_error term:
@@ -366,6 +368,10 @@ spawn_pid -> spawn symbol terms:
               args='$3'}.
 
 defn -> terms assign simple_expr : make_define('$1', '$3').
+definfix -> '(' infixable ')' terms assign simple_expr : 
+  {infixable, L, C} = '$2',
+  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$4', '$6').
+
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
 ffi_call -> beam atom atom cons with match_clauses:
@@ -422,6 +428,7 @@ expr -> module_def : '$1'.
 expr -> export_def : '$1'.
 expr -> type_import : '$1'.
 expr -> defn : '$1'.
+expr -> definfix : '$1'.
 
 Erlang code.
 -include("mlfe_ast.hrl").
@@ -430,6 +437,7 @@ Erlang code.
 
 make_infix(Op, A, B) ->
     Name = case Op of
+      {infixable, L, C} -> {symbol, L, "(" ++ C ++ ")"};
       {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
