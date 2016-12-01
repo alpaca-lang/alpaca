@@ -130,7 +130,7 @@ gen_fun_patterns(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) 
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
     %% Nest matches:
     FName = cerl:c_fname(list_to_atom(N), A),
-    Args = [cerl:c_var(cerl:c_atom(X)) || X <- VarNames],
+    Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
     [TopVar|_] = VarNames,
     B = cerl:c_case(
           cerl:c_values(Args),

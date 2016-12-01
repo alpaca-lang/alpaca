@@ -4004,33 +4004,6 @@ function_argument_pattern_test_() ->
                                              #adt{vars=[{_, {unbound, B, _}}]}}}]}},
                  module_typ_and_parse(Code))
       end
-    , fun() ->
-              Code =
-                  "module fun_pattern_with_adt\n\n"
-                  "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "foo = my_map doubler 2",
-              ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
-                 module_typ_and_parse(Code))
-      end
-    , fun() ->
-              Code =
-                  "module fun_pattern_with_adt\n\n"
-                  "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "get_x {x=x} = x\n\n"
-                  "foo () = "
-                  "  let rec = {x=1, y=2} in "
-                  "  my_map doubler (get_x rec)",
-              ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
-                 module_typ_and_parse(Code))
-      end
     ].
 
 no_process_leak_test() ->

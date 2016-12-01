@@ -78,12 +78,6 @@ drop_dupes_preserve_order([H|T], [H|_]=Memo) ->
 drop_dupes_preserve_order([H|T], Memo) ->
     drop_dupes_preserve_order(T, [H|Memo]).
 
-rebind_fun_pattern_args([], _NV, _Map, _Env, Memo) ->
-    lists:reverse(Memo);
-rebind_fun_pattern_args([A|T], NV, MN, Map, Memo) ->
-    {NV2, Map2, A2} = make_bindings(NV, MN, Map, A),
-    rebind_fun_pattern_args(T, NV2, MN, Map2, [A2|Memo]).
-
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
 rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{}=Mod}) ->
