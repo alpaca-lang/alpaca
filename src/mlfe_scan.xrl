@@ -125,8 +125,6 @@ c"(\\"*|\\.|[^"\\])*" :
 
 %% Operators (infixes)
 
-%% Other non-predefined infixes
-
 =    : {token, {assign, TokenLine}}.
 
 ==   : {token, {eq, TokenLine}}.
@@ -145,6 +143,8 @@ c"(\\"*|\\.|[^"\\])*" :
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->   : {token, {'->', TokenLine}}.
 _    : {token, {'_', TokenLine}}.
+
+%% Non-predefined infixes
 
 {OP} : {token, {infixable, TokenLine, TokenChars}}.
 
