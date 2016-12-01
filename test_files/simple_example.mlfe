@@ -5,6 +5,9 @@
     -- a basic top-level function:
     add2 x = x + 2
 
+    -- a basic infix function
+    (|>) x f = f x
+
     something_with_let_bindings x =
       -- a function:
       let adder a b = a + b in
