@@ -295,6 +295,27 @@ raise_errors_test() ->
     ?assertException(throw, <<"oh no zero!">>, M:throw_or_int(0)),
     ?assertEqual(4, M:throw_or_int(2)),
     code:delete(M).
+
+function_pattern_args_test() ->
+    [M] = compile_and_load(["test_files/function_pattern_args.mlfe"], []),
+    ?assertEqual(true, M:is_zero(0)),
+    ?assertEqual(false, M:is_zero(5)),
+
+    ?assertEqual(true, M:both_zero(0, 0)),
+    ?assertEqual(false, M:both_zero(0, 1)),
+    ?assertEqual(false, M:both_zero(1, 0)),
+    ?assertEqual(false, M:both_zero(5, 4)),
+
+    ?assertEqual(1, M:get_x(M:make_xy(1, 2))),
+
+    ?assertEqual({'Some', 2}, M:get_opt_x(M:make_xy(2, 3))),
+    ?assertEqual('None', M:get_opt_x(M:make_y(2))),
     
+    ?assertEqual({'Some', 4}, M:doubler(2)),
+    ?assertEqual({'Some', 4}, M:double_maybe_x(M:make_xy(2, 3))),
+    ?assertEqual('None', M:double_maybe_x(M:make_y(2))),
+    
+    code:delete(M).
+
 
 -endif.
