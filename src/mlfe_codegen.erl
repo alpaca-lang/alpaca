@@ -138,9 +138,7 @@ gen_fun_patterns(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) 
     {FName, cerl:c_fun(Args, B)}.
 
 gen_fun_version(Env, #mlfe_fun_version{args=Args, body=Body}) ->
-    io:format("Args for fun version ~w~n", [Args]),
     Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
-    io:format("Args vs pattern are~n~w~n~w~n", [Args, Patt]),
     {_, BodyExp} = gen_expr(Env, Body),
     cerl:c_clause(Patt, BodyExp).
 
@@ -205,7 +203,6 @@ gen_expr(Env, #mlfe_binary{segments=Segs}) ->
     {Env2, Bits} = gen_bits(Env, Segs), 
     {Env2, cerl:c_binary(Bits)};
 gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
-    io:format("Generate map pattern!~n", []),
     Annotated = annotate_map_type(M),
     F = fun(P, {E, Ps}) -> 
                 {E2, P2} = gen_expr(E, P),
@@ -227,7 +224,6 @@ gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     {_, VExp} = gen_expr(Env, V),
     {Env, cerl:c_call(cerl:c_atom(maps), cerl:c_atom(put), [KExp, VExp, M])};
 gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
-    io:format("Generate map pattern!~n", []),
     {Env2, KExp} = gen_expr(Env, K),
     {Env3, VExp} = gen_expr(Env2, V),
 
@@ -324,7 +320,6 @@ gen_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
 gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
     NestG = fun(G, Acc) ->
                     {_, GExp} = gen_expr(Env, G),
-                    io:format("GUARD ~w ~w~n", [G, GExp]),
                     cerl:c_call(
                       cerl:c_atom('erlang'),
                       cerl:c_atom('and'),

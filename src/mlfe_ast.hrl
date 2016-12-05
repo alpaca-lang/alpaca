@@ -183,7 +183,7 @@
 %%% These will do double-duty for both defining record types for ADTs
 %%% as well as to type records as they occur.
 -record(t_record_member, {name=undefined :: atom(),
-                          type=undefined :: mlfe_types()}).
+                          type=undefined :: typ()}).
 -type t_record_member() :: #t_record_member{}.
 
 -record(t_record, {members=[] :: list(t_record_member()),

@@ -135,6 +135,14 @@ copy_cell(Cell, RefMap) ->
             {K2, Map2} = copy_cell(K, RefMap),
             {V2, Map3} = copy_cell(V, Map2),
             {new_cell({t_map, K2, V2}), Map3};
+        #t_record{members=Members, row_var=RV} ->
+            F = fun(#t_record_member{type=T}=M, {Ms, Map}) ->
+                        {T2, Map2} = copy_cell(T, Map),
+                        {[M#t_record_member{type=T2}|Ms], Map2}
+                end,
+            {RevMembers, Map2} = lists:foldl(F, {[], RefMap}, Members),
+            {RV2, Map3} = copy_cell(RV, Map2),
+            {new_cell(#t_record{members=lists:reverse(RevMembers), row_var=RV2}), Map3};
         #adt{vars=TypeVars, members=Members}=ADT ->
             %% copy the type variables:
             Folder = fun({TN, C}, {L, RM}) ->
@@ -4075,7 +4083,42 @@ constrain_polymorphic_adt_funs_test_() ->
                  {error, {cannot_unify, _, _, #adt{}, t_int}},
                  module_typ_and_parse(Code))
       end
-
+    , fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "doubler x = x * x\n\n"
+                  "get_x {x=x} = Some x\n\n"
+                  "get_x _ = None\n\n"
+                  "foo () = "
+                  "  let rec = {x=1, y=2} in "
+                  "  my_map doubler (get_x rec)",
+              ?assertMatch(
+                 {ok, 
+                 #mlfe_module{
+                    functions=[#mlfe_fun_def{
+                                  type={t_arrow,
+                                        [{t_arrow, [{unbound, A, _}], {unbound, B, _}},
+                                         #adt{vars=[{_, {unbound, A, _}}]}],
+                                        #adt{vars=[{_, {unbound, B, _}}]}}},
+                               #mlfe_fun_def{
+                                  type={t_arrow, [t_int], t_int}},
+                               #mlfe_fun_def{
+                                  type={t_arrow,
+                                        [#t_record{
+                                            members=[#t_record_member{
+                                                        name=x,
+                                                        type={unbound, C, _}}]}],
+                                        #adt{vars=[{_, {unbound, C, _}}]}}},
+                               #mlfe_fun_def{
+                                  type={t_arrow, 
+                                        [t_unit],
+                                        #adt{vars=[{"a", t_int}]}}}]
+                   }},
+                 module_typ_and_parse(Code))
+      end
     ].
 
 no_process_leak_test() ->
