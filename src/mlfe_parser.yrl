@@ -57,7 +57,7 @@ module export
 type_declare type_constructor type_var base_type base_list base_map base_pid
 test
 ':'
-use
+import_type export_type
 boolean int float atom string chars '_'
 symbol module_fun
 assign int_math float_math minus plus
@@ -99,7 +99,7 @@ comment -> comment_lines :
                 line=L,
                 text=Chars}.
 
-type_import -> use module_fun:
+type_import -> import_type module_fun:
   {module_fun, _, MF} = '$2',
   [Mod, Type] = string:tokens(MF, "."),
   #mlfe_type_import{module=list_to_atom(Mod), type=Type}.

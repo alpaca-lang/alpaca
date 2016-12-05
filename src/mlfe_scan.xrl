@@ -59,7 +59,8 @@ beam        : {token, {beam, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
 type        : {token, {type_declare, TokenLine}}.
-use         : {token, {use, TokenLine}}.
+export_type : {token, {export_type, TokenLine}}.
+import_type : {token, {import_type, TokenLine}}.
 spawn       : {token, {spawn, TokenLine}}.
 send        : {token, {send, TokenLine}}.
 receive     : {token, {'receive', TokenLine}}.

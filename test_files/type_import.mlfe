@@ -1,6 +1,6 @@
 module type_import
 
-use basic_adt.my_list
+import_type basic_adt.my_list
 
 export test_output/1
 
