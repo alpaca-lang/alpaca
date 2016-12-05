@@ -53,7 +53,6 @@ group_funs(Funs, ModuleName) ->
             fun(#mlfe_fun_def{name={symbol, _, N}, arity=A}) -> {N, A} end,
             lists:reverse(Funs)),
           []),
-    io:format("~nORDERED FUNS:  ~w~n~n", [OrderedKeys]),
     F = fun(#mlfe_fun_def{name={symbol, _, N}, arity=A, versions=[V]}, Acc) ->
                 Key = {N, A},
                 Existing = maps:get(Key, Acc, []),
@@ -63,7 +62,6 @@ group_funs(Funs, ModuleName) ->
     lists:map(
       fun({N, A}=Key) -> 
               NewVs = lists:reverse(maps:get(Key, Grouped)),
-              io:format("NEW VS:  ~w~n", [NewVs]),
               [#mlfe_fun_version{line=L}|_] = NewVs,
               %% we use the first occurence's line as the function's primary
               %% location:
@@ -219,13 +217,10 @@ rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
     SeedMap = #{Name => Name},
 
     F = fun(#mlfe_fun_version{args=As, body=Body}=FV, {Var, M, Versions}) ->
-%                case rebind_args(Var, MN, SeedMap, As) of
                 case make_bindings(Var, MN, SeedMap, As) of
                     {NV, M2, Args} ->
                         case rename_bindings(NV, MN, M2, Body) of
                             {NV2, M3, E} ->
-%                                {NV3, M4, As2} = make_bindings(NV2, MN, M2, Args),
-                                io:format("Args are ~w~n", [Args]),
                                 FV2 = FV#mlfe_fun_version{
                                         args=Args,
                                         body=E},
@@ -643,7 +638,6 @@ make_bindings(NV, MN, M, #mlfe_record{members=Members}=R) ->
                 end
         end,
     {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
-    io:format("~nMAKE RECORD PATTERN!~n", []),
     NewR = R#mlfe_record{
              members=lists:reverse(Members2),
              is_pattern=true},

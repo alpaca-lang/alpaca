@@ -127,7 +127,7 @@ copy_cell(Cell, RefMap) ->
                         {RM2, [M2|Memo]}
                 end,
             {RefMap2, Members2} = lists:foldl(F, {RefMap, []}, Members),
-            {{t_tuple, lists:reverse(Members2)}, RefMap2};
+            {new_cell({t_tuple, lists:reverse(Members2)}), RefMap2};
         {t_list, C} ->
             {C2, Map2} = copy_cell(C, RefMap),
             {new_cell({t_list, C2}), Map2};
@@ -135,6 +135,14 @@ copy_cell(Cell, RefMap) ->
             {K2, Map2} = copy_cell(K, RefMap),
             {V2, Map3} = copy_cell(V, Map2),
             {new_cell({t_map, K2, V2}), Map3};
+        #t_record{members=Members, row_var=RV} ->
+            F = fun(#t_record_member{type=T}=M, {Ms, Map}) ->
+                        {T2, Map2} = copy_cell(T, Map),
+                        {[M#t_record_member{type=T2}|Ms], Map2}
+                end,
+            {RevMembers, Map2} = lists:foldl(F, {[], RefMap}, Members),
+            {RV2, Map3} = copy_cell(RV, Map2),
+            {new_cell(#t_record{members=lists:reverse(RevMembers), row_var=RV2}), Map3};
         #adt{vars=TypeVars, members=Members}=ADT ->
             %% copy the type variables:
             Folder = fun({TN, C}, {L, RM}) ->
@@ -259,6 +267,9 @@ deep_copy_type({t_arrow, A, B}, RefMap) ->
     {NewArgs, Map2} = copy_type_list(A, RefMap),
     {NewRet, Map3} = copy_type(B, Map2),
     {{t_arrow, NewArgs, NewRet}, Map3};
+deep_copy_type({t_tuple, Members}, RefMap) ->
+    {Members2, Map2} = copy_type_list(Members, RefMap),
+    {{t_tuple, Members2}, Map2};
 deep_copy_type({t_list, A}, RefMap) ->
     {NewList, Map} = copy_type_list(A, RefMap),
     {{t_list, NewList}, Map};
@@ -4002,6 +4013,110 @@ function_argument_pattern_test_() ->
                                                {unbound, B, _}},
                                               #adt{vars=[{_, {unbound, A, _}}]}],
                                              #adt{vars=[{_, {unbound, B, _}}]}}}]}},
+                 module_typ_and_parse(Code))
+      end
+    ].
+
+constrain_polymorphic_adt_funs_test_() ->
+    [
+     %% Make sure my_map/2 with an explicit integer argument fails to type:
+     fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "doubler x = x * x\n\n"
+                  "foo = my_map doubler 2",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "doubler x = x * x\n\n"
+                  "get_x {x=x} = x\n\n"
+                  "foo () = "
+                  "  let rec = {x=1, y=2} in "
+                  "  my_map doubler (get_x rec)",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "doubler x = x * x\n\n"
+                  "get_x rec = match rec with {x=x} -> x\n\n"
+                  "foo () = "
+                  "  let rec = {x=1, y=2} in "
+                  "  my_map doubler (get_x rec)",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              %% If my_map depends on an option, when `third` always returns
+              %% a bare integer we should get a type error.  `third` here is
+              %% obviously not very useful, I'm just trying to isolate the
+              %% typing issue to records.
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "type tuple_or_triple 'a 'b 'c = ('a, 'b) | ('a, 'b, 'c)\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "third (_, _) = 0\n\n"
+                  "third (_, _, t) = t\n\n"
+                  "doubler x = x * x\n\n"
+                  "foo () = "
+                  "  let tup = (1, 2) in "
+                  "  my_map doubler (third tup)",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module fun_pattern_with_adt\n\n"
+                  "type option 'a = None | Some 'a\n\n"
+                  "my_map _ None = None\n\n"
+                  "my_map f Some a = Some (f a)\n\n"
+                  "doubler x = x * x\n\n"
+                  "get_x {x=x} = Some x\n\n"
+                  "get_x _ = None\n\n"
+                  "foo () = "
+                  "  let rec = {x=1, y=2} in "
+                  "  my_map doubler (get_x rec)",
+              ?assertMatch(
+                 {ok, 
+                 #mlfe_module{
+                    functions=[#mlfe_fun_def{
+                                  type={t_arrow,
+                                        [{t_arrow, [{unbound, A, _}], {unbound, B, _}},
+                                         #adt{vars=[{_, {unbound, A, _}}]}],
+                                        #adt{vars=[{_, {unbound, B, _}}]}}},
+                               #mlfe_fun_def{
+                                  type={t_arrow, [t_int], t_int}},
+                               #mlfe_fun_def{
+                                  type={t_arrow,
+                                        [#t_record{
+                                            members=[#t_record_member{
+                                                        name=x,
+                                                        type={unbound, C, _}}]}],
+                                        #adt{vars=[{_, {unbound, C, _}}]}}},
+                               #mlfe_fun_def{
+                                  type={t_arrow, 
+                                        [t_unit],
+                                        #adt{vars=[{"a", t_int}]}}}]
+                   }},
                  module_typ_and_parse(Code))
       end
     ].
