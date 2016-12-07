@@ -1196,13 +1196,21 @@ unwrap(X) ->
     X.
 
 missing_type_error(SourceModule, Module, Type) ->
-    {error, {no_such_type, SourceModule, Module, Type}}.
+    {no_such_type, SourceModule, Module, Type}.
+
+private_type_error(SourceModule, Module, Type) ->
+    {unexported_type, SourceModule, Module, Type}.
 
 retrieve_type(SourceModule, Module, Type, []) ->
-    missing_type_error(SourceModule, Module, Type);
-retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts}|Rem]) ->
+    throw(missing_type_error(SourceModule, Module, Type));
+retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
     case [TT || #mlfe_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
-        [Type] -> {ok, Type};
+        [#mlfe_type{name={_, _, TN}}=Type] -> 
+            %% now make sure the type is exported:
+            case [X || X <- ETs, X =:= TN] of
+                [_] -> {ok, Type};
+                _   -> throw(private_type_error(SM, M, T))
+            end;
         [] -> retrieve_type(SM, M, T, Rem)
     end;
 retrieve_type(SM, M, T, [_|Rem]) ->
@@ -1218,7 +1226,7 @@ type_modules(Mods) ->
             E:T ->
                 io:format("mlfe_typer:type_modules/2 crashed with ~p:~p~n"
                           "Stacktrace:~n~p~n", [E, T, erlang:get_stacktrace()]),
-                exit({error, "mlfe_typer:type_modules/2 crashed"})
+                exit({error, T})
         end
     end),
     receive
@@ -1272,7 +1280,7 @@ type_module(#mlfe_module{functions=Fs,
                              current_module=M,
                              current_types=AllTypes,
                              type_constructors=constructors(AllTypes),
-                             entered_modules=[Name]},
+                             entered_modules=[Name|Env2#env.entered_modules]},
 
                     FunRes = typ_module_funs(Fs, Env3, []),
 
@@ -1492,11 +1500,22 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                         EnteredModules = [Mod | Env#env.entered_modules],
                         Env2 = Env#env{current_module=Module,
                                        entered_modules=EnteredModules},
-                        case typ_of(Env2, Lvl, Fun) of
-                            {error, _} = E -> E;
-                            {TypF, NextVar} ->
-                                typ_apply(update_counter(NextVar, Env),
-                                          Lvl, TypF, NextVar, Args, L)
+                        %% Type the called function in its own module:
+                        case type_module(Module, Env2) of
+                            {ok, #mlfe_module{functions=Funs}} ->
+                                [T] = [Typ || 
+                                          #mlfe_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs, 
+                                          N =:= X, 
+                                          A =:= Arity
+                                      ],
+                                #env{next_var=NextVar}=Env,
+                                %% deep copy to cell the various types, needed
+                                %% because typing a module unwraps all the 
+                                %% reference cells before returning the module:
+                                {DT, _} = deep_copy_type(T, maps:new()),
+                                typ_apply(Env, Lvl, DT, NextVar, Args, L);
+                            {error, _}=Err ->
+                                Err
                         end
                 end
         end,

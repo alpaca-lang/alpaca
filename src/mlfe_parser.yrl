@@ -20,7 +20,7 @@ const
 type poly_type poly_type_decl type_vars type_member type_members type_expr
 type_expressions type_tuple type_tuple_list
 type_apply
-type_import
+type_import type_export types_to_export
 
 test_case
 
@@ -57,7 +57,7 @@ module export
 type_declare type_constructor type_var base_type base_list base_map base_pid
 test
 ':'
-use
+import_type export_type
 boolean int float atom string chars '_'
 symbol infixable module_fun
 assign int_math float_math minus plus
@@ -100,10 +100,18 @@ comment -> comment_lines :
                 line=L,
                 text=Chars}.
 
-type_import -> use module_fun:
+type_import -> import_type module_fun:
   {module_fun, _, MF} = '$2',
   [Mod, Type] = string:tokens(MF, "."),
   #mlfe_type_import{module=list_to_atom(Mod), type=Type}.
+
+types_to_export -> symbol : ['$1'].
+types_to_export -> symbol ',' types_to_export : ['$1'|'$3'].
+
+type_export -> export_type types_to_export :
+  {_, L}  = '$1',
+  Names = [N || {symbol, _, N} <- '$2'],
+  #mlfe_type_export{line=L, names=Names}.
 
 module_def -> module atom : {module, '$1'}.
 
@@ -427,6 +435,7 @@ expr -> test_case : '$1'.
 expr -> module_def : '$1'.
 expr -> export_def : '$1'.
 expr -> type_import : '$1'.
+expr -> type_export : '$1'.
 expr -> defn : '$1'.
 expr -> definfix : '$1'.
 

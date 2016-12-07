@@ -66,13 +66,7 @@ compile({text, Code}, Opts) ->
     end;
 
 compile({files, Filenames}, Opts) ->
-    Code = lists:foldl(
-             fun(FN, Acc) ->
-                     {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
-                     Res = read_file(Device, []),
-                     ok = file:close(Device),
-                     [Res|Acc]
-             end, [], Filenames),
+    Code = load_files(Filenames),
     {ok, Mods} = type_modules(parse_modules(Code)),
     Compiled = lists:foldl(
                  fun(M, Acc) ->
@@ -80,6 +74,14 @@ compile({files, Filenames}, Opts) ->
                  end, [], Mods),
     Compiled.
 
+load_files(Filenames) ->
+    lists:foldl(
+      fun(FN, Acc) ->
+              {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
+              Res = read_file(Device, []),
+              ok = file:close(Device),
+              [Res|Acc]
+      end, [], Filenames).
 
 compile_module(#mlfe_module{name=N}=Mod, Opts) ->
     {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
@@ -169,6 +171,23 @@ type_import_test() ->
     M = type_import,
     ?assertEqual(2, M:test_output(unit)),
     [code:delete(N) || N <- ModuleNames].
+
+type_imports_and_pattern_test() ->
+    Files = ["test_files/basic_adt.mlfe", "test_files/list_opts.mlfe"],
+    ModuleNames = compile_and_load(Files, []),
+    io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
+    LO = list_opts,
+    ADT = basic_adt,
+    ?assertEqual({'Some', 1}, LO:head_opt({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
+    ?assertEqual('None', LO:head_opt('Nil')),
+    [code:delete(N) || N <- ModuleNames].
+
+private_types_error_test() ->
+    Files = ["test_files/unexported_adts.mlfe", "test_files/list_opts.mlfe"],
+    Code = load_files(Files),
+    ?assertEqual(
+       {error, {unexported_type, list_opts, basic_adt, "my_list"}},
+       type_modules(parse_modules(Code))).
 
 basic_pid_test() ->
     Files = ["test_files/basic_pid_test.mlfe"],
@@ -317,5 +336,12 @@ function_pattern_args_test() ->
     
     code:delete(M).
 
-
+radius_test() ->
+    [M1, M2] = compile_and_load(
+            ["test_files/radius.mlfe", 
+             "test_files/use_radius.mlfe"], 
+            []),
+    ?assertEqual(1, M1:test_radius(unit)),
+    code:delete(M1),
+    code:delete(M2).
 -endif.

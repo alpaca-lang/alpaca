@@ -1,0 +1,14 @@
+module radius
+
+type radius = Radius int 
+
+export make_radius/1, radius_to_int/1
+
+make_radius i = 
+  match i with
+    x, is_integer x -> Radius x
+
+radius_to_int r = 
+  match r with
+    Radius i -> i
+    
