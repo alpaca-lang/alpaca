@@ -1,8 +1,13 @@
+{- We want to ensure that if the types exist but aren't exported we get an
+   appropriate compiler error.
+
+   The module name doesn't match the filename so that we can reuse the
+   list_opts module for tests.
+ -}
+
 module basic_adt
 
 export len/1
-
-export_type my_list, opt
 
 {- simple linked list,
    multi-line comment.

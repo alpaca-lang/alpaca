@@ -392,6 +392,7 @@
                          | mlfe_binding()
                          | mlfe_fun_def()
                          | mlfe_type_import()
+                         | mlfe_type_export()
                          | mlfe_error().
 
 -record(fun_binding, {def :: mlfe_fun_def(),
@@ -462,6 +463,10 @@
 -record(mlfe_type_import, {module=undefined :: atom(),
                            type=undefined :: string()}).
 -type mlfe_type_import() :: #mlfe_type_import{}.
+
+-record(mlfe_type_export, {line=0 :: integer(),
+                            names=[] :: list(string())}).
+-type mlfe_type_export() :: #mlfe_type_export{}.
 
 -record(mlfe_module, {
           name=no_module :: atom(),

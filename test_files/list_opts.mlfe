@@ -1,0 +1,11 @@
+module list_opts
+
+export head_opt/1
+
+import_type basic_adt.my_list
+
+import_type basic_adt.opt
+
+head_opt Cons (h, _) = Some h
+
+head_opt Nil = None
