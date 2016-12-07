@@ -336,5 +336,12 @@ function_pattern_args_test() ->
     
     code:delete(M).
 
-
+radius_test() ->
+    [M1, M2] = compile_and_load(
+            ["test_files/radius.mlfe", 
+             "test_files/use_radius.mlfe"], 
+            []),
+    ?assertEqual(1, M1:test_radius(unit)),
+    code:delete(M1),
+    code:delete(M2).
 -endif.

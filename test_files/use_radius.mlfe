@@ -1,0 +1,5 @@
+module use_radius
+
+export test_radius/1
+
+test_radius () = (radius.radius_to_int (radius.make_radius 1)) 

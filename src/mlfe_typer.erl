@@ -1280,7 +1280,7 @@ type_module(#mlfe_module{functions=Fs,
                              current_module=M,
                              current_types=AllTypes,
                              type_constructors=constructors(AllTypes),
-                             entered_modules=[Name]},
+                             entered_modules=[Name|Env2#env.entered_modules]},
 
                     FunRes = typ_module_funs(Fs, Env3, []),
 
@@ -1500,11 +1500,22 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                         EnteredModules = [Mod | Env#env.entered_modules],
                         Env2 = Env#env{current_module=Module,
                                        entered_modules=EnteredModules},
-                        case typ_of(Env2, Lvl, Fun) of
-                            {error, _} = E -> E;
-                            {TypF, NextVar} ->
-                                typ_apply(update_counter(NextVar, Env),
-                                          Lvl, TypF, NextVar, Args, L)
+                        %% Type the called function in its own module:
+                        case type_module(Module, Env2) of
+                            {ok, #mlfe_module{functions=Funs}} ->
+                                [T] = [Typ || 
+                                          #mlfe_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs, 
+                                          N =:= X, 
+                                          A =:= Arity
+                                      ],
+                                #env{next_var=NextVar}=Env,
+                                %% deep copy to cell the various types, needed
+                                %% because typing a module unwraps all the 
+                                %% reference cells before returning the module:
+                                {DT, _} = deep_copy_type(T, maps:new()),
+                                typ_apply(Env, Lvl, DT, NextVar, Args, L);
+                            {error, _}=Err ->
+                                Err
                         end
                 end
         end,
