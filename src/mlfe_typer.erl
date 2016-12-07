@@ -2295,6 +2295,13 @@ typ_of_test_() ->
                     top_typ_of("doubler x = let double y = y + y in double x"))
     ].
 
+infix_arrow_types_test_() ->
+    [?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                   top_typ_of("(<*>) x = x + x"))
+    , ?_assertMatch({{t_arrow, [A, {t_arrow, [A], B}], B}, _},
+                    top_typ_of("(|>) x f = f x"))  
+    ].    
+
 simple_polymorphic_let_test() ->
     Code =
         "double_app my_int ="

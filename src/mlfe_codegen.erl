@@ -512,6 +512,20 @@ module_with_internal_apply_test() ->
         "eq x y = x == y",
     {ok, _, Bin} = parse_and_gen(Code).
 
+infix_fun_test() ->
+    Name = infix_fun,
+    FN = atom_to_list(Name) ++ ".beam",
+    Code =
+        "module infix_fun\n\n"
+        "export adder/1 \n\n"
+        "(|>) v f = f v\n\n"
+        "add_ten x = x + 10\n\n"
+        "adder val = val |> add_ten",
+    {ok, _, Bin} = parse_and_gen(Code),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    ?assertEqual(20, Name:adder(10)),
+    true = code:delete(Name).
+
 fun_and_var_binding_test() ->
     Name = fun_and_var_binding,
     FN = atom_to_list(Name) ++ ".beam",
