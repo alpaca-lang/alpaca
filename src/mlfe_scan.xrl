@@ -20,6 +20,8 @@ D   = [0-9]
 L   = [a-z]
 U   = [A-Z]
 SYM = {L}[a-zA-Z0-9_]*
+O  = [\.\*<>\|\$~\^=\?\+@%/]
+OP = {O}{O}*
 ATOM = :[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\s\n]
@@ -121,7 +123,8 @@ c"(\\"*|\\.|[^"\\])*" :
   {token, {chars, TokenLine, S}}.
 
 
-%% Operators
+%% Operators (infixes)
+
 =    : {token, {assign, TokenLine}}.
 
 ==   : {token, {eq, TokenLine}}.
@@ -134,10 +137,17 @@ c"(\\"*|\\.|[^"\\])*" :
 - : {token, {minus, TokenLine}}.
 \+ : {token, {plus, TokenLine}}.
 
+
+
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->   : {token, {'->', TokenLine}}.
 _    : {token, {'_', TokenLine}}.
+
+%% Non-predefined infixes
+
+{OP} : {token, {infixable, TokenLine, TokenChars}}.
+
 
 %% Whitespace ignore
 {WS} : skip_token.
