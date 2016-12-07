@@ -1,13 +1,13 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
--module(mlfe_ast_gen).
+-module(alpaca_ast_gen).
 -export([parse/1, parse_module/2]).
 
-%% Parse is used by other modules (particularly mlfe_typer) to make ASTs
+%% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module:
 -ignore_xref([parse/1]).
 
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -16,19 +16,19 @@
 parse({ok, Tokens, _}) ->
     parse(Tokens);
 parse(Tokens) when is_list(Tokens) ->
-    mlfe_parser:parse(Tokens).
+    alpaca_parser:parse(Tokens).
 
 parse_module(NextVarNum, Text) when is_list(Text) ->
-    {ok, Tokens, _} = mlfe_scanner:scan(Text),
+    {ok, Tokens, _} = alpaca_scanner:scan(Text),
     rebind_and_validate_module(NextVarNum,
-                               parse_module(Tokens, #mlfe_module{}));
+                               parse_module(Tokens, #alpaca_module{}));
 
-parse_module([], #mlfe_module{name=no_module}) ->
+parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
-parse_module([], #mlfe_module{name=N, functions=Funs, types=Ts}=M) ->
+parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
-    TypesWithModule = [T#mlfe_type{module=N} || T <- Ts],
-    {ok, M#mlfe_module{functions=OrderedFuns,
+    TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
+    {ok, M#alpaca_module{functions=OrderedFuns,
                        types = TypesWithModule}};
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
@@ -50,10 +50,10 @@ group_funs(Funs, ModuleName) ->
     OrderedKeys = 
         drop_dupes_preserve_order(
           lists:map(
-            fun(#mlfe_fun_def{name={symbol, _, N}, arity=A}) -> {N, A} end,
+            fun(#alpaca_fun_def{name={symbol, _, N}, arity=A}) -> {N, A} end,
             lists:reverse(Funs)),
           []),
-    F = fun(#mlfe_fun_def{name={symbol, _, N}, arity=A, versions=[V]}, Acc) ->
+    F = fun(#alpaca_fun_def{name={symbol, _, N}, arity=A, versions=[V]}, Acc) ->
                 Key = {N, A},
                 Existing = maps:get(Key, Acc, []),
                 maps:put(Key, [V|Existing], Acc)
@@ -62,10 +62,10 @@ group_funs(Funs, ModuleName) ->
     lists:map(
       fun({N, A}=Key) -> 
               NewVs = lists:reverse(maps:get(Key, Grouped)),
-              [#mlfe_fun_version{line=L}|_] = NewVs,
+              [#alpaca_fun_version{line=L}|_] = NewVs,
               %% we use the first occurence's line as the function's primary
               %% location:
-              #mlfe_fun_def{name={symbol, L, N}, arity=A, versions=NewVs}
+              #alpaca_fun_def{name={symbol, L, N}, arity=A, versions=NewVs}
       end, 
       OrderedKeys).
 
@@ -78,11 +78,11 @@ drop_dupes_preserve_order([H|T], Memo) ->
 
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
-rebind_and_validate_module(NextVarNum, {ok, #mlfe_module{}=Mod}) ->
+rebind_and_validate_module(NextVarNum, {ok, #alpaca_module{}=Mod}) ->
     validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
 
-rebind_and_validate_functions(NextVarNum, #mlfe_module{}=Mod) ->
-    #mlfe_module{name=MN, functions=Funs}=Mod,
+rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod) ->
+    #alpaca_module{name=MN, functions=Funs}=Mod,
 
     F = fun(_, {error, _}=Err) ->
                 Err;
@@ -100,12 +100,12 @@ rebind_and_validate_functions(NextVarNum, #mlfe_module{}=Mod) ->
             Err;
         {NV2, M, Funs2} ->
             %% TODO:  other parts of the compiler might care about that map
-            {ok, NV2, M, Mod#mlfe_module{functions=lists:reverse(Funs2)}}
+            {ok, NV2, M, Mod#alpaca_module{functions=lists:reverse(Funs2)}}
     end.
 
 validate_user_types({error, _}=Err) ->
     Err;
-validate_user_types({ok, _, _, #mlfe_module{types=Ts}}=Res) ->
+validate_user_types({ok, _, _, #alpaca_module{types=Ts}}=Res) ->
     %% all type names unique
 
     NameCheck = unique_type_names(Ts),
@@ -132,7 +132,7 @@ check_dupes([], _, _) ->
     ok.
 
 unique_type_names(Types) ->
-    Names = lists:sort([N || #mlfe_type{name={type_name, _, N}} <- Types]),
+    Names = lists:sort([N || #alpaca_type{name={type_name, _, N}} <- Types]),
     check_dupes(Names,
                 fun(A, B) -> A =:= B end,
                 fun(A) -> {error, {duplicate_type, A}} end).
@@ -141,10 +141,10 @@ unique_type_constructors({error, _}=Err, _) ->
     Err;
 unique_type_constructors(_, Types) ->
     %% Get the sorted names of only the constructors:
-    F = fun (#mlfe_constructor{name={_, _, N}}, Acc) -> [N|Acc];
+    F = fun (#alpaca_constructor{name={_, _, N}}, Acc) -> [N|Acc];
             (_, Acc) -> Acc
         end,
-    ToFlatten = [lists:foldl(F, [], Ms) || #mlfe_type{members=Ms} <- Types],
+    ToFlatten = [lists:foldl(F, [], Ms) || #alpaca_type{members=Ms} <- Types],
     %% can't lists:flatten here because strings are lists and we only want
     %% it flattened one level:
     Cs = lists:sort(lists:foldl(fun(A, B) -> A ++ B end, [], ToFlatten)),
@@ -152,24 +152,24 @@ unique_type_constructors(_, Types) ->
                 fun(A, B) -> A =:= B end,
                 fun(A) -> {error, {duplicate_constructor, A}} end).
 
-update_memo(#mlfe_module{name=no_module}=Mod, {module, Name}) ->
-    {ok, Mod#mlfe_module{name=Name}};
-update_memo(#mlfe_module{name=Name}, {module, DupeName}) ->
+update_memo(#alpaca_module{name=no_module}=Mod, {module, Name}) ->
+    {ok, Mod#alpaca_module{name=Name}};
+update_memo(#alpaca_module{name=Name}, {module, DupeName}) ->
     {error, {module_rename, Name, DupeName}};
-update_memo(#mlfe_module{type_imports=Imports}=M, #mlfe_type_import{}=I) ->
-    {ok, M#mlfe_module{type_imports=Imports ++ [I]}};
-update_memo(#mlfe_module{type_exports=Exports}=M, #mlfe_type_export{}=I) ->
-    #mlfe_type_export{names=Names} = I,
-    {ok, M#mlfe_module{type_exports = Exports ++ Names}};
-update_memo(#mlfe_module{function_exports=Exports}=M, {export, Es}) ->
-    {ok, M#mlfe_module{function_exports=Es ++ Exports}};
-update_memo(#mlfe_module{functions=Funs}=M, #mlfe_fun_def{} = Def) ->
-    {ok, M#mlfe_module{functions=[Def|Funs]}};
-update_memo(#mlfe_module{types=Ts}=M, #mlfe_type{}=T) ->
-    {ok, M#mlfe_module{types=[T|Ts]}};
-update_memo(#mlfe_module{tests=Tests}=M, #mlfe_test{}=T) ->
-    {ok, M#mlfe_module{tests=[T|Tests]}};
-update_memo(M, #mlfe_comment{}) ->
+update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I) ->
+    {ok, M#alpaca_module{type_imports=Imports ++ [I]}};
+update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I) ->
+    #alpaca_type_export{names=Names} = I,
+    {ok, M#alpaca_module{type_exports = Exports ++ Names}};
+update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es}) ->
+    {ok, M#alpaca_module{function_exports=Es ++ Exports}};
+update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def) ->
+    {ok, M#alpaca_module{functions=[Def|Funs]}};
+update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
+    {ok, M#alpaca_module{types=[T|Ts]}};
+update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
+    {ok, M#alpaca_module{tests=[T|Tests]}};
+update_memo(M, #alpaca_comment{}) ->
     {ok, M};
 update_memo(_, Bad) ->
     {error, {"Top level requires defs, module, and export declarations", Bad}}.
@@ -213,18 +213,18 @@ next_batch([Token|Tail], Memo) ->
 -spec rename_bindings(
         NextVar::integer(),
         MN::atom(),
-        TopLevel::mlfe_fun_def()) -> {integer(), map(), mlfe_fun_def()} |
+        TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()} |
                                      {error, term()}.
-rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
-    #mlfe_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
+rename_bindings(NextVar, MN, #alpaca_fun_def{}=TopLevel) ->
+    #alpaca_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
     SeedMap = #{Name => Name},
 
-    F = fun(#mlfe_fun_version{args=As, body=Body}=FV, {Var, M, Versions}) ->
+    F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Var, M, Versions}) ->
                 case make_bindings(Var, MN, SeedMap, As) of
                     {NV, M2, Args} ->
                         case rename_bindings(NV, MN, M2, Body) of
                             {NV2, M3, E} ->
-                                FV2 = FV#mlfe_fun_version{
+                                FV2 = FV#alpaca_fun_version{
                                         args=Args,
                                         body=E},
                                 {NV2, M3, [FV2|Versions]};
@@ -236,7 +236,7 @@ rename_bindings(NextVar, MN, #mlfe_fun_def{}=TopLevel) ->
         end,
 
     {NV, M2, Vs2} = lists:foldl(F, {NextVar, maps:new(), []}, Vs),
-    {NV, M2, TopLevel#mlfe_fun_def{versions=Vs2}}.
+    {NV, M2, TopLevel#alpaca_fun_def{versions=Vs2}}.
 
 rebind_args(NextVar, _MN, Map, Args) ->
     F = fun({error, _} = E, _) -> E;
@@ -272,8 +272,8 @@ rename_bindings(NextVar, MN, Map, #fun_binding{def=Def, expr=E}) ->
                                                 #fun_binding{def=Def2, expr=E2}}
                           end
     end;
-rename_bindings(NextVar, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
-    #mlfe_fun_def{versions=Vs}=Def,
+rename_bindings(NextVar, MN, M, #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
+    #alpaca_fun_def{versions=Vs}=Def,
     {NewName, M2} = case maps:get(Name, M, undefined) of
                         undefined ->
                             Synth = next_var(NextVar),
@@ -282,8 +282,8 @@ rename_bindings(NextVar, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
                             throw({duplicate_definition, Name, L})
                     end,
 
-    F = fun(#mlfe_fun_version{}=FV, {Map, NV, NewVersions}) ->
-                #mlfe_fun_version{args=Args, body=Body} = FV,
+    F = fun(#alpaca_fun_version{}=FV, {Map, NV, NewVersions}) ->
+                #alpaca_fun_version{args=Args, body=Body} = FV,
                 case rebind_args(NV+1, MN, Map, Args) of
                     {error, _}=Err ->
                         throw(Err);
@@ -292,7 +292,7 @@ rename_bindings(NextVar, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
                             {error, _}=Err -> 
                                 throw(Err);
                             {NV4, M4, Body2} ->
-                                FV2 = FV#mlfe_fun_version{
+                                FV2 = FV#alpaca_fun_version{
                                         args=Args2,
                                         body=Body2},
                                 {NV4, M4, [FV2|NewVersions]}
@@ -300,7 +300,7 @@ rename_bindings(NextVar, MN, M, #mlfe_fun_def{name={symbol, L, Name}}=Def) ->
                 end
            end,
     {NextVar2, Map2, Vs2} = lists:foldl(F, {M2, NextVar, []}, Vs),
-    NewDef = Def#mlfe_fun_def{name={symbol, L, NewName}, versions=lists:reverse(Vs2)},
+    NewDef = Def#alpaca_fun_def{name={symbol, L, NewName}, versions=lists:reverse(Vs2)},
     {NextVar2, Map2, NewDef};
     
 rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
@@ -329,7 +329,7 @@ rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
             throw({duplicate_definition, N, L})
     end;
 
-rename_bindings(NextVar, MN, Map, #mlfe_apply{name=N, args=Args}=App) ->
+rename_bindings(NextVar, MN, Map, #alpaca_apply{name=N, args=Args}=App) ->
     FName = case N of
                 {symbol, _, _} = S ->
                     {_, _, X} = rename_bindings(NextVar, MN, Map, S),
@@ -340,53 +340,53 @@ rename_bindings(NextVar, MN, Map, #mlfe_apply{name=N, args=Args}=App) ->
     case rename_binding_list(NextVar, MN, Map, Args) of
         {error, _} = Err -> Err;
         {NV2, M2, Args2} ->
-            {NV2, M2, App#mlfe_apply{name=Name, args=Args2}}
+            {NV2, M2, App#alpaca_apply{name=Name, args=Args2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #mlfe_spawn{
+rename_bindings(NextVar, MN, Map, #alpaca_spawn{
                                      function=F,
                                      args=Args}=Spawn) ->
     {_, _, FName} = rename_bindings(NextVar, MN, Map, F),
     FArgs = [X||{_, _, X} <- [rename_bindings(NextVar, MN, Map, A)||A <- Args]],
-    {NextVar, Map, Spawn#mlfe_spawn{
+    {NextVar, Map, Spawn#alpaca_spawn{
                      function=FName,
                      from_module=MN,
                      args=FArgs}};
 
-rename_bindings(NextVar, MN, Map, #mlfe_send{message=M, pid=P}=Send) ->
+rename_bindings(NextVar, MN, Map, #alpaca_send{message=M, pid=P}=Send) ->
     {_, _, M2} = rename_bindings(NextVar, MN, Map, M),
     {_, _, P2} = rename_bindings(NextVar, MN, Map, P),
-    {NextVar, Map, Send#mlfe_send{message=M2, pid=P2}};
+    {NextVar, Map, Send#alpaca_send{message=M2, pid=P2}};
 
-rename_bindings(NextVar, _MN, Map, #mlfe_type_apply{arg=none}=A) ->
+rename_bindings(NextVar, _MN, Map, #alpaca_type_apply{arg=none}=A) ->
     {NextVar, Map, A};
-rename_bindings(NextVar, MN, Map, #mlfe_type_apply{arg=Arg}=A) ->
+rename_bindings(NextVar, MN, Map, #alpaca_type_apply{arg=Arg}=A) ->
     case rename_bindings(NextVar, MN, Map, Arg) of
         {error, _}=Err -> Err;
-        {NV, M, Arg2} -> {NV, M, A#mlfe_type_apply{arg=Arg2}}
+        {NV, M, Arg2} -> {NV, M, A#alpaca_type_apply{arg=Arg2}}
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_type_check{expr=E}=TC) ->
+rename_bindings(NextVar, MN, Map, #alpaca_type_check{expr=E}=TC) ->
     case rename_bindings(NextVar, MN, Map, E) of
         {error, _}=Err -> Err;
-        {NV, M, E2} -> {NV, M, TC#mlfe_type_check{expr=E2}}
+        {NV, M, E2} -> {NV, M, TC#alpaca_type_check{expr=E2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #mlfe_cons{head=H, tail=T}=Cons) ->
+rename_bindings(NextVar, MN, Map, #alpaca_cons{head=H, tail=T}=Cons) ->
     case rename_bindings(NextVar, MN, Map, H) of
         {error, _} = Err -> Err;
         {NV, M, H2} -> case rename_bindings(NV, MN, M, T) of
                            {error, _} = Err -> Err;
-                           {NV2, M2, T2} -> {NV2, M2, Cons#mlfe_cons{
+                           {NV2, M2, T2} -> {NV2, M2, Cons#alpaca_cons{
                                                         head=H2,
                                                         tail=T2}}
                        end
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+rename_bindings(NextVar, MN, Map, #alpaca_binary{segments=Segs}=B) ->
     %% fold to account for errors.
     F = fun(_, {error, _}=Err) -> Err;
-           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+           (#alpaca_bits{value=V}=Bits, {NV, M, Acc}) ->
                 case rename_bindings(NV, MN, M, V) of
-                    {NV2, M2, V2} -> {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                    {NV2, M2, V2} -> {NV2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
                     {error, _}=Err -> Err
                 end
         end,
@@ -394,9 +394,9 @@ rename_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
         {error, _}=Err ->
             Err;
         {NV2, M2, Segs2} ->
-            {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+            {NV2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
+rename_bindings(NextVar, MN, Map, #alpaca_map{pairs=Pairs}=ASTMap) ->
     Folder = fun(_, {error, _}=Err) -> Err;
                 (P, {NV, M, Ps}) ->
                      case rename_bindings(NV, MN, M, P) of
@@ -406,9 +406,9 @@ rename_bindings(NextVar, MN, Map, #mlfe_map{pairs=Pairs}=ASTMap) ->
              end,
     case lists:foldl(Folder, {NextVar, Map, []}, Pairs) of
         {error, _}=Err -> Err;
-        {NV, M, Pairs2} -> {NV, M, ASTMap#mlfe_map{pairs=lists:reverse(Pairs2)}}
+        {NV, M, Pairs2} -> {NV, M, ASTMap#alpaca_map{pairs=lists:reverse(Pairs2)}}
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_map_add{to_add=A, existing=B}=ASTMap) ->
+rename_bindings(NextVar, MN, Map, #alpaca_map_add{to_add=A, existing=B}=ASTMap) ->
     case rename_bindings(NextVar, MN, Map, A) of
         {error, _}=Err ->
             Err;
@@ -416,10 +416,10 @@ rename_bindings(NextVar, MN, Map, #mlfe_map_add{to_add=A, existing=B}=ASTMap) ->
             case rename_bindings(NV, MN, M, B) of
                 {error, _}=Err -> Err;
                 {NV2, M2, B2} ->
-                    {NV2, M2, ASTMap#mlfe_map_add{to_add=A2, existing=B2}}
+                    {NV2, M2, ASTMap#alpaca_map_add{to_add=A2, existing=B2}}
             end
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
+rename_bindings(NextVar, MN, Map, #alpaca_map_pair{key=K, val=V}=P) ->
     case rename_bindings(NextVar, MN, Map, K) of
         {error, _}=Err ->
             Err;
@@ -427,32 +427,32 @@ rename_bindings(NextVar, MN, Map, #mlfe_map_pair{key=K, val=V}=P) ->
             case rename_bindings(NV, MN, M, V) of
                 {error, _}=Err -> Err;
                 {NV2, M2, V2} ->
-                    {NV2, M2, P#mlfe_map_pair{key=K2, val=V2}}
+                    {NV2, M2, P#alpaca_map_pair{key=K2, val=V2}}
             end
     end;
-rename_bindings(NextVar, MN, Map, #mlfe_tuple{values=Vs}=T) ->
+rename_bindings(NextVar, MN, Map, #alpaca_tuple{values=Vs}=T) ->
     case rename_binding_list(NextVar, MN, Map, Vs) of
         {error, _} = Err -> Err;
-        {NV, M, Vals2} -> {NV, M, T#mlfe_tuple{values=Vals2}}
+        {NV, M, Vals2} -> {NV, M, T#alpaca_tuple{values=Vals2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #mlfe_record{members=Members}=R) ->
-    F = fun(#mlfe_record_member{val=V}=RM, {NewMembers, NV, M}) ->
+rename_bindings(NextVar, MN, Map, #alpaca_record{members=Members}=R) ->
+    F = fun(#alpaca_record_member{val=V}=RM, {NewMembers, NV, M}) ->
                 case rename_bindings(NV, MN, M, V) of
                     {error, _}=E -> erlang:error(E);
                     {NV2, M2, V2} ->
-                        {[RM#mlfe_record_member{val=V2}|NewMembers], NV2, M2}
+                        {[RM#alpaca_record_member{val=V2}|NewMembers], NV2, M2}
                 end
         end,
     {NewMembers, NextVar2, Map2} = lists:foldl(F, {[], NextVar, Map}, Members),
-    {NextVar2, Map2, R#mlfe_record{members=lists:reverse(NewMembers)}};
+    {NextVar2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
 
 rename_bindings(NextVar, _MN, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
         undefined -> {NextVar, Map, S};
         Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
     end;
-rename_bindings(NV, MN, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
+rename_bindings(NV, MN, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
     case rename_bindings(NV, MN, M, Args) of
         {error, _} = Err ->
             Err;
@@ -461,11 +461,11 @@ rename_bindings(NV, MN, M, #mlfe_ffi{args=Args, clauses=Cs}=FFI) ->
                 {error, _} = Err ->
                     Err;
                 {NV3, M3, Cs2} ->
-                    {NV3, M3, FFI#mlfe_ffi{args=Args2, clauses=Cs2}}
+                    {NV3, M3, FFI#alpaca_ffi{args=Args2, clauses=Cs2}}
             end
     end;
-rename_bindings(NV, MN, M, #mlfe_match{}=Match) ->
-    #mlfe_match{match_expr=ME, clauses=Cs} = Match,
+rename_bindings(NV, MN, M, #alpaca_match{}=Match) ->
+    #alpaca_match{match_expr=ME, clauses=Cs} = Match,
     case rename_bindings(NV, MN, M, ME) of
         {error, _} = Err -> Err;
         {NV2, M2, ME2} ->
@@ -473,17 +473,17 @@ rename_bindings(NV, MN, M, #mlfe_match{}=Match) ->
                 {error, _} = Err ->
                     Err;
                 {NV3, M3, Cs2} ->
-                    {NV3, M3, Match#mlfe_match{match_expr=ME2, clauses=Cs2}}
+                    {NV3, M3, Match#alpaca_match{match_expr=ME2, clauses=Cs2}}
             end
     end;
 
-rename_bindings(NV, MN, M, #mlfe_receive{clauses=Cs}=Recv) ->
+rename_bindings(NV, MN, M, #alpaca_receive{clauses=Cs}=Recv) ->
     case rename_clause_list(NV, MN, M, Cs) of
         {error, _} = Err -> Err;
-        {NV2, M2, Cs2}   -> {NV2, M2, Recv#mlfe_receive{clauses=Cs2}}
+        {NV2, M2, Cs2}   -> {NV2, M2, Recv#alpaca_receive{clauses=Cs2}}
     end;
 
-rename_bindings(NV, MN, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) ->
+rename_bindings(NV, MN, M, #alpaca_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
@@ -500,7 +500,7 @@ rename_bindings(NV, MN, M, #mlfe_clause{pattern=P, guards=Gs, result=R}=Clause) 
                             %% we actually throw away the modified map here
                             %% because other patterns should be able to
                             %% reuse variable names:
-                            {NV4, M, Clause#mlfe_clause{
+                            {NV4, M, Clause#alpaca_clause{
                                        pattern=P2,
                                        guards=Gs2,
                                        result=R2}}
@@ -552,7 +552,7 @@ make_bindings(NV, MN, M, [_|_]=Xs) ->
                        Xs),
     {NV2, M2, lists:reverse(Xs2)};
 
-make_bindings(NV, MN, M, #mlfe_tuple{values=Vs}=Tup) ->
+make_bindings(NV, MN, M, #alpaca_tuple{values=Vs}=Tup) ->
     F = fun(_, {error, _}=E) -> E;
            (V, {NextVar, Map, Memo}) ->
                 case make_bindings(NextVar, MN, Map, V) of
@@ -562,28 +562,28 @@ make_bindings(NV, MN, M, #mlfe_tuple{values=Vs}=Tup) ->
         end,
     case lists:foldl(F, {NV, M, []}, Vs) of
         {error, _} = Err -> Err;
-        {NV2, M2, Vs2}   -> {NV2, M2, Tup#mlfe_tuple{values=lists:reverse(Vs2)}}
+        {NV2, M2, Vs2}   -> {NV2, M2, Tup#alpaca_tuple{values=lists:reverse(Vs2)}}
     end;
-make_bindings(NV, MN, M, #mlfe_cons{head=H, tail=T}=Cons) ->
+make_bindings(NV, MN, M, #alpaca_cons{head=H, tail=T}=Cons) ->
     case make_bindings(NV, MN, M, H) of
         {error, _} = Err -> Err;
         {NV2, M2, H2} -> case make_bindings(NV2, MN, M2, T) of
                              {error, _} = Err ->
                                  Err;
                              {NV3, M3, T2} ->
-                                 {NV3, M3, Cons#mlfe_cons{head=H2, tail=T2}}
+                                 {NV3, M3, Cons#alpaca_cons{head=H2, tail=T2}}
                          end
     end;
 %% TODO:  this is identical to rename_bindings but for the internal call
 %% to make_bindings vs rename_bindings.  How much else in here is like this?
 %% Probably loads of abstracting/de-duping potential.
-make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
+make_bindings(NextVar, MN, Map, #alpaca_binary{segments=Segs}=B) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
-           (#mlfe_bits{value=V}=Bits, {NV, M, Acc}) ->
+           (#alpaca_bits{value=V}=Bits, {NV, M, Acc}) ->
                 case make_bindings(NV, MN, M, V) of
                     {NV2, M2, V2} ->
-                        {NV2, M2, [Bits#mlfe_bits{value=V2}|Acc]};
+                        {NV2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
                     {error, _}=Err ->
                         Err
                 end
@@ -592,7 +592,7 @@ make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
         {error, _}=Err ->
             Err;
         {NV2, M2, Segs2} ->
-            {NV2, M2, B#mlfe_binary{segments=lists:reverse(Segs2)}}
+            {NV2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
     end;
 
 %%% Map patterns need to rename variables used for keys and create new bindings
@@ -603,7 +603,7 @@ make_bindings(NextVar, MN, Map, #mlfe_binary{segments=Segs}=B) ->
 %%%       #{my_key => v} -> v
 %%%
 %%% Map patterns require the key to be something exact already.
-make_bindings(NextVar, MN, BindingMap, #mlfe_map{pairs=Ps}=Map) ->
+make_bindings(NextVar, MN, BindingMap, #alpaca_map{pairs=Ps}=Map) ->
     Folder = fun(_, {error, _}=Err) -> Err;
                 (P, {NV, M, Acc}) ->
                      case make_bindings(NV, MN, M, P) of
@@ -614,34 +614,34 @@ make_bindings(NextVar, MN, BindingMap, #mlfe_map{pairs=Ps}=Map) ->
     case lists:foldl(Folder, {NextVar, BindingMap, []}, Ps) of
         {error, _}=Err -> Err;
         {NV, M, Pairs} ->
-            Map2 = Map#mlfe_map{is_pattern=true, pairs=lists:reverse(Pairs)},
+            Map2 = Map#alpaca_map{is_pattern=true, pairs=lists:reverse(Pairs)},
             {NV, M, Map2}
     end;
-make_bindings(NV, MN, M, #mlfe_map_pair{key=K, val=V}=P) ->
+make_bindings(NV, MN, M, #alpaca_map_pair{key=K, val=V}=P) ->
     case rename_bindings(NV, MN, M, K) of
         {error, _}=Err -> Err;
         {NV2, M2, K2} ->
             case make_bindings(NV2, MN, M2, V) of
                 {error, _}=Err -> Err;
                 {NV3, M3, V2} ->
-                    {NV3, M3, P#mlfe_map_pair{is_pattern=true, key=K2, val=V2}}
+                    {NV3, M3, P#alpaca_map_pair{is_pattern=true, key=K2, val=V2}}
             end
     end;
 
 %% Records can be compiled as maps so we need the is_pattern parameter
 %% on their AST nodes set correctly here too.
-make_bindings(NV, MN, M, #mlfe_record{members=Members}=R) ->
-    F = fun(#mlfe_record_member{val=V}=RM, {NewVs, NextVar, Map}) ->
+make_bindings(NV, MN, M, #alpaca_record{members=Members}=R) ->
+    F = fun(#alpaca_record_member{val=V}=RM, {NewVs, NextVar, Map}) ->
                 case make_bindings(NextVar, MN, Map, V) of
                     {error, _}=Err -> 
                         erlang:error(Err);
                     {NextVar2, Map2, V2} -> 
-                        NewR = RM#mlfe_record_member{val=V2},
+                        NewR = RM#alpaca_record_member{val=V2},
                         {[NewR|NewVs], NextVar2, Map2}
                 end
         end,
     {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
-    NewR = R#mlfe_record{
+    NewR = R#alpaca_record{
              members=lists:reverse(Members2),
              is_pattern=true},
     {NV2, M2, NewR};
@@ -664,33 +664,33 @@ next_var(X) ->
 -ifdef(TEST).
 
 test_parse(S) ->
-    parse(mlfe_scanner:scan(S)).
+    parse(alpaca_scanner:scan(S)).
 
 symbols_test_() ->
     [?_assertMatch({ok, {symbol, 1, "oneSymbol"}},
-                   parse(mlfe_scanner:scan("oneSymbol")))
+                   parse(alpaca_scanner:scan("oneSymbol")))
     ].
 
 user_types_test_() ->
-    [?_assertMatch({ok, #mlfe_type{name={type_name, 1, "t"},
+    [?_assertMatch({ok, #alpaca_type{name={type_name, 1, "t"},
                                    vars=[],
                                    members=[t_int,
-                                            #mlfe_constructor{
+                                            #alpaca_constructor{
                                                name={type_constructor, 1, "A"},
                                                arg=t_int}]}},
                    test_parse("type t = int | A int")),
      ?_assertMatch(
-        {ok, #mlfe_type{
+        {ok, #alpaca_type{
                 name={type_name, 1, "my_list"},
                 vars=[{type_var, 1, "x"}],
-                members=[#mlfe_constructor{
+                members=[#alpaca_constructor{
                             name={type_constructor, 1, "Nil"},
                             arg=none},
-                         #mlfe_constructor{
+                         #alpaca_constructor{
                             name={type_constructor, 1, "Cons"},
-                            arg=#mlfe_type_tuple{
+                            arg=#alpaca_type_tuple{
                                    members=[{type_var, 1, "x"},
-                                            #mlfe_type{
+                                            #alpaca_type{
                                                name={type_name, 1, "my_list"},
                                                vars=[{type_var, 1, "x"}]}]}
                            }]}},
@@ -706,14 +706,14 @@ user_types_test_() ->
                                 "type t = A int | B\n\n"
                                 "type u = X float | A\n\n")),
      %% Making sure multiple type variables work here:
-     ?_assertMatch({ok, #mlfe_type{
+     ?_assertMatch({ok, #alpaca_type{
                            name={type_name, 1, "either"},
                            vars=[{type_var, 1, "a"}, {type_var, 1, "b"}],
-                           members=[#mlfe_constructor{
+                           members=[#alpaca_constructor{
                                        name={type_constructor, 1, "Left"},
                                        arg={type_var, 1, "a"}
                                       },
-                                    #mlfe_constructor{
+                                    #alpaca_constructor{
                                        name={type_constructor, 1, "Right"},
                                        arg={type_var, 1, "b"}
                                       }]
@@ -728,138 +728,138 @@ defn_test_() ->
      %% Strikes me as potentially quite confusing.
      ?_assertMatch(
         {ok, 
-         #mlfe_fun_def{name={symbol, 1, "x"},
-                       versions=[#mlfe_fun_version{
+         #alpaca_fun_def{name={symbol, 1, "x"},
+                       versions=[#alpaca_fun_version{
                                     args=[], 
                                     body={int, 1, 5}}]}},
-                   parse(mlfe_scanner:scan("x=5"))),
+                   parse(alpaca_scanner:scan("x=5"))),
      ?_assertMatch(
         {ok, 
-         #mlfe_fun_def{name={symbol, 1, "double"},
-                       versions=[#mlfe_fun_version{
+         #alpaca_fun_def{name={symbol, 1, "double"},
+                       versions=[#alpaca_fun_version{
                                     args=[{symbol, 1, "x"}],
-                                    body=#mlfe_apply{
+                                    body=#alpaca_apply{
                                             type=undefined,
                                             name={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {symbol, 1, "x"}]}}]}},
-        parse(mlfe_scanner:scan("double x = x + x"))),
+        parse(alpaca_scanner:scan("double x = x + x"))),
      ?_assertMatch(
-        {ok, #mlfe_fun_def{name={symbol, 1, "add"},
-                           versions=[#mlfe_fun_version{
+        {ok, #alpaca_fun_def{name={symbol, 1, "add"},
+                           versions=[#alpaca_fun_version{
                                         args=[{symbol, 1, "x"}, 
                                               {symbol, 1, "y"}],
-                                        body=#mlfe_apply{
+                                        body=#alpaca_apply{
                                                 type=undefined,
                                                 name={bif, '+', 1, erlang, '+'},
                                                 args=[{symbol, 1, "x"},
                                                       {symbol, 1, "y"}]}}]}},
-        parse(mlfe_scanner:scan("add x y = x + y"))),
+        parse(alpaca_scanner:scan("add x y = x + y"))),
         ?_assertMatch(
-            {ok, #mlfe_fun_def{name={symbol, 1, "(<*>)"},
-                            versions=[#mlfe_fun_version{
+            {ok, #alpaca_fun_def{name={symbol, 1, "(<*>)"},
+                            versions=[#alpaca_fun_version{
                                             args=[{symbol, 1, "x"}, 
                                                 {symbol, 1, "y"}],
-                                            body=#mlfe_apply{
+                                            body=#alpaca_apply{
                                                     type=undefined,
                                                     name={bif, '+', 1, erlang, '+'},
                                                     args=[{symbol, 1, "x"},
                                                         {symbol, 1, "y"}]}}]}},
-        parse(mlfe_scanner:scan("(<*>) x y = x + y")))
+        parse(alpaca_scanner:scan("(<*>) x y = x + y")))
     ].
 
 float_math_test_() ->
-    [?_assertMatch({ok, #mlfe_apply{name={bif, '+', 1, erlang, '+'}}},
-                   parse(mlfe_scanner:scan("2 + 1"))),
-     ?_assertMatch({ok, #mlfe_apply{name={bif, '+.', 1, erlang, '+'}}},
-                   parse(mlfe_scanner:scan("2.0 +. 1.3")))
+    [?_assertMatch({ok, #alpaca_apply{name={bif, '+', 1, erlang, '+'}}},
+                   parse(alpaca_scanner:scan("2 + 1"))),
+     ?_assertMatch({ok, #alpaca_apply{name={bif, '+.', 1, erlang, '+'}}},
+                   parse(alpaca_scanner:scan("2.0 +. 1.3")))
     ].
 
 let_binding_test_() ->
     [?_assertMatch(
         {ok, 
          #fun_binding{
-            def=#mlfe_fun_def{
+            def=#alpaca_fun_def{
                    name={symbol, 1, "double"},
-                   versions=[#mlfe_fun_version{
+                   versions=[#alpaca_fun_version{
                                 args=[{symbol, 1, "x"}],
-                                body=#mlfe_apply{
+                                body=#alpaca_apply{
                                         type=undefined,
                                         name={bif, '+', 1, erlang, '+'},
                                         args=[{symbol, 1, "x"},
                                               {symbol, 1, "x"}]}}]},
-            expr=#mlfe_apply{
+            expr=#alpaca_apply{
                     name={symbol, 1, "double"},
                     args=[{int, 1, 2}]}}},
-        parse(mlfe_scanner:scan("let double x = x + x in double 2"))),
+        parse(alpaca_scanner:scan("let double x = x + x in double 2"))),
      ?_assertMatch({ok, #var_binding{
                            name={symbol, 1, "x"},
-                           to_bind=#mlfe_apply{
+                           to_bind=#alpaca_apply{
                                       name={symbol, 1, "double"},
                                       args=[{int, 1, 2}]},
-                           expr=#mlfe_apply{
+                           expr=#alpaca_apply{
                                    name={symbol, 1, "double"},
                                    args=[{symbol, 1, "x"}]}}},
-                   parse(mlfe_scanner:scan("let x = double 2 in double x"))),
+                   parse(alpaca_scanner:scan("let x = double 2 in double x"))),
      ?_assertMatch(
         {ok, 
-         #mlfe_fun_def{
+         #alpaca_fun_def{
             name={symbol, 1, "doubler"},
-            versions=[#mlfe_fun_version{
+            versions=[#alpaca_fun_version{
                          args=[{symbol, 1, "x"}],
                          body=#fun_binding{
-                                 def=#mlfe_fun_def{
+                                 def=#alpaca_fun_def{
                                         name={symbol, 2, "double"},
-                                        versions=[#mlfe_fun_version{
+                                        versions=[#alpaca_fun_version{
                                                      args=[{symbol, 2, "x"}],
-                                                     body=#mlfe_apply{
+                                                     body=#alpaca_apply{
                                                              type=undefined,
                                                              name={bif, '+', 2, erlang, '+'},
                                                              args=[{symbol, 2, "x"},
                                                                    {symbol, 2, "x"}]}}]},
-                                 expr=#mlfe_apply{
+                                 expr=#alpaca_apply{
                                          name={symbol, 3, "double"},
                                          args=[{int, 3, 2}]}}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "doubler x =\n"
                 "  let double x = x + x in\n"
                 "  double 2"))),
      ?_assertMatch(
         {ok, 
-         #mlfe_fun_def{
+         #alpaca_fun_def{
             name={symbol,1,"my_fun"},
-            versions=[#mlfe_fun_version{
+            versions=[#alpaca_fun_version{
                          args=[{symbol,1,"x"},{symbol,1,"y"}],
                          body=#fun_binding{
-                                 def=#mlfe_fun_def{
+                                 def=#alpaca_fun_def{
                                         name={symbol,1,"xer"},
-                                        versions=[#mlfe_fun_version{
+                                        versions=[#alpaca_fun_version{
                                                      args=[{symbol,1,"a"}],
-                                                     body=#mlfe_apply{
+                                                     body=#alpaca_apply{
                                                              type=undefined,
                                                              name={bif, '+', 1, erlang, '+'},
                                                              args=[{symbol,1,"a"},
                                                                    {symbol,1,"a"}]}}]},
                                  expr=#fun_binding{
-                                         def=#mlfe_fun_def{
+                                         def=#alpaca_fun_def{
                                                 name={symbol,1,"yer"},
-                                                versions=[#mlfe_fun_version{
+                                                versions=[#alpaca_fun_version{
                                                              args=[{symbol,1,"b"}],
-                                                             body=#mlfe_apply{
+                                                             body=#alpaca_apply{
                                                                      type=undefined,
                                                                      name={bif, '+', 1, erlang, '+'},
                                                                      args=[{symbol,1,"b"},
                                                                            {symbol,1,"b"}]}}]},
-                                         expr=#mlfe_apply{
+                                         expr=#alpaca_apply{
                                                  type=undefined,
                                                  name={bif, '+', 1, erlang, '+'},
-                                                 args=[#mlfe_apply{
+                                                 args=[#alpaca_apply{
                                                           name={symbol,1,"xer"},
                                                           args=[{symbol,1,"x"}]},
-                                                       #mlfe_apply{
+                                                       #alpaca_apply{
                                                           name={symbol,1,"yer"},
                                                           args=[{symbol,1,"y"}]}]}}}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "my_fun x y ="
                 "  let xer a = a + a in"
                 "  let yer b = b + b in"
@@ -867,60 +867,60 @@ let_binding_test_() ->
     ].
 
 application_test_() ->
-    [?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "double"},
+    [?_assertMatch({ok, #alpaca_apply{name={symbol, 1, "double"},
                                     args=[{int, 1, 2}]}},
-                   parse(mlfe_scanner:scan("double 2"))),
-     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "two"},
+                   parse(alpaca_scanner:scan("double 2"))),
+     ?_assertMatch({ok, #alpaca_apply{name={symbol, 1, "two"},
                                     args=[{symbol, 1, "symbols"}]}},
-                   parse(mlfe_scanner:scan("two symbols"))),
-     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "x"},
+                   parse(alpaca_scanner:scan("two symbols"))),
+     ?_assertMatch({ok, #alpaca_apply{name={symbol, 1, "x"},
                                     args=[{symbol, 1, "y"}, {symbol, 1, "z"}]}},
-                   parse(mlfe_scanner:scan("x y z"))),
+                   parse(alpaca_scanner:scan("x y z"))),
      ?_assertMatch({ok, {error, {invalid_fun_application,
                                  {int, 1, 1},
                                  [{symbol, 1, "x"}, {symbol, 1, "y"}]}}},
-                   parse(mlfe_scanner:scan("1 x y"))),
-     ?_assertMatch({ok, #mlfe_apply{
+                   parse(alpaca_scanner:scan("1 x y"))),
+     ?_assertMatch({ok, #alpaca_apply{
                            name={'module', {symbol, 1, "fun"}, 2},
                            args=[{int, 1, 1}, {symbol, 1, "x"}]}},
-                   parse(mlfe_scanner:scan("module.fun 1 x")))
+                   parse(alpaca_scanner:scan("module.fun 1 x")))
     ].
 
 module_def_test_() ->
     [?_assertMatch({ok, {module, 'test_mod'}},
-                   parse(mlfe_scanner:scan("module test_mod"))),
+                   parse(alpaca_scanner:scan("module test_mod"))),
      ?_assertMatch({ok, {module, 'myMod'}},
-                   parse(mlfe_scanner:scan("module myMod")))
+                   parse(alpaca_scanner:scan("module myMod")))
     ].
 
 export_test_() ->
     [?_assertMatch({ok, {export, [{"add", 2}]}},
-                   parse(mlfe_scanner:scan("export add/2")))
+                   parse(alpaca_scanner:scan("export add/2")))
     ].
 
 expr_test_() ->
-    [?_assertMatch({ok, {int, 1, 2}}, parse(mlfe_scanner:scan("2"))),
-     ?_assertMatch({ok, #mlfe_apply{type=undefined,
+    [?_assertMatch({ok, {int, 1, 2}}, parse(alpaca_scanner:scan("2"))),
+     ?_assertMatch({ok, #alpaca_apply{type=undefined,
                                     name={bif, '+', 1, erlang, '+'},
                                     args=[{int, 1, 1},
                                           {int, 1, 5}]}},
-                   parse(mlfe_scanner:scan("1 + 5"))),
-     ?_assertMatch({ok, #mlfe_apply{name={symbol, 1, "add"},
+                   parse(alpaca_scanner:scan("1 + 5"))),
+     ?_assertMatch({ok, #alpaca_apply{name={symbol, 1, "add"},
                                     args=[{symbol, 1, "x"},
                                           {int, 1, 2}]}},
-                   parse(mlfe_scanner:scan("add x 2"))),
+                   parse(alpaca_scanner:scan("add x 2"))),
      ?_assertMatch({ok,
-                    #mlfe_apply{name={symbol, 1, "double"},
+                    #alpaca_apply{name={symbol, 1, "double"},
                                 args=[{symbol, 1, "x"}]}},
-                   parse(mlfe_scanner:scan("(double x)"))),
-     ?_assertMatch({ok, #mlfe_apply{
+                   parse(alpaca_scanner:scan("(double x)"))),
+     ?_assertMatch({ok, #alpaca_apply{
                            name={symbol, 1, "tuple_func"},
-                           args=[#mlfe_tuple{
+                           args=[#alpaca_tuple{
                                     arity=2,
                                     values=[{symbol, 1, "x"},
                                             {int, 1, 1}]},
                                  {symbol, 1, "y"}]}},
-                   parse(mlfe_scanner:scan("tuple_func (x, 1) y")))
+                   parse(alpaca_scanner:scan("tuple_func (x, 1) y")))
     ].
 
 module_with_let_test() ->
@@ -932,25 +932,25 @@ module_with_let_test() ->
         "  adder x y",
     ?assertMatch(
        {ok, _, _,
-        #mlfe_module{
+        #alpaca_module{
            name='test_mod',
            function_exports=[{"add",2}],
-           functions=[#mlfe_fun_def{
+           functions=[#alpaca_fun_def{
                          name={symbol,5,"add"},
-                         versions=[#mlfe_fun_version{
+                         versions=[#alpaca_fun_version{
                                       args=[{symbol,5,"svar_0"},{symbol,5,"svar_1"}],
                                       body=#fun_binding{
-                                              def=#mlfe_fun_def{
+                                              def=#alpaca_fun_def{
                                                      name={symbol,6,"svar_2"},
-                                                     versions=[#mlfe_fun_version{
+                                                     versions=[#alpaca_fun_version{
                                                                   args=[{symbol,6,"svar_3"},
                                                                         {symbol,6,"svar_4"}],
-                                                                  body=#mlfe_apply{
+                                                                  body=#alpaca_apply{
                                                                           type=undefined,
                                                                           name={bif, '+', 6, erlang, '+'},
                                                                           args=[{symbol,6,"svar_3"},
                                                                                 {symbol,6,"svar_4"}]}}]},
-                                              expr=#mlfe_apply{
+                                              expr=#alpaca_apply{
                                                       name={symbol,7,"svar_2"},
                                                       args=[{symbol,7,"svar_0"},
                                                             {symbol,7,"svar_1"}]}}}]}]}},
@@ -958,151 +958,151 @@ module_with_let_test() ->
 
 match_test_() ->
     [?_assertMatch(
-        {ok, #mlfe_match{match_expr={symbol, 1, "x"},
-                         clauses=[#mlfe_clause{
+        {ok, #alpaca_match{match_expr={symbol, 1, "x"},
+                         clauses=[#alpaca_clause{
                                      pattern={int, 2, 0},
                                      result={symbol, 2, "zero"}},
-                                  #mlfe_clause{
+                                  #alpaca_clause{
                                      pattern={'_', 3},
                                      result={symbol, 3, "non_zero"}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "match x with\n"
                 " 0 -> zero\n"
                 "| _ -> non_zero\n"))),
      ?_assertMatch(
-        {ok, #mlfe_match{match_expr=#mlfe_apply{
+        {ok, #alpaca_match{match_expr=#alpaca_apply{
                                        name={symbol, 1, "add"},
                                        args=[{symbol, 1, "x"},
                                              {symbol, 1, "y"}]},
-                         clauses=[#mlfe_clause{pattern={int, 2, 0},
+                         clauses=[#alpaca_clause{pattern={int, 2, 0},
                                                result={atom, 2, "zero"}},
-                                  #mlfe_clause{pattern={int, 3, 1},
+                                  #alpaca_clause{pattern={int, 3, 1},
                                                result={atom, 3, "one"}},
-                                  #mlfe_clause{pattern={'_', 4},
+                                  #alpaca_clause{pattern={'_', 4},
                                                result={atom, 4,
                                                        "more_than_one"}}
                                  ]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "match add x y with\n"
                 " 0 -> :zero\n"
                 "| 1 -> :one\n"
                 "| _ -> :more_than_one\n"))),
      ?_assertMatch(
-        {ok, #mlfe_match{
+        {ok, #alpaca_match{
                 match_expr={symbol, 1, "x"},
-                clauses=[#mlfe_clause{
-                            pattern=#mlfe_tuple{
+                clauses=[#alpaca_clause{
+                            pattern=#alpaca_tuple{
                                        arity=2,
                                        values=[{'_', 2},
                                                {symbol, 2, "x"}]},
                             result={atom, 2, "anything_first"}},
-                         #mlfe_clause{
-                            pattern=#mlfe_tuple{
+                         #alpaca_clause{
+                            pattern=#alpaca_tuple{
                                        arity=2,
                                        values=[{int, 3, 1},
                                                {symbol, 3, "x"}]},
                             result={atom, 3, "one_first"}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "match x with\n"
                 "  (_, x) -> :anything_first\n"
                 "| (1, x) -> :one_first\n"))),
      ?_assertMatch(
-        {ok, #mlfe_match{
-                match_expr=#mlfe_tuple{
+        {ok, #alpaca_match{
+                match_expr=#alpaca_tuple{
                               arity=2,
                               values=[{symbol, 1, "x"},
                                       {symbol, 1, "y"}]},
-                clauses=[#mlfe_clause{
-                            pattern=#mlfe_tuple{
+                clauses=[#alpaca_clause{
+                            pattern=#alpaca_tuple{
                                        arity=2,
-                                       values=[#mlfe_tuple{
+                                       values=[#alpaca_tuple{
                                                   arity=2,
                                                   values=[{'_', 2},
                                                           {int, 2, 1}]},
                                                {symbol, 2, "a"}]},
                             result={atom, 2, "nested_tuple"}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "match (x, y) with\n"
                 " ((_, 1), a) -> :nested_tuple")))
     ].
 
 tuple_test_() ->
     %% first no unary tuples:
-    [?_assertMatch({ok, {int, 1, 1}}, parse(mlfe_scanner:scan("(1)"))),
-     ?_assertMatch({ok, #mlfe_tuple{arity=2,
+    [?_assertMatch({ok, {int, 1, 1}}, parse(alpaca_scanner:scan("(1)"))),
+     ?_assertMatch({ok, #alpaca_tuple{arity=2,
                                     values=[{int, 1, 1}, {int, 1, 2}]}},
-                   parse(mlfe_scanner:scan("(1, 2)"))),
-     ?_assertMatch({ok, #mlfe_tuple{arity=2,
+                   parse(alpaca_scanner:scan("(1, 2)"))),
+     ?_assertMatch({ok, #alpaca_tuple{arity=2,
                                     values=[{symbol, 1, "x"}, {int, 1, 1}]}},
-                   parse(mlfe_scanner:scan("(x, 1)"))),
-     ?_assertMatch({ok, #mlfe_tuple{
+                   parse(alpaca_scanner:scan("(x, 1)"))),
+     ?_assertMatch({ok, #alpaca_tuple{
                            arity=2,
-                           values=[#mlfe_tuple{arity=2,
+                           values=[#alpaca_tuple{arity=2,
                                                values=[{int, 1, 1},
                                                        {symbol, 1, "x"}]},
                                    {int, 1, 12}]}},
-                   parse(mlfe_scanner:scan("((1, x), 12)")))
+                   parse(alpaca_scanner:scan("((1, x), 12)")))
     ].
 
 list_test_() ->
-    [?_assertMatch({ok, #mlfe_cons{head={int, 1, 1},
-                                   tail=#mlfe_cons{
+    [?_assertMatch({ok, #alpaca_cons{head={int, 1, 1},
+                                   tail=#alpaca_cons{
                                            head={int, 1, 2},
-                                           tail=#mlfe_cons{
+                                           tail=#alpaca_cons{
                                                    head={int, 1, 3},
                                                    tail={nil, 0}}}}},
                    test_parse("[1, 2, 3]")),
-     ?_assertMatch({ok, {nil, 1}}, parse(mlfe_scanner:scan("[]"))),
-     ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1}, tail={nil, 1}}},
-                   parse(mlfe_scanner:scan("[1]"))),
-     ?_assertMatch({ok, #mlfe_cons{
+     ?_assertMatch({ok, {nil, 1}}, parse(alpaca_scanner:scan("[]"))),
+     ?_assertMatch({ok, #alpaca_cons{head={int, 1, 1}, tail={nil, 1}}},
+                   parse(alpaca_scanner:scan("[1]"))),
+     ?_assertMatch({ok, #alpaca_cons{
                            head={symbol, 1, "x"},
-                           tail=#mlfe_cons{head={int, 1, 1},
+                           tail=#alpaca_cons{head={int, 1, 1},
                                            tail={nil, 1}}}},
-                   parse(mlfe_scanner:scan("x :: [1]"))),
-     ?_assertMatch({ok, #mlfe_cons{head={int, 1, 1},
+                   parse(alpaca_scanner:scan("x :: [1]"))),
+     ?_assertMatch({ok, #alpaca_cons{head={int, 1, 1},
                                    tail={symbol, 1, "y"}}},
-                   parse(mlfe_scanner:scan("1 :: y"))),
+                   parse(alpaca_scanner:scan("1 :: y"))),
      ?_assertMatch(
-        {ok, #mlfe_match{
+        {ok, #alpaca_match{
                 match_expr={symbol,1,"x"},
-                clauses=[#mlfe_clause{pattern={nil,2},
+                clauses=[#alpaca_clause{pattern={nil,2},
                                       result={nil,2}},
-                         #mlfe_clause{pattern=#mlfe_cons{
+                         #alpaca_clause{pattern=#alpaca_cons{
                                                  head={symbol,3,"h"},
                                                  tail={symbol,3,"t"}},
                                       result={symbol,3,"h"}}]}},
-        parse(mlfe_scanner:scan(
+        parse(alpaca_scanner:scan(
                 "match x with\n"
                 "  [] -> []\n"
                 "| h :: t -> h\n")))
     ].
 
 binary_test_() ->
-    [?_assertMatch({ok, #mlfe_binary{
+    [?_assertMatch({ok, #alpaca_binary{
                            line=1,
-                           segments=[#mlfe_bits{line=1, value={int, 1, 1}}]}},
-                   parse(mlfe_scanner:scan("<<1>>"))),
+                           segments=[#alpaca_bits{line=1, value={int, 1, 1}}]}},
+                   parse(alpaca_scanner:scan("<<1>>"))),
      ?_assertMatch(
-        {ok, #mlfe_binary{
+        {ok, #alpaca_binary{
                 line=1,
-                segments=[#mlfe_bits{value={int, 1, 1},
+                segments=[#alpaca_bits{value={int, 1, 1},
                                      size=8,
                                      unit=1},
-                          #mlfe_bits{value={int, 1, 2},
+                          #alpaca_bits{value={int, 1, 2},
                                      size=16,
                                      unit=1}]}},
-        parse(mlfe_scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
+        parse(alpaca_scanner:scan("<<1: size=8 unit=1, 2: size=16 unit=1>>"))),
      ?_assertMatch(
-        {ok, #mlfe_binary{}},
-        parse(mlfe_scanner:scan(
+        {ok, #alpaca_binary{}},
+        parse(alpaca_scanner:scan(
                 "<<255: size=16 unit=1 sign=true end=little>>"))
        ),
      ?_assertMatch(
-        {ok, #mlfe_binary{
-                segments=[#mlfe_bits{value={symbol, 1, "a"}},
-                          #mlfe_bits{value={symbol, 1, "b"}}]}},
-        parse(mlfe_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
+        {ok, #alpaca_binary{
+                segments=[#alpaca_bits{value={symbol, 1, "a"}},
+                          #alpaca_bits{value={symbol, 1, "b"}}]}},
+        parse(alpaca_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
     ].
 
 string_test_() ->
@@ -1113,13 +1113,13 @@ string_test_() ->
     ].
 
 ffi_test_() ->
-    [?_assertMatch({ok, #mlfe_ffi{
+    [?_assertMatch({ok, #alpaca_ffi{
                            module={atom, 1, "io"},
                            function_name={atom, 1, "format"},
-                           args=#mlfe_cons{
+                           args=#alpaca_cons{
                                    head={string, 1, "One is ~s~n"},
-                                   tail=#mlfe_cons{
-                                           head=#mlfe_cons{
+                                   tail=#alpaca_cons{
+                                           head=#alpaca_cons{
                                                    head={int, 1, 1},
                                                    tail={nil, 1}},
                                            tail={nil, 0}}}}},
@@ -1138,38 +1138,38 @@ simple_module_test() ->
         "sub x y = x - y",
     ?assertMatch(
        {ok, _, _,
-        #mlfe_module{
+        #alpaca_module{
            name='test_mod',
            function_exports=[{"add",2},{"sub",2}],
            functions=[
-                      #mlfe_fun_def{
+                      #alpaca_fun_def{
                          name={symbol, 5, "adder"},
-                         versions=[#mlfe_fun_version{
+                         versions=[#alpaca_fun_version{
                                       args=[{symbol, 5, "svar_0"},
                                             {symbol,5 , "svar_1"}],
-                                      body=#mlfe_apply{type=undefined,
+                                      body=#alpaca_apply{type=undefined,
                                                        name={bif, '+', 5, erlang, '+'},
                                                        args=[{symbol, 5, "svar_0"},
                                                              {symbol,5,"svar_1"}]}}]},
-                      #mlfe_fun_def{
+                      #alpaca_fun_def{
                          name={symbol,7,"add1"},
-                         versions=[#mlfe_fun_version{
+                         versions=[#alpaca_fun_version{
                                       args=[{symbol,7,"svar_2"}],
-                                      body=#mlfe_apply{name={symbol,7,"adder"},
+                                      body=#alpaca_apply{name={symbol,7,"adder"},
                                                        args=[{symbol,7,"svar_2"},
                                                              {int,7,1}]}}]},
-                      #mlfe_fun_def{
+                      #alpaca_fun_def{
                          name={symbol,9,"add"},
-                         versions=[#mlfe_fun_version{
+                         versions=[#alpaca_fun_version{
                                       args=[{symbol,9,"svar_3"},{symbol,9,"svar_4"}],
-                                      body=#mlfe_apply{name={symbol,9,"adder"},
+                                      body=#alpaca_apply{name={symbol,9,"adder"},
                                                        args=[{symbol,9,"svar_3"},
                                                              {symbol,9,"svar_4"}]}}]},
-                      #mlfe_fun_def{
+                      #alpaca_fun_def{
                          name={symbol,11,"sub"},
-                         versions=[#mlfe_fun_version{
+                         versions=[#alpaca_fun_version{
                                       args=[{symbol,11,"svar_5"},{symbol,11,"svar_6"}],
-                                      body=#mlfe_apply{type=undefined,
+                                      body=#alpaca_apply{type=undefined,
                                                        name={bif, '-', 11, erlang, '-'},
                                                        args=[{symbol,11,"svar_5"},
                                                              {symbol,11,"svar_6"}]}}]}]}},
@@ -1195,14 +1195,14 @@ rebinding_test_() ->
     {ok, F} = test_parse("f x y = match x with\n"
                          " h :: y -> h"),
 
-    [?_assertMatch({_, _, #mlfe_fun_def{
+    [?_assertMatch({_, _, #alpaca_fun_def{
                              name={symbol, 1, "f"},
-                             versions=[#mlfe_fun_version{
+                             versions=[#alpaca_fun_version{
                                           args=[{symbol, 1, "svar_0"}],
                                           body=#var_binding{
                                                   name={symbol, 1, "svar_1"},
                                                   to_bind={int, 1, 2},
-                                                  expr=#mlfe_apply{
+                                                  expr=#alpaca_apply{
                                                           name={bif, '+', 1, 'erlang', '+'},
                                                           args=[{symbol, 1, "svar_0"},
                                                                 {symbol, 1, "svar_1"}]}}}]}},
@@ -1211,19 +1211,19 @@ rebinding_test_() ->
                        {duplicate_definition, "x", 2},
                        rename_bindings(0, undefined, B)),
      ?_assertMatch(
-        {_, _, #mlfe_fun_def{
+        {_, _, #alpaca_fun_def{
                   name={symbol, 1, "f"},
-                  versions=[#mlfe_fun_version{
+                  versions=[#alpaca_fun_version{
                                args=[{symbol, 1, "svar_0"}],
-                               body=#mlfe_match{
+                               body=#alpaca_match{
                                        match_expr={symbol, 1, "svar_0"},
-                                       clauses=[#mlfe_clause{
-                                                   pattern=#mlfe_tuple{
+                                       clauses=[#alpaca_clause{
+                                                   pattern=#alpaca_tuple{
                                                               values=[{symbol, 2, "svar_1"},
                                                                       {int, 2, 0}]},
                                                    result={symbol, 2, "svar_1"}},
-                                                #mlfe_clause{
-                                                   pattern=#mlfe_tuple{
+                                                #alpaca_clause{
+                                                   pattern=#alpaca_tuple{
                                                               values=[{symbol, 3, "svar_2"},
                                                                       {symbol, 3, "svar_3"}]},
                                                    result={symbol, 3, "svar_3"}}]}}]}},
@@ -1233,21 +1233,21 @@ rebinding_test_() ->
                        rename_bindings(0, undefined, D)),
      ?_assertMatch(
         {_, _,
-         #mlfe_fun_def{
-            versions=[#mlfe_fun_version{ 
-                         body=#mlfe_match{
+         #alpaca_fun_def{
+            versions=[#alpaca_fun_version{ 
+                         body=#alpaca_match{
                                  match_expr={symbol, 1, "svar_0"},
-                                 clauses=[#mlfe_clause{
-                                             pattern=#mlfe_cons{
+                                 clauses=[#alpaca_clause{
+                                             pattern=#alpaca_cons{
                                                         head={'_', 2},
-                                                        tail=#mlfe_cons{
+                                                        tail=#alpaca_cons{
                                                                 head={symbol, 2, "svar_1"},
-                                                                tail=#mlfe_cons{
+                                                                tail=#alpaca_cons{
                                                                         head={int, 2, 0},
                                                                         tail={nil, 0}}}},
                                              result={symbol, 2, "svar_1"}},
-                                          #mlfe_clause{
-                                             pattern=#mlfe_cons{
+                                          #alpaca_clause{
+                                             pattern=#alpaca_cons{
                                                         head={symbol, 3, "svar_2"},
                                                         tail={symbol, 3, "svar_3"}},
                                              result={symbol, 3, "svar_2"}}]}}]}},

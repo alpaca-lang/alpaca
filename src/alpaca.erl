@@ -14,7 +14,7 @@
 %%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
--module(mlfe).
+-module(alpaca).
 
 -export([ compile/1
         , compile/2
@@ -30,7 +30,7 @@
              , file/2
              ]).
 
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -61,7 +61,7 @@ compile({text, Code}, Opts) ->
     case type_modules(Mods) of
         {error, _}=Err -> Err;
         {ok, [TypedMod]} ->
-            {ok, Forms} = mlfe_codegen:gen(TypedMod, Opts),
+            {ok, Forms} = alpaca_codegen:gen(TypedMod, Opts),
             compile:forms(Forms, [report, verbose, from_core])
     end;
 
@@ -83,8 +83,8 @@ load_files(Filenames) ->
               [Res|Acc]
       end, [], Filenames).
 
-compile_module(#mlfe_module{name=N}=Mod, Opts) ->
-    {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
+compile_module(#alpaca_module{name=N}=Mod, Opts) ->
+    {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
     #compiled_module{
        name=N,
@@ -100,7 +100,7 @@ parse_modules(Mods) ->
     F = fun
             (_, {error, _}=Err) -> Err;
         (ModCode, {ok, NV, Map, Acc}) ->
-                            case mlfe_ast_gen:parse_module(NV, ModCode) of
+                            case alpaca_ast_gen:parse_module(NV, ModCode) of
                                 {ok, NV2, Map2, Mod} ->
                                     {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
                                 {error, _}=Err ->
@@ -114,7 +114,7 @@ type_modules({ok, _, _, Mods}) ->
 type_modules({error, _}=Err) ->
     Err;
 type_modules(Mods) ->
-    mlfe_typer:type_modules(Mods).
+    alpaca_typer:type_modules(Mods).
 
 -ifdef(TEST).
 
