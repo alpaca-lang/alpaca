@@ -50,9 +50,9 @@
 
 # Intro<a id="sec-1" name="sec-1"></a>
 
-This document provides a tour of MLFE's current capabilities and limitations in a bit more depth for anyone looking to use it.
+This document provides a tour of Alpaca's current capabilities and limitations in a bit more depth for anyone looking to use it.
 
-Some of ML Flavoured Erlang's goals:
+Some of Alpaca's goals:
 
 -   A statically typed, strictly evaluated (eager, not lazy), and functional language for the Erlang platform.
 -   Infer types as much as possible so we only need to be explicit where it matters.
@@ -61,9 +61,9 @@ Some of ML Flavoured Erlang's goals:
 
 ## Helpful Foundations<a id="sec-1-1" name="sec-1-1"></a>
 
-If you're unfamiliar with Erlang itself, I'd highly recommend the excellent [Learn You Some Erlang for great good!](http://learnyousomeerlang.com/)  The sections on [the basic data types](http://learnyousomeerlang.com/starting-out-for-real) and on [modules](http://learnyousomeerlang.com/modules) will probably help a great deal to start understanding where MLFE fits and what it does.
+If you're unfamiliar with Erlang itself, I'd highly recommend the excellent [Learn You Some Erlang for great good!](http://learnyousomeerlang.com/)  The sections on [the basic data types](http://learnyousomeerlang.com/starting-out-for-real) and on [modules](http://learnyousomeerlang.com/modules) will probably help a great deal to start understanding where Alpaca fits and what it does.
 
-Much of MLFE in its current state borrows (in an unstructured manner) aspects of a number of languages that descend from [ML](https://en.wikipedia.org/wiki/ML_(programming_language)) including:
+Much of Alpaca in its current state borrows (in an unstructured manner) aspects of a number of languages that descend from [ML](https://en.wikipedia.org/wiki/ML_(programming_language)) including:
 
 -   [OCaml](https://ocaml.org/)
 -   [Haskell](https://www.haskell.org/)
@@ -73,18 +73,18 @@ While you probably don't need to know any of them in detail, some of the syntax 
 
 ## About This Document<a id="sec-1-2" name="sec-1-2"></a>
 
-This document is exported from the Emacs org-mode doc `Tour.org` using `org-md-export-to-markdown`.  Corrections and suggestions welcome via PRs to the main [MLFE repository](https://github.com/j14159/mlfe).
+This document is exported from the Emacs org-mode doc `Tour.org` using `org-md-export-to-markdown`.  Corrections and suggestions welcome via PRs to the main [Alpaca repository](https://github.com/j14159/alpaca).
 
 # The Structure of a Program<a id="sec-2" name="sec-2"></a>
 
-MLFE at present is really just a new way to write modules for an Erlang application.
+Alpaca at present is really just a new way to write modules for an Erlang application.
 
 ## What Modules Include<a id="sec-2-1" name="sec-2-1"></a>
 
 The set of top-level elements permitted in a module are the following:
 
 -   a module declaration, e.g. `module my_module_name`.  This is required.
--   function exports.  These tell the compiler which functions should be publicly accessible to modules outside of the ones we write in MLFE.
+-   function exports.  These tell the compiler which functions should be publicly accessible to modules outside of the ones we write in Alpaca.
 -   type definitions.  These describe new types as ADTs.
 -   test cases
 -   comments, though these can go anywhere and are not restricted to the top level.
@@ -128,7 +128,7 @@ Just `true` and `false`, not atoms as in Erlang although they're encoded as such
 
 ### Numbers<a id="sec-3-1-2" name="sec-3-1-2"></a>
 
-MLFE has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
+Alpaca has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
 
     1 + 2       -- integer
     1.0 +. 2.0  -- float
@@ -137,11 +137,11 @@ MLFE has integers and floats which can't mix with each other at all.  They have 
 
 ### Atoms<a id="sec-3-1-3" name="sec-3-1-3"></a>
 
-Atoms in MLFE are just text prefixed with `:`, e.g. `:this_is_an_atom` and `:soIsThis1`.
+Atoms in Alpaca are just text prefixed with `:`, e.g. `:this_is_an_atom` and `:soIsThis1`.
 
 ### Strings<a id="sec-3-1-4" name="sec-3-1-4"></a>
 
-Strings in MLFE are all assumed UTF-8 and will be encoded as such:
+Strings in Alpaca are all assumed UTF-8 and will be encoded as such:
 
     "This is a string"
     "so is 한국 and 日本"
@@ -152,7 +152,7 @@ These are compiled as binaries under the hood.  If you're looking for Erlang's b
 
 ### Binaries<a id="sec-3-1-5" name="sec-3-1-5"></a>
 
-If you're not familiar with binaries, there's some [good coverage](http://learnyousomeerlang.com/starting-out-for-real) of them in [Learn You Some Erlang&#x2026;](http://learnyousomeerlang.com/)  At present in MLFE they're a little more verbose but also a little more obvious, e.g.
+If you're not familiar with binaries, there's some [good coverage](http://learnyousomeerlang.com/starting-out-for-real) of them in [Learn You Some Erlang&#x2026;](http://learnyousomeerlang.com/)  At present in Alpaca they're a little more verbose but also a little more obvious, e.g.
 
     <<"this text is assumed to be UTF-8">>
     <<"But we can also be explicit": type=utf8>>
@@ -173,7 +173,7 @@ These types are all "parametrically polymorphic", or "generics" for those of us 
 
 ### Tuples<a id="sec-3-2-1" name="sec-3-2-1"></a>
 
-Tuples, like functions, have a specific arity (number of contained elements).  In MLFE the typing of tuples covers both their arity **and** the type of each element.  Let's introduce pattern matching here to illustrate their structure:
+Tuples, like functions, have a specific arity (number of contained elements).  In Alpaca the typing of tuples covers both their arity **and** the type of each element.  Let's introduce pattern matching here to illustrate their structure:
 
     third my_tuple =
       match my_tuple with
@@ -261,9 +261,9 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
       match my_rec with
         {x=xx} -> (xx, my_rec)
 
-#### What's Row Polymorphism?
+1.  What's Row Polymorphism?
 
-The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
+    The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
     
         public interface IHasX {
             public int getX();
@@ -286,17 +286,17 @@ The key thing we're after from row polymorphism is not losing information.  For 
             return i;
         }
     
-The return of `identity(new HasXY(1, "world"))` "loses" the information that the passed-in argument has a `hello` member of type `String`.  
+    The return of `identity(new HasXY(1, "world"))` "loses" the information that the passed-in argument has a `hello` member of type `String`.  
     
         identity my_rec =
           match my_rec with
             {x=_} -> my_rec
     
-The return of `identity({x=1, hello="world"})` above is still the type `{x: int, hello: string}` in MLFE even though the function `identity` only cares about the field `x: int`.
+    The return of `identity({x=1, hello="world"})` above is still the type `{x: int, hello: string}` in Alpaca  even though the function `identity` only cares about the field `x: int`.
 
-#### What's Missing?
+2.  What's Missing?
 
-There's not yet a way to access individual fields of a record without pattern matching (e.g. `let my_rec = {x=1, hello="world"} in x.x`) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
+    There's not yet a way to access individual fields of a record without pattern matching (e.g. `let my_rec = {x=1, hello="world"} in x.x`) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
     
         -- add an integer field named z to a record with x and y:
         let xy = {x=1, y=2} in
@@ -319,7 +319,7 @@ Inside of a function we can define both immutable variables and new functions:
       let doubled_x = double x in  -- a variable named "double_x"
       doubled_x + x                -- the expression returned as a result
 
-As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
+As Alpaca is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
 
     {- Because the body of this function multiplies the parameter by a float,
        the compiler knows that this function takes floats and returns floats
@@ -338,7 +338,7 @@ While functions with no arguments aren't supported ("nullary" or arity of zero) 
 
 ## The Foreign Function Interface<a id="sec-4-1" name="sec-4-1"></a>
 
-The FFI is how we call any non-MLFE code in the Erlang VM (e.g. Erlang, [Elixir](http://elixir-lang.org/), [LFE](http://lfe.io/), and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
+The FFI is how we call any non-Alpaca code in the Erlang VM (e.g. Erlang, [Elixir](http://elixir-lang.org/), [LFE](http://lfe.io/), and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
 
 Here we're using a simple guard function so that we know the FFI expression is returning characters (an Erlang string):
 
@@ -416,7 +416,7 @@ We can also use "type constructors" and type variables to be a bit more expressi
           #{key => value} -> Some value
         | _ -> None
 
-We can use the basic MLFE types as well, here's a type that describes parsed JSON data based on how the [JSX](https://github.com/talentdeficit/jsx) library represents it:
+We can use the basic Alpaca types as well, here's a type that describes parsed JSON data based on how the [JSX](https://github.com/talentdeficit/jsx) library represents it:
 
     type json = int | float | string | bool
               | list json
@@ -460,7 +460,7 @@ Here's a simple example:
     test "add 2 2 should result in 4" =
       add 2 2
 
-While the above test is type checked and will happily be compiled, we lack assertions to actually **test** the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, `basic_module_with_tests.mlfe`:
+While the above test is type checked and will happily be compiled, we lack assertions to actually **test** the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, `basic_module_with_tests.alp`:
 
     module add_and_a_test
     
@@ -486,11 +486,11 @@ While the above test is type checked and will happily be compiled, we lack asser
       let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
       beam :lists :flatten [m] with msg, is_chars msg -> msg
 
-It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in MLFE.
+It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in Alpaca.
 
 # Processes<a id="sec-7" name="sec-7"></a>
 
-Process support in MLFE is still pretty basic but the following are all supported:
+Process support in Alpaca is still pretty basic but the following are all supported:
 
 -   spawn a function from the current module as a process with `spawn`
 -   receive messages in a function with `receive`
@@ -539,4 +539,4 @@ Mutually recursive functions can be spawned as well provided that **if** they're
     -- The above will fail compilation unless the following ADT is in scope:
     type a_and_b = string | atom
 
-As an aside, both the functions `a/1` and `b/1` above have the return type `rec`, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in MLFE.
+As an aside, both the functions `a/1` and `b/1` above have the return type `rec`, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in Alpaca.
