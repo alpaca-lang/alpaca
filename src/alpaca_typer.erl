@@ -15,7 +15,7 @@
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
 
-%%% #mlfe_typer.erl
+%%% #alpaca_typer.erl
 %%%
 %%% This is based off of the sound and eager type inferencer in
 %%% http://okmij.org/ftp/ML/generalization.html with some influence
@@ -25,12 +25,12 @@
 %%% I still often use proplists in this module, mostly because dialyzer doesn't
 %%% yet type maps correctly (Erlang 18.1).
 
--module(mlfe_typer).
+-module(alpaca_typer).
 
 -dialyzer({nowarn_function, dump_env/1}).
 -dialyzer({nowarn_function, dump_term/1}).
 
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 -include("builtin_types.hrl").
 
 %%% API
@@ -200,12 +200,12 @@ copy_cell(Cell, RefMap) ->
 -record(env, {
           next_var=0           :: integer(),
           entered_modules=[]   :: list(atom()),
-          current_module=none  :: none | mlfe_module(),
-          current_types=[]     :: list(mlfe_type()),
-          type_constructors=[] :: list({string(), mlfe_constructor()}),
+          current_module=none  :: none | alpaca_module(),
+          current_types=[]     :: list(alpaca_type()),
+          type_constructors=[] :: list({string(), alpaca_constructor()}),
           type_bindings=[]     :: list({string(), t_adt()}),
           bindings=[]          :: list({term(), typ()|t_cell()}),
-          modules=[]           :: list(mlfe_module())
+          modules=[]           :: list(alpaca_module())
          }).
 
 -type env() :: #env{}.
@@ -216,16 +216,16 @@ new_env(Mods) ->
 
 %%% We need to build a proplist of type constructor name to the actual type
 %%% constructor's AST node and associated type.
--spec constructors(list(mlfe_type())) -> list({string(), mlfe_constructor()}).
+-spec constructors(list(alpaca_type())) -> list({string(), alpaca_constructor()}).
 constructors(Types) ->
     MemberFolder =
-        fun(#mlfe_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
-                WithType = C#mlfe_constructor{type=Type},
+        fun(#alpaca_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
+                WithType = C#alpaca_constructor{type=Type},
                 {Type, [{N, WithType}|Acc]};
            (_, Acc) ->
                 Acc
         end,
-    TypesFolder = fun(#mlfe_type{members=Ms}=Typ, Acc) ->
+    TypesFolder = fun(#alpaca_type{members=Ms}=Typ, Acc) ->
                           {_, Cs} = lists:foldl(MemberFolder, {Typ, []}, Ms),
                           [Cs|Acc]
                   end,
@@ -234,8 +234,8 @@ constructors(Types) ->
 %% Given a presumed newly-typed module, replace its untyped occurence within
 %% the supplied environment.  If the module does *not* exist in the environment,
 %% it will be added.
-replace_env_module(#env{modules=Ms}=E, #mlfe_module{name=N}=M) ->
-    E#env{modules = [M | [X || #mlfe_module{name=XN}=X <- Ms, XN /= N]]}.
+replace_env_module(#env{modules=Ms}=E, #alpaca_module{name=N}=M) ->
+    E#env{modules = [M | [X || #alpaca_module{name=XN}=X <- Ms, XN /= N]]}.
 
 celled_binding({Name, {t_arrow, Args, Ret}}) ->
     {Name, {t_arrow, [new_cell(A) || A <- Args], new_cell(Ret)}}.
@@ -325,7 +325,7 @@ unwrap_cell(Typ) ->
 
 %% Get the name of the current module out of the environment.  Useful for
 %% error generation.
-module_name(#env{current_module=#mlfe_module{name=N}}) ->
+module_name(#env{current_module=#alpaca_module{name=N}}) ->
     N;
 module_name(_) ->
     undefined.
@@ -702,7 +702,7 @@ unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
         integer()) -> {ok, typ(), env()} |
                       {error,
                        {cannot_unify, atom(), integer(), typ(), typ()} |
-                       {bad_variable, integer(), mlfe_type_var()}}.
+                       {bad_variable, integer(), alpaca_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
     %% Convert all the available types to actual ADT types with
     %% which to attempt unions:
@@ -849,11 +849,11 @@ flatten_record(#t_record{}=R) ->
 %%% defined at the top level, their variables are always created at the
 %%% highest level.  I might be wrong here and need to include the typing
 %%% level as passed to inst/3 as well.
--spec inst_type(mlfe_type(), EnvIn::env()) ->
+-spec inst_type(alpaca_type(), EnvIn::env()) ->
                        {ok, env(), typ(), list(typ())} |
-                       {error, {bad_variable, integer(), mlfe_type_var()}}.
+                       {error, {bad_variable, integer(), alpaca_type_var()}}.
 inst_type(Typ, EnvIn) ->
-    #mlfe_type{name={type_name, _, N}, vars=Vs, members=Ms} = Typ,
+    #alpaca_type{name={type_name, _, N}, vars=Vs, members=Ms} = Typ,
     VarFolder = fun({type_var, _, VN}, {Vars, E}) ->
                         {TVar, E2} = new_var(0, E),
                         {[{VN, TVar}|Vars], E2}
@@ -870,14 +870,14 @@ inst_type_members(ParentADT, [], Env, FinishedMembers) ->
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
     inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
-inst_type_members(ADT, [{mlfe_list, TExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{alpaca_list, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstMem]} ->
             inst_type_members(ADT, Rem, Env2,
                               [new_cell({t_list, InstMem})|Memo])
     end;
-inst_type_members(ADT, [{mlfe_map, KExp, VExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{alpaca_map, KExp, VExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [KExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstK]} ->
@@ -912,7 +912,7 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
     NewT = new_cell(#t_record{members=lists:reverse(NewMems), row_var=RVC}),
     inst_type_members(ADT, Rem, Env3, [NewT|Memo]);
 
-inst_type_members(ADT, [{mlfe_pid, TExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{alpaca_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err ->
             Err;
@@ -927,7 +927,7 @@ inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
         {error, _}=Err -> Err;
         Typ -> inst_type_members(ADT, T, Env, [Typ|Memo])
     end;
-inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
+inst_type_members(ADT, [#alpaca_type_tuple{members=Ms}|T], Env, Memo) ->
     case inst_type_members(ADT, Ms, Env, []) of
         {error, _}=Err ->
             Err;
@@ -937,7 +937,7 @@ inst_type_members(ADT, [#mlfe_type_tuple{members=Ms}|T], Env, Memo) ->
     end;
 
 inst_type_members(ADT,
-                  [#mlfe_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
+                  [#alpaca_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
                   Env,
                   Memo) ->
     case inst_type_members(ADT, Vs, Env, []) of
@@ -947,7 +947,7 @@ inst_type_members(ADT,
             NewMember = #adt{name=N, vars=lists:zip(Names, Members)},
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
-inst_type_members(ADT, [#mlfe_constructor{name={_, _, N}}|T], Env, Memo) ->
+inst_type_members(ADT, [#alpaca_constructor{name={_, _, N}}|T], Env, Memo) ->
     inst_type_members(ADT, T, Env, [{t_adt_cons, N}|Memo]);
 %% Everything else gets discared.  Type constructors are not types in their
 %% own right and thus not eligible for unification so we just discard them here:
@@ -974,7 +974,7 @@ inst_type_members(ADT, [_|T], Env, Memo) ->
 %%% an instantiated instance of the ADT.  If the "type arrow" unifies with
 %%% the argument in the actual constructor application, the return of the type
 %%% arrow will have the correct variables instantiated.
--spec inst_type_arrow(Env::env(), Name::mlfe_constructor_name()) ->
+-spec inst_type_arrow(Env::env(), Name::alpaca_constructor_name()) ->
                              {ok, env(), {typ_arrow, typ(), t_adt()}} |
                              {error, {bad_constructor, integer(), string()}} |
                              {error, {unknown_type, string()}} |
@@ -985,13 +985,13 @@ inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
     %% task here instead.  Sort of want Scala's `Try`.
     ADT_f = fun({error, _}=Err) ->
                     Err;
-               (#mlfe_constructor{type=#mlfe_type{}=T}=C) ->
+               (#alpaca_constructor{type=#alpaca_type{}=T}=C) ->
                     {C, inst_type(T, EnvIn)}
             end,
     Cons_f = fun({_, {error, _}=Err}) ->Err;
                 ({C, {ok, Env, ADT, _}}) ->
                      #adt{vars=Vs} = get_cell(ADT),
-                     #mlfe_constructor{arg=Arg} = C,
+                     #alpaca_constructor{arg=Arg} = C,
                      Types = EnvIn#env.current_types,
                      Arrow = {type_arrow, inst_constructor_arg(Arg, Vs, Types), ADT},
                      {Env, Arrow}
@@ -1017,21 +1017,21 @@ inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types) ->
                 end
         end,
     new_cell(R#t_record{members=lists:map(F, Ms)});
-inst_constructor_arg(#mlfe_constructor{name={type_constructor, _, N}},
+inst_constructor_arg(#alpaca_constructor{name={type_constructor, _, N}},
                      _Vs, _Types) ->
     {t_adt_cons, N};
-inst_constructor_arg(#mlfe_type_tuple{members=Ms}, Vs, Types) ->
+inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types) ->
     new_cell({t_tuple, [inst_constructor_arg(M, Vs, Types) || M <- Ms]});
-inst_constructor_arg({mlfe_list, ElementType}, Vs, Types) ->
+inst_constructor_arg({alpaca_list, ElementType}, Vs, Types) ->
     new_cell({t_list, inst_constructor_arg(ElementType, Vs, Types)});
-inst_constructor_arg({mlfe_map, KeyType, ValType}, Vs, Types) ->
+inst_constructor_arg({alpaca_map, KeyType, ValType}, Vs, Types) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs, Types),
                      inst_constructor_arg(ValType, Vs, Types)});
-inst_constructor_arg({mlfe_pid, MsgType}, Vs, Types) ->
+inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types) ->
     new_cell({t_pid, inst_constructor_arg(MsgType, Vs, Types)});
-inst_constructor_arg(#mlfe_type{name={type_name, _, N}, vars=Vars, members=M1},
+inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},
                      Vs, Types) ->
-    #mlfe_type{vars = V2, members=M2} = find_type(N, Types),
+    #alpaca_type{vars = V2, members=M2} = find_type(N, Types),
 
     %% when a polymorphic ADT occurs in another type's definition it might
     %% have concrete types assigned rather than variables and thus we want
@@ -1053,7 +1053,7 @@ inst_constructor_arg(Arg, _, _) ->
     throw({error, {bad_constructor_arg, Arg}}).
 
 find_type(Name, []) -> throw({error, {unknown_type, Name}});
-find_type(Name, [#mlfe_type{name={type_name, _, Name}}=T|_]) -> T;
+find_type(Name, [#alpaca_type{name={type_name, _, Name}}=T|_]) -> T;
 find_type(Name, [_|Types]) -> find_type(Name, Types).
 
 replace_vars([], _, _) -> [];
@@ -1203,9 +1203,9 @@ private_type_error(SourceModule, Module, Type) ->
 
 retrieve_type(SourceModule, Module, Type, []) ->
     throw(missing_type_error(SourceModule, Module, Type));
-retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
-    case [TT || #mlfe_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
-        [#mlfe_type{name={_, _, TN}}=Type] -> 
+retrieve_type(SM, M, T, [#alpaca_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
+    case [TT || #alpaca_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
+        [#alpaca_type{name={_, _, TN}}=Type] -> 
             %% now make sure the type is exported:
             case [X || X <- ETs, X =:= TN] of
                 [_] -> {ok, Type};
@@ -1216,7 +1216,7 @@ retrieve_type(SM, M, T, [#mlfe_module{name=M, types=Ts, type_exports=ETs}|Rem]) 
 retrieve_type(SM, M, T, [_|Rem]) ->
     retrieve_type(SM, M, T, Rem).
 
--spec type_modules([mlfe_module()]) -> {ok, [mlfe_module()]} |
+-spec type_modules([alpaca_module()]) -> {ok, [alpaca_module()]} |
                                        {error, term()}.
 type_modules(Mods) ->
     {Pid, Monitor} = erlang:spawn_monitor(fun() ->
@@ -1224,7 +1224,7 @@ type_modules(Mods) ->
             Res -> exit(Res)
         catch
             E:T ->
-                io:format("mlfe_typer:type_modules/2 crashed with ~p:~p~n"
+                io:format("alpaca_typer:type_modules/2 crashed with ~p:~p~n"
                           "Stacktrace:~n~p~n", [E, T, erlang:get_stacktrace()]),
                 exit({error, T})
         end
@@ -1242,9 +1242,9 @@ type_modules([M|Ms], Env, Acc) ->
             Err
     end.
 
--spec type_module(M::mlfe_module(), Env::env()) -> {ok, mlfe_module()} |
+-spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
-type_module(#mlfe_module{functions=Fs,
+type_module(#alpaca_module{functions=Fs,
                         name=Name,
                         types=Ts,
                         type_imports=Imports,
@@ -1253,7 +1253,7 @@ type_module(#mlfe_module{functions=Fs,
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
                       (_, [{error, _}=Err|_]) -> Err;
-                      (#mlfe_type_import{module=MN, type=T}, Acc) ->
+                      (#alpaca_type_import{module=MN, type=T}, Acc) ->
                            [retrieve_type(Name, MN, T, Modules)|Acc]
                    end,
 
@@ -1288,21 +1288,21 @@ type_module(#mlfe_module{functions=Fs,
                         {error, _} = Err        ->
                             Err;
                         Funs when is_list(Funs) ->
-                            {ok, M#mlfe_module{functions=Funs}}
+                            {ok, M#alpaca_module{functions=Funs}}
                     end
             end
     end.
 
 typ_module_funs([], _Env, Memo) ->
     lists:reverse(Memo);
-typ_module_funs([#mlfe_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
+typ_module_funs([#alpaca_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
     case typ_of(Env, 0, F) of
         {error, _} = E ->
             E;
         {Typ, NV} ->
             Env2 = update_counter(NV, Env),
             Env3 = update_binding(Name, Typ, Env2),
-            typ_module_funs(Rem, Env3, [F#mlfe_fun_def{type=unwrap(Typ)}|Memo])
+            typ_module_funs(Rem, Env3, [F#alpaca_fun_def{type=unwrap(Typ)}|Memo])
     end.
 
 type_module_tests(_, _Env, {error, _}=Err, _) ->
@@ -1311,7 +1311,7 @@ type_module_tests(_, _Env, _, {error, _}=Err) ->
     Err;
 type_module_tests([], _, _, Funs) ->
     Funs;
-type_module_tests([#mlfe_test{expression=E}|Rem], Env, _, Funs) ->
+type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
     type_module_tests(Rem, Env, typ_of(Env, 0, E), Funs).
 
 %% In the past I returned the environment entirely but this contained mutations
@@ -1322,7 +1322,7 @@ type_module_tests([#mlfe_test{expression=E}|Rem], Env, _, Funs) ->
 -spec typ_of(
         Env::env(),
         Lvl::integer(),
-        Exp::mlfe_expression()) -> {typ(), integer()} | {error, term()}.
+        Exp::alpaca_expression()) -> {typ(), integer()} | {error, term()}.
 
 %% Base types now need to be in reference cells because when they are part
 %% of unions they may need to be reset.
@@ -1357,7 +1357,7 @@ typ_of(Env, Lvl, {raise_error, _, _, _}) ->
 typ_of(Env, Lvl, {'_', _}) ->
     {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
     {T, VarNum};
-typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
+typ_of(Env, Lvl, #alpaca_tuple{values=Vs}) ->
     case typ_list(Vs, Lvl, Env, []) of
         {error, _} = E -> E;
         {VTyps, NextVar} -> {new_cell({t_tuple, VTyps}), NextVar}
@@ -1365,12 +1365,12 @@ typ_of(Env, Lvl, #mlfe_tuple{values=Vs}) ->
 typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {TL, #env{next_var=NV}} = new_var(Lvl, Env),
     {new_cell({t_list, TL}), NV};
-typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
+typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
     {HTyp, NV1} = typ_of(Env, Lvl, H),
     {TTyp, NV2} =
         case T of
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
-            #mlfe_cons{}=Cons ->
+            #alpaca_cons{}=Cons ->
                 typ_of(update_counter(NV1, Env), Lvl, Cons);
             {symbol, L, _} = S ->
                 {STyp, Next} =
@@ -1381,7 +1381,7 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
                     {error, _} = E -> E;
                     ok -> {STyp, Next2}
                 end;
-            #mlfe_apply{}=Apply ->
+            #alpaca_apply{}=Apply ->
                 {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
                 case unify(
                        new_cell({t_list, HTyp}), TApp, Env, apply_line(Apply))
@@ -1418,16 +1418,16 @@ typ_of(Env, Lvl, #mlfe_cons{line=Line, head=H, tail=T}) ->
             {TTyp, NV2}
     end;
 
-typ_of(Env, Lvl, #mlfe_binary{segments=Segs}) ->
+typ_of(Env, Lvl, #alpaca_binary{segments=Segs}) ->
     case type_bin_segments(Env, Lvl, Segs) of
         {error, _}=Err -> Err;
         {ok, NV} -> {new_cell(t_binary), NV}
     end;
 
-typ_of(Env, Lvl, #mlfe_map{}=M) ->
+typ_of(Env, Lvl, #alpaca_map{}=M) ->
     type_map(Env, Lvl, M);
-typ_of(Env, Lvl, #mlfe_map_add{line=L, to_add=A, existing=B}) ->
-    #mlfe_map_pair{key=KE, val=VE} = A,
+typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
+    #alpaca_map_pair{key=KE, val=VE} = A,
     TypA = typ_list([KE, VE], Lvl, Env, []),
     TypB = typ_of(Env, Lvl, B),
 
@@ -1444,8 +1444,8 @@ typ_of(Env, Lvl, #mlfe_map_add{line=L, to_add=A, existing=B}) ->
       end);
 
 %% Record typing:
-typ_of(Env, Lvl, #mlfe_record{members=Members}) ->
-    F = fun(#mlfe_record_member{name=N, val=V}, {Members, E}) ->
+typ_of(Env, Lvl, #alpaca_record{members=Members}) ->
+    F = fun(#alpaca_record_member{name=N, val=V}, {Members, E}) ->
                 case typ_of(E, Lvl, V) of
                     {error, _}=Err -> 
                         erlang:error(Err);
@@ -1459,13 +1459,13 @@ typ_of(Env, Lvl, #mlfe_record{members=Members}) ->
     Res = new_cell(#t_record{members=lists:reverse(Members2), row_var=RowVar}),
     {Res, Env3#env.next_var};
 
-typ_of(Env, _Lvl, #mlfe_type_apply{name=N, arg=none}) ->
+typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, _CTyp, RTyp}} ->
             {RTyp, Env2#env.next_var}
     end;
-typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=A}) ->
+typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, CTyp, RTyp}} ->
@@ -1481,15 +1481,15 @@ typ_of(Env, Lvl, #mlfe_type_apply{name=N, arg=A}) ->
     end;
 
 %% BIFs are loaded in the environment as atoms:
-typ_of(Env, Lvl, {bif, MlfeName, _, _, _}) ->
-    case inst(MlfeName, Lvl, Env) of
+typ_of(Env, Lvl, {bif, AlpacaName, _, _, _}) ->
+    case inst(AlpacaName, Lvl, Env) of
         {error, _} = E ->
             E;
         {T, #env{next_var=VarNum}, _} ->
             {T, VarNum}
     end;
 
-typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
     Satisfy =
         fun() ->
                 %% Naively assume a single call to the same function for now.
@@ -1502,9 +1502,9 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                                        entered_modules=EnteredModules},
                         %% Type the called function in its own module:
                         case type_module(Module, Env2) of
-                            {ok, #mlfe_module{functions=Funs}} ->
+                            {ok, #alpaca_module{functions=Funs}} ->
                                 [T] = [Typ || 
-                                          #mlfe_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs, 
+                                          #alpaca_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs, 
                                           N =:= X, 
                                           A =:= Arity
                                       ],
@@ -1527,13 +1527,13 @@ typ_of(Env, Lvl, #mlfe_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
     case [M || M <- Env#env.entered_modules, M == Mod] of
         [] -> Satisfy();
         [Mod] -> case Env#env.current_module of
-                     #mlfe_module{name=Mod} -> Satisfy();
+                     #alpaca_module{name=Mod} -> Satisfy();
                      _ -> Error()
                  end;
         _  -> Error()
     end;
 
-typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_apply{name=N, args=Args}) ->
     %% When a symbol isn't bound to a function in the environment,
     %% attempt to find it in the module.  Here we're assuming that
     %% the user has referred to a function that is defined later than
@@ -1567,7 +1567,7 @@ typ_of(Env, Lvl, #mlfe_apply{name=N, args=Args}) ->
 %% Unify the patterns with each other and resulting expressions with each
 %% other, then unifying the general pattern type with the match expression's
 %% type.
-typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
+typ_of(Env, Lvl, #alpaca_match{match_expr=E, clauses=Cs, line=Line}) ->
     {ETyp, NextVar1} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar1, Env),
 
@@ -1583,7 +1583,7 @@ typ_of(Env, Lvl, #mlfe_match{match_expr=E, clauses=Cs, line=Line}) ->
             end
     end;
 
-typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R, line=L}) ->
+typ_of(Env, Lvl, #alpaca_clause{pattern=P, guards=Gs, result=R, line=L}) ->
     case add_bindings(P, Env, Lvl, 0) of
         {error, _}=Err -> Err;
         {PTyp, _, NewEnv, _} ->
@@ -1621,7 +1621,7 @@ typ_of(Env, Lvl, #mlfe_clause{pattern=P, guards=Gs, result=R, line=L}) ->
 
 %%% Pattern match guards that both check the type of an argument and cause
 %%% it's type to be fixed.
-typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
+typ_of(Env, Lvl, #alpaca_type_check{type=T, expr=E, line=L}) ->
     Typ = proplists:get_value(T, ?all_type_checks),
     case typ_of(Env, Lvl, E) of
         {error, _}=Err -> Err;
@@ -1632,7 +1632,7 @@ typ_of(Env, Lvl, #mlfe_type_check{type=T, expr=E, line=L}) ->
             end
     end;
 
-typ_of(Env, Lvl, #mlfe_send{line=L, message=M, pid=P}) ->
+typ_of(Env, Lvl, #alpaca_send{line=L, message=M, pid=P}) ->
     case typ_of(Env, Lvl, P) of
         {error, _}=Err -> Err;
         {T, NV} ->
@@ -1653,11 +1653,11 @@ typ_of(Env, Lvl, #mlfe_send{line=L, message=M, pid=P}) ->
                     end
             end
     end;
-typ_of(Env, Lvl, #mlfe_receive{}=Recv) ->
+typ_of(Env, Lvl, #alpaca_receive{}=Recv) ->
     type_receive(Env, Lvl, Recv);
 
 %%% Calls to Erlang code only have their return value typed.
-typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
+typ_of(#env{next_var=NV}=Env, Lvl, #alpaca_ffi{clauses=Cs, module={_, L, _}}) ->
     ClauseFolder = fun(C, {Typs, EnvAcc}) ->
                            {{t_clause, _, _, T}, X} = typ_of(EnvAcc, Lvl, C),
                            {[T|Typs], update_counter(X, EnvAcc)}
@@ -1681,9 +1681,9 @@ typ_of(#env{next_var=NV}=Env, Lvl, #mlfe_ffi{clauses=Cs, module={_, L, _}}) ->
     end;
 
 %% Spawning of functions in the current module:
-typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_spawn{line=L, module=undefined, function=F, args=Args}) ->
     %% make a function application and type it:
-    Apply = #mlfe_apply{name=F, args=Args},
+    Apply = #alpaca_apply{name=F, args=Args},
 
     case typ_of(Env, Lvl, F) of
         {error, _}=Err -> Err;
@@ -1708,10 +1708,10 @@ typ_of(Env, Lvl, #mlfe_spawn{line=L, module=undefined, function=F, args=Args}) -
             end
     end;
 
-typ_of(EnvIn, Lvl, #mlfe_fun_def{name={symbol, L, N}, versions=Vs}) ->
+typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
-           (#mlfe_fun_version{args=Args, body=Body}, {Types, Env}) ->
+           (#alpaca_fun_version{args=Args, body=Body}, {Types, Env}) ->
                 BindingF = fun(Arg, {Typs, E, VN}) ->
                                    {AT, _, NE, VN2} = add_bindings(Arg, E, Lvl, VN),
                                    {[AT|Typs], NE, VN2}
@@ -1764,7 +1764,7 @@ typ_of(EnvIn, Lvl, #mlfe_fun_def{name={symbol, L, N}, versions=Vs}) ->
 
 %% A function binding inside a function:
 typ_of(Env, Lvl, #fun_binding{
-                    def=#mlfe_fun_def{name={symbol, _, N}}=E,
+                    def=#alpaca_fun_def{name={symbol, _, N}}=E,
                     expr=E2}) ->
     {TypE, NextVar} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar, Env),
@@ -1786,7 +1786,7 @@ type_bin_segments(#env{next_var=NV}, _Lvl, []) ->
 type_bin_segments(
   Env,
   Level,
-  [#mlfe_bits{value=V, type=T, line=L}|Rem])
+  [#alpaca_bits{value=V, type=T, line=L}|Rem])
   when T == int; T == float; T == binary; T == utf8; T == latin1 ->
     VTyp = typ_of(Env, Level, V),
     map_typ_of(Env, VTyp,
@@ -1811,12 +1811,12 @@ map_typ_of(Env, Res, NextStep) ->
 map_err({error, _}=Err, _NextStep) -> Err;
 map_err(Ok, NextStep) -> NextStep(Ok).
 
-type_map(Env, Lvl, #mlfe_map{pairs=[]}) ->
+type_map(Env, Lvl, #alpaca_map{pairs=[]}) ->
     {KeyVar, Env2} = new_var(Lvl, Env),
     {ValVar, #env{next_var=NV}} = new_var(Lvl, Env2),
     {new_cell({t_map, KeyVar, ValVar}), NV};
-type_map(Env, Lvl, #mlfe_map{pairs=Pairs}) ->
-    {MapType, NV} = type_map(Env, Lvl, #mlfe_map{}),
+type_map(Env, Lvl, #alpaca_map{pairs=Pairs}) ->
+    {MapType, NV} = type_map(Env, Lvl, #alpaca_map{}),
     Env2 = update_counter(NV, Env),
     case unify_map_pairs(Env2, Lvl, Pairs, MapType) of
         {error, _}=Err -> Err;
@@ -1824,7 +1824,7 @@ type_map(Env, Lvl, #mlfe_map{pairs=Pairs}) ->
     end.
 unify_map_pairs(Env, _, [], T) ->
     {new_cell(T), Env};
-unify_map_pairs(Env, Lvl, [#mlfe_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
+unify_map_pairs(Env, Lvl, [#alpaca_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
     {t_map, K, V} = unwrap_cell(T),
     case typ_list([KE, VE], Lvl, Env, []) of
         {error, _}=Err -> Err;
@@ -1848,7 +1848,7 @@ unify_clauses(Env, Lvl, Cs) ->
                 case typ_of(EnvAcc, Lvl, C) of
                     {error, _}=Err -> Err;
                     {TypC, NV} ->
-                        #mlfe_clause{line=Line} = C,
+                        #alpaca_clause{line=Line} = C,
                         {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
                 end
         end,
@@ -1915,7 +1915,7 @@ collapse_receivers({t_receiver, T, E}, Env, Line) ->
 collapse_receivers(E, _, _) ->
     E.
 
-type_receive(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}) ->
+type_receive(Env, Lvl, #alpaca_receive{clauses=Cs, line=Line, timeout_action=TA}) ->
     case unify_clauses(Env, Lvl, Cs) of
         {error, _}=Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
@@ -1952,11 +1952,11 @@ type_receive(Env, Lvl, #mlfe_receive{clauses=Cs, line=Line, timeout_action=TA}) 
     end.
 
 %% Get the line number that should be reported by an application AST node.
-apply_line(#mlfe_apply{name={symbol, L, _}}) ->
+apply_line(#alpaca_apply{name={symbol, L, _}}) ->
     L;
-apply_line(#mlfe_apply{name={_, {symbol, L, _}, _}}) ->
+apply_line(#alpaca_apply{name={_, {symbol, L, _}, _}}) ->
     L;
-apply_line(#mlfe_apply{name={bif, _, L, _, _}}) ->
+apply_line(#alpaca_apply{name={bif, _, L, _, _}}) ->
     L.
 
 typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
@@ -2034,17 +2034,17 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
         Env::env(),
         ModuleName::atom(),
         FunName::string(),
-        Arity::integer()) -> {ok, mlfe_module(), mlfe_fun_def()} |
+        Arity::integer()) -> {ok, alpaca_module(), alpaca_fun_def()} |
                              {error,
                               {no_module, atom()} |
                               {not_exported, string(), integer()} |
                               {not_found, atom(), string, integer()}} .
 extract_fun(Env, ModuleName, FunName, Arity) ->
-    case [M || M <- Env#env.modules, M#mlfe_module.name =:= ModuleName] of
+    case [M || M <- Env#env.modules, M#alpaca_module.name =:= ModuleName] of
         [] ->
             {error, {no_module, ModuleName}};
         [Module] ->
-            Exports = Module#mlfe_module.function_exports,
+            Exports = Module#alpaca_module.function_exports,
             case [F || {FN, A} = F <- Exports, FN =:= FunName, A =:= Arity] of
                 [_] -> get_fun(Module, FunName, Arity);
                 []  -> {error, {not_exported, FunName, Arity}}
@@ -2052,19 +2052,19 @@ extract_fun(Env, ModuleName, FunName, Arity) ->
     end.
 
 -spec get_fun(
-        Module::mlfe_module(),
+        Module::alpaca_module(),
         FunName::string(),
-        Arity::integer()) -> {ok, mlfe_module(), mlfe_fun_def()} |
+        Arity::integer()) -> {ok, alpaca_module(), alpaca_fun_def()} |
                              {error, {not_found, atom(), string, integer()}}.
 get_fun(Module, FunName, Arity) ->
-    case filter_to_fun(Module#mlfe_module.functions, FunName, Arity) of
+    case filter_to_fun(Module#alpaca_module.functions, FunName, Arity) of
         not_found    -> {error, {not_found, Module, FunName, Arity}};
         {ok, Fun} -> {ok, Module, Fun}
     end.
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#mlfe_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
+filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
 filter_to_fun([_|Rem], FN, Arity) ->
@@ -2082,10 +2082,10 @@ filter_to_fun([_|Rem], FN, Arity) ->
 %%% we've added along with the updated "NameNum" value so that we can recurse
 %%% through a data structure with `add_bindings/4`.
 -spec add_bindings(
-        mlfe_expression(),
+        alpaca_expression(),
         env(),
         Lvl::integer(),
-        NameNum::integer()) -> {typ(), mlfe_expression(), env(), integer()} |
+        NameNum::integer()) -> {typ(), alpaca_expression(), env(), integer()} |
                                {error, term()}.
 add_bindings({symbol, _, Name}=S, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
@@ -2102,8 +2102,8 @@ add_bindings({'_', _}=X, Env, Lvl, NameNum) ->
 %%% Tuples are a slightly more involved case since we want a type for the
 %%% whole tuple as well as any explicit variables to be available in the
 %%% result side of the clause.
-add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
-    {#mlfe_tuple{values=Vs}=Tup2, NN2} = rename_wildcards(Tup1, NameNum),
+add_bindings(#alpaca_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
+    {#alpaca_tuple{values=Vs}=Tup2, NN2} = rename_wildcards(Tup1, NameNum),
     {Env2, NN3} = lists:foldl(
                     fun (V, {EnvAcc, NN}) ->
                             {_, _, NewEnv, NewNN} = add_bindings(V, EnvAcc,
@@ -2117,8 +2117,8 @@ add_bindings(#mlfe_tuple{values=_}=Tup1, Env, Lvl, NameNum) ->
         {Typ, NextVar} -> {Typ, Tup2, update_counter(NextVar, Env2), NN3}
     end;
 
-add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
-    {#mlfe_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
+add_bindings(#alpaca_cons{}=Cons, Env, Lvl, NameNum) ->
+    {#alpaca_cons{head=H, tail=T}=RenCons, NN2} = rename_wildcards(Cons, NameNum),
     {_, _, Env2, NN3} = add_bindings(H, Env, Lvl, NN2),
     {_, _, Env3, NN4} = add_bindings(T, Env2, Lvl, NN3),
     case typ_of(Env3, Lvl, RenCons) of
@@ -2126,26 +2126,26 @@ add_bindings(#mlfe_cons{}=Cons, Env, Lvl, NameNum) ->
         {Typ, NextVar} -> {Typ, RenCons, update_counter(NextVar, Env3), NN4}
     end;
 
-add_bindings(#mlfe_binary{}=Bin, Env, Lvl, NameNum) ->
+add_bindings(#alpaca_binary{}=Bin, Env, Lvl, NameNum) ->
     {Bin2, NN2} = rename_wildcards(Bin, NameNum),
     F = fun(_, {error, _}=Err) -> Err;
-           (#mlfe_bits{value=V}, {E, N}) ->
+           (#alpaca_bits{value=V}, {E, N}) ->
                 case add_bindings(V, E, Lvl, N) of
                     {_, _, E2, N2} -> {E2, N2};
                     {error, _}=Err -> Err
                 end
         end,
-    case lists:foldl(F, {Env, NN2}, Bin2#mlfe_binary.segments) of
+    case lists:foldl(F, {Env, NN2}, Bin2#alpaca_binary.segments) of
         {error, _}=Err -> Err;
         {Env2, NN3} ->
             T = typ_of(Env2, Lvl, Bin2),
             map_typ_of(Env2, T, fun(Env3, Typ) -> {Typ, Bin2, Env3, NN3} end)
     end;
 
-add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
+add_bindings(#alpaca_map{}=M, Env, Lvl, NN) ->
     {M2, NN2} = rename_wildcards(M, NN),
     Folder = fun(_, {error, _}=Err) -> Err;
-                (#mlfe_map_pair{key=K, val=V}, {E, N}) ->
+                (#alpaca_map_pair{key=K, val=V}, {E, N}) ->
                      case add_bindings(K, E, Lvl, N) of
                          {error, _}=Err -> Err;
                          {_, _, E2, N2} ->
@@ -2155,7 +2155,7 @@ add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
                              end
                      end
              end,
-    case lists:foldl(Folder, {Env, NN}, M2#mlfe_map.pairs) of
+    case lists:foldl(Folder, {Env, NN}, M2#alpaca_map.pairs) of
         {error, _}=Err -> Err;
         {Env2, NN3} ->
             case typ_of(Env2, Lvl, M2) of
@@ -2164,15 +2164,15 @@ add_bindings(#mlfe_map{}=M, Env, Lvl, NN) ->
             end
     end;
 
-add_bindings(#mlfe_record{}=R, Env, Lvl, NameNum) ->
+add_bindings(#alpaca_record{}=R, Env, Lvl, NameNum) ->
     {R2, NameNum2} = rename_wildcards(R, NameNum),
-    F = fun(#mlfe_record_member{val=V}=M, {E, N}) ->
+    F = fun(#alpaca_record_member{val=V}=M, {E, N}) ->
                 case add_bindings(V, E, Lvl, N) of
                     {error, _}=Err  -> erlang:error(Err);
                     {_, _, E2, N2} -> {E2, N2}
                 end
         end,
-    case lists:foldl(F, {Env, NameNum}, R2#mlfe_record.members) of
+    case lists:foldl(F, {Env, NameNum}, R2#alpaca_record.members) of
         {Env2, NameNum3} ->
             case typ_of(Env2, Lvl, R2) of
                 {error, _}=Err -> erlang:error(Err);
@@ -2180,15 +2180,15 @@ add_bindings(#mlfe_record{}=R, Env, Lvl, NameNum) ->
             end
     end;
 
-add_bindings(#mlfe_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
+add_bindings(#alpaca_type_apply{arg=none}=T, Env, Lvl, NameNum) ->
     case typ_of(Env, Lvl, T) of
         {error, _}=Err -> Err;
         {Typ, NextVar} -> {Typ, T, update_counter(NextVar, Env), NameNum}
     end;
-add_bindings(#mlfe_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
+add_bindings(#alpaca_type_apply{arg=Arg}=T, Env, Lvl, NameNum) ->
     {RenamedArg, NN} = rename_wildcards(Arg, NameNum),
     {_, _, Env2, NextNameNum} = add_bindings(RenamedArg, Env, Lvl, NN),
-    TA = T#mlfe_type_apply{arg=RenamedArg},
+    TA = T#alpaca_type_apply{arg=RenamedArg},
     case typ_of(Env2, Lvl, TA) of
         {error, _} = Err -> Err;
         {Typ, NextVar} -> {Typ, TA, update_counter(NextVar, Env2), NextNameNum}
@@ -2204,46 +2204,46 @@ add_bindings(Exp, Env, Lvl, NameNum) ->
 %%% symbol.  Each instance needs a unique name for unification purposes
 %%% so the individual occurrences of '_' get renamed with numbers in order,
 %%% e.g. (1, _, _) would become (1, _0, _1).
-rename_wildcards(#mlfe_tuple{values=Vs}=Tup, NameNum) ->
+rename_wildcards(#alpaca_tuple{values=Vs}=Tup, NameNum) ->
     {Renamed, NN} = rename_wildcards(Vs, NameNum),
-    {Tup#mlfe_tuple{values=Renamed}, NN};
-rename_wildcards(#mlfe_type_apply{arg=none}=TA, NN) ->
+    {Tup#alpaca_tuple{values=Renamed}, NN};
+rename_wildcards(#alpaca_type_apply{arg=none}=TA, NN) ->
     {TA, NN};
-rename_wildcards(#mlfe_type_apply{arg=Arg}=TA, NN) ->
+rename_wildcards(#alpaca_type_apply{arg=Arg}=TA, NN) ->
     {Arg2, NN2} = rename_wildcards(Arg, NN),
-    {TA#mlfe_type_apply{arg=Arg2}, NN2};
-rename_wildcards(#mlfe_cons{head=H, tail=T}, NameNum) ->
+    {TA#alpaca_type_apply{arg=Arg2}, NN2};
+rename_wildcards(#alpaca_cons{head=H, tail=T}, NameNum) ->
     {RenH, N1} = rename_wildcards(H, NameNum),
     {RenT, N2} = rename_wildcards(T, N1),
-    {#mlfe_cons{head=RenH, tail=RenT}, N2};
-rename_wildcards(#mlfe_binary{segments=Segs}=B, NameNum) ->
+    {#alpaca_cons{head=RenH, tail=RenT}, N2};
+rename_wildcards(#alpaca_binary{segments=Segs}=B, NameNum) ->
     F = fun(S, {Memo, NN}) ->
                 {S2, NN2} = rename_wildcards(S, NN),
                 {[S2|Memo], NN2}
         end,
     {Segs2, NN2} = lists:foldl(F, {[], NameNum}, Segs),
-    {B#mlfe_binary{segments=lists:reverse(Segs2)}, NN2};
-rename_wildcards(#mlfe_bits{value=V}=Bits, NameNum) ->
+    {B#alpaca_binary{segments=lists:reverse(Segs2)}, NN2};
+rename_wildcards(#alpaca_bits{value=V}=Bits, NameNum) ->
     {V2, NN} = rename_wildcards(V, NameNum),
-    {Bits#mlfe_bits{value=V2}, NN};
-rename_wildcards(#mlfe_map{pairs=Pairs}=M, NameNum) ->
+    {Bits#alpaca_bits{value=V2}, NN};
+rename_wildcards(#alpaca_map{pairs=Pairs}=M, NameNum) ->
     Folder = fun(P, {Ps, NN}) ->
                      {P2, NN2} = rename_wildcards(P, NN),
                      {[P2|Ps], NN2}
              end,
     {Pairs2, NN} = lists:foldl(Folder, {[], NameNum}, Pairs),
-    {M#mlfe_map{pairs=lists:reverse(Pairs2)}, NN};
-rename_wildcards(#mlfe_map_pair{key=K, val=V}=P, NameNum) ->
+    {M#alpaca_map{pairs=lists:reverse(Pairs2)}, NN};
+rename_wildcards(#alpaca_map_pair{key=K, val=V}=P, NameNum) ->
     {K2, N1} = rename_wildcards(K, NameNum),
     {V2, N2} = rename_wildcards(V, N1),
-    {P#mlfe_map_pair{key=K2, val=V2}, N2};
+    {P#alpaca_map_pair{key=K2, val=V2}, N2};
 
-rename_wildcards(#mlfe_record{members=Ms}=R, NameNum) ->
+rename_wildcards(#alpaca_record{members=Ms}=R, NameNum) ->
     {Ms2, NameNum2} = rename_wildcards(Ms, NameNum),
-    {R#mlfe_record{members=Ms2}, NameNum2};
-rename_wildcards(#mlfe_record_member{val=V}=RM, NameNum) ->
+    {R#alpaca_record{members=Ms2}, NameNum2};
+rename_wildcards(#alpaca_record_member{val=V}=RM, NameNum) ->
     {V2, NameNum2} = rename_wildcards(V, NameNum),
-    {RM#mlfe_record_member{val=V2}, NameNum2};
+    {RM#alpaca_record_member{val=V2}, NameNum2};
 
 rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     Folder = fun(V, {Acc, N}) ->
@@ -2285,7 +2285,7 @@ new_env() ->
 
 %% Top-level typ_of unwraps the reference cells used in unification.
 %% This is only preserved for tests at the moment.
--spec typ_of(Env::env(), Exp::mlfe_expression())
+-spec typ_of(Env::env(), Exp::alpaca_expression())
             -> {typ(), env()} | {error, term()}.
 typ_of(Env, Exp) ->
     case typ_of(Env, 0, Exp) of
@@ -2294,20 +2294,20 @@ typ_of(Env, Exp) ->
     end.
 
 from_code(C) ->
-    {ok, E} = mlfe_ast_gen:parse(mlfe_scanner:scan(C)),
+    {ok, E} = alpaca_ast_gen:parse(alpaca_scanner:scan(C)),
     E.
 
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
 top_typ_of(Code) ->
-    Tokens = mlfe_scanner:scan(Code),
-    {ok, E} = mlfe_ast_gen:parse(Tokens),
+    Tokens = alpaca_scanner:scan(Code),
+    {ok, E} = alpaca_ast_gen:parse(Tokens),
     typ_of(new_env(), E).
 
 %% Check the type of the expression in code from the "top-level" with a
 %% new environment that contains the provided ADTs.
 top_typ_with_types(Code, ADTs) ->
-    {ok, E} = mlfe_ast_gen:parse(mlfe_scanner:scan(Code)),
+    {ok, E} = alpaca_ast_gen:parse(alpaca_scanner:scan(Code)),
     Env = new_env(),
     typ_of(Env#env{current_types=ADTs,
                    type_constructors=constructors(ADTs)},
@@ -2355,18 +2355,18 @@ clause_test_() ->
     [?_assertMatch({{t_clause, t_int, none, t_atom}, _},
                    typ_of(
                      new_env(),
-                     #mlfe_clause{pattern={int, 1, 1},
+                     #alpaca_clause{pattern={int, 1, 1},
                                   result={atom, 1, true}})),
      ?_assertMatch({{t_clause, {unbound, t0, 0}, none, t_atom}, _},
                    typ_of(
                      new_env(),
-                     #mlfe_clause{pattern={symbol, 1, "x"},
+                     #alpaca_clause{pattern={symbol, 1, "x"},
                                   result={atom, 1, true}})),
      ?_assertMatch({{t_clause, t_int, none, t_int}, _},
                    typ_of(
                      new_env(),
-                     #mlfe_clause{pattern={symbol, 1, "x"},
-                                  result=#mlfe_apply{
+                     #alpaca_clause{pattern={symbol, 1, "x"},
+                                  result=#alpaca_apply{
                                             name={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {int, 1, 2}]}}))
@@ -2511,15 +2511,15 @@ module_typing_test() ->
         "add x y = x + y\n\n"
         "head l = match l with\n"
         "  h :: t -> h",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
-    ?assertMatch({ok, #mlfe_module{
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    ?assertMatch({ok, #alpaca_module{
                          functions=[
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 5, "add"},
                                        type={t_arrow,
                                              [t_int, t_int],
                                              t_int}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 7, "head"},
                                        type={t_arrow,
                                              [{t_list, {unbound, A, _}}],
@@ -2533,15 +2533,15 @@ module_with_forward_reference_test() ->
         "export add/2\n\n"
         "add x y = adder x y\n\n"
         "adder x y = x + y",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     ?assertMatch(
-       {ok, #mlfe_module{
+       {ok, #alpaca_module{
                functions=[
-                          #mlfe_fun_def{
+                          #alpaca_fun_def{
                              name={symbol, 5, "add"},
                              type={t_arrow, [t_int, t_int], t_int}},
-                          #mlfe_fun_def{
+                          #alpaca_fun_def{
                              name={symbol, 7, "adder"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M, Env#env{current_module=M, modules=[M]})).
@@ -2554,15 +2554,15 @@ simple_inter_module_test() ->
         "module inter_module_two\n\n"
         "export adder/2\n\n"
         "adder x y = x + y",
-    {ok, NV, _, M1} = mlfe_ast_gen:parse_module(0, Mod1),
-    {ok, _, _, M2} = mlfe_ast_gen:parse_module(NV, Mod2),
+    {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
+    {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch(
-       {ok, #mlfe_module{
+       {ok, #alpaca_module{
                function_exports=[],
                functions=[
-                          #mlfe_fun_def{
+                          #alpaca_fun_def{
                              name={symbol, 3, "add"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M1, Env)).
@@ -2577,8 +2577,8 @@ bidirectional_module_fail_test() ->
         "export adder/2, failing_fun/1\n\n"
         "adder x y = x + y\n\n"
         "failing_fun x = inter_module_one.add x x",
-    {ok, NV, _, M1} = mlfe_ast_gen:parse_module(0, Mod1),
-    {ok, _, _, M2} = mlfe_ast_gen:parse_module(NV, Mod2),
+    {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
+    {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch({error, {bidirectional_module_ref,
@@ -2620,15 +2620,15 @@ infinite_mutual_recursion_test() ->
         "module mutual_rec_test\n\n"
         "a x = b x\n\n"
         "b x = let y = x + 1 in a y",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     E = new_env(),
-    ?assertMatch({ok, #mlfe_module{
+    ?assertMatch({ok, #alpaca_module{
                          name=mutual_rec_test,
                          functions=[
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 3, "a"},
                                        type={t_arrow, [t_int], t_rec}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 5, "b"},
                                        type={t_arrow, [t_int], t_rec}}]}},
                  type_module(M, E)).
@@ -2640,15 +2640,15 @@ terminating_mutual_recursion_test() ->
         "b x = match x with\n"
         "  10 -> :ten\n"
         "| y -> a y",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     E = new_env(),
-    ?assertMatch({ok, #mlfe_module{
+    ?assertMatch({ok, #alpaca_module{
                          name=terminating_mutual_rec_test,
                          functions=[
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 3, "a"},
                                        type={t_arrow, [t_int], t_atom}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 5, "b"},
                                        type={t_arrow, [t_int], t_atom}}]}},
                  type_module(M, E)).
@@ -2743,7 +2743,7 @@ union_adt_test_() ->
                      "f x = match x with "
                      "  0 -> :zero"
                      "| i, is_integer i -> i",
-                     [#mlfe_type{name={type_name, 1, "t"},
+                     [#alpaca_type{name={type_name, 1, "t"},
                                  vars=[],
                                  members=[t_int, t_atom]}]))
     ].
@@ -2761,9 +2761,9 @@ type_tuple_test_() ->
                      "f x = match x with "
                      "   0 -> :zero"
                      "| (i, 0) -> :adt",
-                     [#mlfe_type{name={type_name, 1, "t"},
+                     [#alpaca_type{name={type_name, 1, "t"},
                                  vars=[{type_var, 1, "x"}],
-                                 members=[#mlfe_type_tuple{
+                                 members=[#alpaca_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       t_int]},
                                           t_int]}])),
@@ -2775,10 +2775,10 @@ type_tuple_test_() ->
                      "f x = match x with "
                      "   0 -> :zero"
                      "| (i, 0) -> :adt",
-                     [#mlfe_type{name={type_name, 1, "t"},
+                     [#alpaca_type{name={type_name, 1, "t"},
                                  vars=[{type_var, 1, "x"}],
                                  members=[t_int,
-                                          #mlfe_type_tuple{
+                                          #alpaca_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       t_int]}]}])),
      %% A recursive type with a bad variable:
@@ -2789,15 +2789,15 @@ type_tuple_test_() ->
           " 0 -> :zero"
           "| (i, 0) -> :adt"
           "| (0, (i, 0)) -> :nested",
-          [#mlfe_type{name={type_name, 1, "t"},
+          [#alpaca_type{name={type_name, 1, "t"},
                       vars=[{type_var, 1, "x"}],
                       members=[t_int,
-                               #mlfe_type_tuple{
+                               #alpaca_type_tuple{
                                   members=[{type_var, 1, "x"},
                                            t_int]},
-                               #mlfe_type_tuple{
+                               #alpaca_type_tuple{
                                   members=[t_int,
-                                           #mlfe_type{
+                                           #alpaca_type{
                                               name={type_name, 1, "t"},
                                               vars=[{type_var, 1, "y"}]}
                                           ]}]}]))
@@ -2818,12 +2818,12 @@ same_polymorphic_adt_union_test_() ->
                      "  (1, 1) -> :int_one"
                      "| (1, 1, :atom) -> :one_atom in "
                      "(a, b)",
-                     [#mlfe_type{name={type_name, 1, "t"},
+                     [#alpaca_type{name={type_name, 1, "t"},
                                  vars=[{type_var, 1, "x"}],
-                                 members=[#mlfe_type_tuple{
+                                 members=[#alpaca_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       t_int]},
-                                          #mlfe_type_tuple{
+                                          #alpaca_type_tuple{
                                              members=[{type_var, 1, "x"},
                                                       t_int,
                                                       t_atom]}]}]))
@@ -2838,10 +2838,10 @@ type_constructor_test_() ->
                      "f x = match x with "
                      "i, is_integer i -> :is_int"
                      "| A i -> :is_a",
-                     [#mlfe_type{name={type_name, 1, "t"},
+                     [#alpaca_type{name={type_name, 1, "t"},
                                  vars=[{type_var, 1, "x"}],
                                  members=[t_int,
-                                          #mlfe_constructor{
+                                          #alpaca_constructor{
                                              name={type_constructor, 1, "A"},
                                              arg={type_var, 1, "x"}}]}])),
      ?_assertMatch(
@@ -2853,12 +2853,12 @@ type_constructor_test_() ->
           "f x = match x % 2 with "
           "  0 -> Even x"
           "| 1 -> Odd x",
-          [#mlfe_type{name={type_name, 1, "even_odd"},
+          [#alpaca_type{name={type_name, 1, "even_odd"},
                       vars=[],
-                      members=[#mlfe_constructor{
+                      members=[#alpaca_constructor{
                                   name={type_constructor, 1, "Even"},
                                   arg=t_int},
-                               #mlfe_constructor{
+                               #alpaca_constructor{
                                   name={type_constructor, 1, "Odd"},
                                   arg=t_int}]}])),
      ?_assertMatch(
@@ -2871,14 +2871,14 @@ type_constructor_test_() ->
           "  i, is_integer i -> :int"
           "| f, is_float f   -> :float"
           "| (k, v)          -> :keyed_value",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "json_subset"},
               vars=[],
               members=[t_int,
                        t_float,
-                       #mlfe_type_tuple{
+                       #alpaca_type_tuple{
                           members=[t_string,
-                                   #mlfe_type{
+                                   #alpaca_type{
                                       name={type_name, 1, "json_subset"}}]}
                       ]}])),
      ?_assertMatch(
@@ -2888,34 +2888,34 @@ type_constructor_test_() ->
          _},
         top_typ_with_types(
           "f x = Cons (x, Cons (x, Nil))",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
-              members=[#mlfe_constructor{
+              members=[#alpaca_constructor{
                           name={type_constructor, 1, "Cons"},
-                          arg=#mlfe_type_tuple{
+                          arg=#alpaca_type_tuple{
                                  members=[{type_var, 1, "x"},
-                                          #mlfe_type{
+                                          #alpaca_type{
                                              name={type_name, 1, "my_list"},
                                              vars=[{type_var, 1, "x"}]}]}},
-                       #mlfe_constructor{
+                       #alpaca_constructor{
                           name={type_constructor, 1, "Nil"},
                           arg=none}]}])),
      ?_assertMatch(
         {error, {cannot_unify, _, _, t_float, t_int}},
         top_typ_with_types(
           "f x = Cons (1, Cons (2.0, Nil))",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
-              members=[#mlfe_constructor{
+              members=[#alpaca_constructor{
                           name={type_constructor, 1, "Cons"},
-                          arg=#mlfe_type_tuple{
+                          arg=#alpaca_type_tuple{
                                  members=[{type_var, 1, "x"},
-                                          #mlfe_type{
+                                          #alpaca_type{
                                              name={type_name, 1, "my_list"},
                                              vars=[{type_var, 1, "x"}]}]}},
-                       #mlfe_constructor{
+                       #alpaca_constructor{
                           name={type_constructor, 1, "Nil"},
                           arg=none}]}])),
      ?_assertMatch(
@@ -2925,12 +2925,12 @@ type_constructor_test_() ->
          _},
         top_typ_with_types(
           "f x = Constructor [1]",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
-              members=[#mlfe_constructor{
+              members=[#alpaca_constructor{
                           name={type_constructor, 1, "Constructor"},
-                          arg={mlfe_list, t_int}}]}])),
+                          arg={alpaca_list, t_int}}]}])),
      ?_assertMatch(
         {{t_arrow,
           [{unbound, _, _}],
@@ -2938,12 +2938,12 @@ type_constructor_test_() ->
          _},
         top_typ_with_types(
           "f x = Constructor #{1 => \"one\"}",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
-              members=[#mlfe_constructor{
+              members=[#alpaca_constructor{
                           name={type_constructor, 1, "Constructor"},
-                          arg={mlfe_map, t_int, t_string}}]}])),
+                          arg={alpaca_map, t_int, t_string}}]}])),
      ?_assertMatch(
         {{t_arrow,
           [{unbound, _, _}],
@@ -2951,13 +2951,13 @@ type_constructor_test_() ->
          _},
         top_typ_with_types(
           "f x = Constructor 1",
-          [#mlfe_type{
+          [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
-              members=[#mlfe_constructor{
+              members=[#alpaca_constructor{
                           name={type_constructor, 1, "Constructor"},
-                          arg=#mlfe_type{name={type_name, 1, "union"}}}]},
-           #mlfe_type{
+                          arg=#alpaca_type{name={type_name, 1, "union"}}}]},
+           #alpaca_type{
               name={type_name, 1, "union"},
               vars=[],
               members=[t_int, t_float]}]))
@@ -2982,7 +2982,7 @@ type_constructor_multi_level_type_alias_arg_test() ->
     BadKey = Code ++ "make () = Constructor [(1, true)]",
     BadVal = Code ++ "make () = Constructor [(:test_passed, 1)]",
     BadArg = Code ++ "make () = Constructor 1",
-    ?assertMatch({ok, #mlfe_module{}}, module_typ_and_parse(Valid)),
+    ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Valid)),
     ?assertMatch({error, {cannot_unify, _, _, _, _}},
                  module_typ_and_parse(BadKey)),
     ?assertMatch({error, {cannot_unify, _, _, _, _}},
@@ -3001,9 +3001,9 @@ type_var_replacement_test_() ->
                  "    Right Some a -> a\n\n"
                  "tester () = foo Right Some 1",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{},
-                                   #mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{},
+                                   #alpaca_fun_def{
                                       type={t_arrow, [t_unit], t_int}}]}},
                 module_typ_and_parse(Code))
      end
@@ -3017,9 +3017,9 @@ type_var_replacement_test_() ->
                  "    Right Some a -> a\n\n"
                  "tester () = foo Right Some 1",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{},
-                                   #mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{},
+                                   #alpaca_fun_def{
                                       type={t_arrow, [t_unit], t_int}}]}},
                 module_typ_and_parse(Code))
      end
@@ -3037,12 +3037,12 @@ rename_constructor_wildcard_test() ->
         "| Pair (_, _) -> :tuple\n"
         "| Pair (_, Pair (_, _)) -> :nested_t"
         "| Pair (_, Pair (_, Pair(_, _))) -> :double_nested_t",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
-       {ok, #mlfe_module{
-               functions=[#mlfe_fun_def{
+       {ok, #alpaca_module{
+               functions=[#alpaca_fun_def{
                              name={symbol, 5, "a"},
                              type={t_arrow,
                                    [#adt{
@@ -3061,7 +3061,7 @@ module_with_map_in_adt_test() ->
         "a x = match x with\n"
         "    h :: t -> h"
         "  | #{:key => v} -> v",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     ?assertMatch({ok, _}, type_modules([M])).
 
 module_with_adt_map_error_test() ->
@@ -3071,7 +3071,7 @@ module_with_adt_map_error_test() ->
         "a x = match x with\n"
         "    h :: t, is_string h -> h"
         "  | #{:key => v}, is_chars v -> v",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
@@ -3087,16 +3087,16 @@ json_union_type_test() ->
         "  | f, is_float f -> :float"
         "  | (_, _) :: _ -> :json_object"
         "  | _ :: _ -> :json_array",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
        {ok,
-        #mlfe_module{
-           types=[#mlfe_type{
+        #alpaca_module{
+           types=[#alpaca_type{
                      module='json_union_type_test',
                      name={type_name, 3, "json"}}],
-           functions=[#mlfe_fun_def{
+           functions=[#alpaca_fun_def{
                          name={symbol, _, "json_to_atom"},
                          type={t_arrow,
                                [#adt{name="json",
@@ -3122,12 +3122,12 @@ module_with_types_test() ->
         "| f, is_float f -> :float\n"
         "| (_, _) -> :tuple"
         "| (_, (_, _)) -> :nested",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
-       {ok, #mlfe_module{
-               functions=[#mlfe_fun_def{
+       {ok, #alpaca_module{
+               functions=[#alpaca_fun_def{
                              name={symbol, 5, "a"},
                              type={t_arrow,
                                    [#adt{
@@ -3147,14 +3147,14 @@ module_with_types_test() ->
 recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
 recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nfail () = height 1",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch({error,
                    {cannot_unify,tree,15,
@@ -3181,7 +3181,7 @@ builtin_types_as_type_variables_test() ->
         "module optlist\n\n"
         "type proplist 'k 'v = list ('k, 'v)\n\n"
         "type optlist 'v = proplist atom 'v",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
@@ -3193,11 +3193,11 @@ module_matching_lists_test() ->
         "Nil -> :nil"
         "| Cons (i, Nil), is_integer i -> :one_item"
         "| Cons (i, x) -> :more_than_one",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
-    ?assertMatch({ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
+    ?assertMatch({ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
                                        name={symbol, 5, "a"},
                                        type={t_arrow,
                                              [#adt{
@@ -3223,26 +3223,26 @@ type_var_protection_test() ->
         "| Cons (f, Nil), is_float f -> :one_float"
         "| Cons (f, x) -> :more_than_one_float\n\n"
         "c () = (Cons (1.0, Nil), Cons(1, Nil))",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
-       {ok, #mlfe_module{
-               functions=[#mlfe_fun_def{
+       {ok, #alpaca_module{
+               functions=[#alpaca_fun_def{
                              name={symbol, 5, "a"},
                              type={t_arrow,
                                    [#adt{
                                        name="my_list",
                                        vars=[{"x", t_int}]}],
                                    t_atom}},
-                          #mlfe_fun_def{
+                          #alpaca_fun_def{
                              name={symbol, 7, "b"},
                              type={t_arrow,
                                    [#adt{
                                        name="my_list",
                                        vars=[{"x", t_float}]}],
                                    t_atom}},
-                          #mlfe_fun_def{
+                          #alpaca_fun_def{
                              name={symbol, 9, "c"},
                              type={t_arrow,
                                    [t_unit],
@@ -3262,7 +3262,7 @@ type_var_protection_fail_unify_test() ->
         "c () = "
         "let x = Cons (1.0, Nil) in "
         "Cons (1, x)",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
@@ -3284,8 +3284,8 @@ typed_tests_test() ->
         "add x y = x + y\n\n"
         "test \"add floats\" = add 1 2",
     Res = module_typ_and_parse(Code),
-    ?assertMatch({ok, #mlfe_module{
-                         tests=[#mlfe_test{name={string, 5, "add floats"}}]}},
+    ?assertMatch({ok, #alpaca_module{
+                         tests=[#alpaca_test{name={string, 5, "add floats"}}]}},
                  Res).
 
 polymorphic_list_as_return_value_test_() ->
@@ -3310,9 +3310,9 @@ polymorphic_list_as_return_value_test_() ->
                  "    a :: _ -> a\n\n"
                  "foo () = head [1, 2]",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{},
-                                   #mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{},
+                                   #alpaca_fun_def{
                                       type={t_arrow, [t_unit], t_int}}]}},
                 module_typ_and_parse(Code))
      end
@@ -3354,12 +3354,12 @@ polymorphic_map_as_return_value_test_() ->
                    "    #{:a => a} -> a\n\n"
                    "foo () = get_a #{:a => 1}",
                ?assertMatch(
-                  {ok, #mlfe_module{
-                          functions=[#mlfe_fun_def{
+                  {ok, #alpaca_module{
+                          functions=[#alpaca_fun_def{
                                        type={t_arrow,
                                              [{t_map, t_atom, {unbound, A, _}}],
                                              {unbound, A, _}}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        type={t_arrow, [t_unit], t_int}
                                       }]
                          }},
@@ -3399,7 +3399,7 @@ polymorphic_spawn_test() ->
         "  receive with\n"
         "    x -> behaviour (state_f state x) state_f",
     BaseEnv = new_env(),
-    {ok, FunExp} = mlfe_ast_gen:parse(mlfe_scanner:scan(FunCode)),
+    {ok, FunExp} = alpaca_ast_gen:parse(alpaca_scanner:scan(FunCode)),
     {FunType, _} = typ_of(BaseEnv, FunExp),
     ?assertMatch({t_receiver,
                   {unbound,t2,0},
@@ -3411,10 +3411,10 @@ polymorphic_spawn_test() ->
                    t_rec}}, 
                  FunType),
     NewBindings = [{"behaviour", FunType}|BaseEnv#env.bindings],
-    NewModule = #mlfe_module{functions=[FunExp#mlfe_fun_def{type=FunType}]},
+    NewModule = #alpaca_module{functions=[FunExp#alpaca_fun_def{type=FunType}]},
     EnvWithFun = BaseEnv#env{bindings=NewBindings, current_module=NewModule},
     SpawnCode = "let f x y = x +. y in spawn behaviour 1.0 f",
-    {ok, SpawnExp} = mlfe_ast_gen:parse(mlfe_scanner:scan(SpawnCode)),
+    {ok, SpawnExp} = alpaca_ast_gen:parse(alpaca_scanner:scan(SpawnCode)),
     {SpawnType, _} = typ_of(EnvWithFun,  SpawnExp),
                             
     ?assertMatch({t_pid, t_float}, SpawnType).
@@ -3425,7 +3425,7 @@ polymorphic_spawn_test() ->
 %%% Things like receive, send, and spawn.
 
 module_typ_and_parse(Code) ->
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     case type_modules([M]) of
         {ok, [M2]} -> {ok, M2};
         Err        -> Err
@@ -3449,8 +3449,8 @@ receive_test_() ->
                  "  i, is_integer i -> :received_int"
                  "| f, is_float f -> :received_float",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       name={symbol, 5, "a"},
                                       type={t_receiver,
                                             #adt{name="my_union"},
@@ -3469,15 +3469,15 @@ receive_test_() ->
                  "g x = receive with "
                  "  i -> f (i - x)",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       name={symbol, 3, "f"},
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
                                              [t_int],
                                              t_atom}}},
-                                   #mlfe_fun_def{
+                                   #alpaca_fun_def{
                                       name={symbol, 5, "g"},
                                       type={t_receiver,
                                             t_int,
@@ -3496,15 +3496,15 @@ receive_test_() ->
                  "b () = receive with "
                  "B -> a () after 5 a()",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       name={symbol, 5, "a"},
                                       type={t_receiver,
                                             #adt{name="t"},
                                             {t_arrow,
                                              [t_unit],
                                              t_rec}}},
-                                   #mlfe_fun_def{
+                                   #alpaca_fun_def{
                                       name={symbol, 7, "b"},
                                       type={t_receiver,
                                             #adt{name="t"},
@@ -3524,8 +3524,8 @@ receive_test_() ->
                  "    i -> i "
                  "  in x + y + z",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
@@ -3557,15 +3557,15 @@ spawn_test_() ->
                  "f x = receive with "
                  " i -> f (x + i)\n\n"
                  "start_f init = spawn f init",
-             ?assertMatch({ok, #mlfe_module{
-                                  functions=[#mlfe_fun_def{
+             ?assertMatch({ok, #alpaca_module{
+                                  functions=[#alpaca_fun_def{
                                                 name={symbol, 5, "f"},
                                                 type={t_receiver,
                                                       t_int,
                                                       {t_arrow,
                                                        [t_int],
                                                        t_rec}}},
-                                             #mlfe_fun_def{
+                                             #alpaca_fun_def{
                                                 name={symbol, 7, "start_f"},
                                                 type={t_arrow,
                                                       [t_int],
@@ -3580,15 +3580,15 @@ spawn_test_() ->
                   "  i, is_integer i -> i\n\n"
                   "not_recv () = (recv ()) + 2",
               ?assertMatch(
-                 {ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
                                        name={symbol, 3, "recv"},
                                        type={t_receiver,
                                              t_int,
                                              {t_arrow,
                                               [t_unit],
                                               t_int}}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, 5, "not_recv"},
                                        type={t_receiver,
                                              t_int,
@@ -3610,22 +3610,22 @@ spawn_test_() ->
                   "  | B xx -> b (xx + x)\n\n"
                   "start_a init = spawn a init",
               ?assertMatch(
-                 {ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
                                        name={symbol, _, "a"},
                                        type={t_receiver,
                                              #adt{name="t"},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, _, "b"},
                                        type={t_receiver,
                                              #adt{name="t"},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
-                                    #mlfe_fun_def{
+                                    #alpaca_fun_def{
                                        name={symbol, _, "start_a"},
                                        type={t_arrow,
                                              [t_int],
@@ -3656,11 +3656,11 @@ spawn_test_() ->
                   "f x = f (x + 1)\n\n"
                   "start_f () = spawn f 0",
               ?assertMatch(
-                 {ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
                                        name={symbol, _, "f"},
                                        type={t_arrow, [t_int], t_rec}},
-                                    #mlfe_fun_def{}]}},
+                                    #alpaca_fun_def{}]}},
                  module_typ_and_parse(Code))
       end
     ].
@@ -3675,7 +3675,7 @@ send_message_test_() ->
                  "  let p = spawn f 0 in "
                  "  send 1 p",
              ?assertMatch(
-                {ok, #mlfe_module{}},
+                {ok, #alpaca_module{}},
                 module_typ_and_parse(Code))
      end
     , fun() ->
@@ -3739,8 +3739,8 @@ record_inference_test_() ->
                  "  {x = x1} -> (x1 * 2, r)\n\n"
                  "g () = f {x=1, y=2}",
              ?assertMatch({ok, 
-                           #mlfe_module{
-                              functions=[#mlfe_fun_def{
+                           #alpaca_module{
+                              functions=[#alpaca_fun_def{
                                             name={symbol, _, "f"},
                                             type={t_arrow,
                                                   [#t_record{
@@ -3755,7 +3755,7 @@ record_inference_test_() ->
                                                                    name=x,
                                                                    type=t_int}],
                                                        row_var={unbound, A, _}}]}}},
-                                         #mlfe_fun_def{
+                                         #alpaca_fun_def{
                                             name={symbol, _, "g"},
                                             type={t_arrow,
                                                   [t_unit],
@@ -3787,8 +3787,8 @@ record_inference_test_() ->
                  "  | Adt -> 0",
              ?assertMatch(
                 {ok, 
-                 #mlfe_module{
-                    functions=[#mlfe_fun_def{
+                 #alpaca_module{
+                    functions=[#alpaca_fun_def{
                                   type={t_arrow,
                                         [#adt{
                                             name="my_adt",
@@ -3817,8 +3817,8 @@ record_inference_test_() ->
                  "                                city: string}}\n\n"
                  "fname r = match r with\n"
                  "  Nested {address={street=s}}, is_string s ->  s",
-             ?assertMatch({ok, #mlfe_module{
-                                  functions=[#mlfe_fun_def{
+             ?assertMatch({ok, #alpaca_module{
+                                  functions=[#alpaca_fun_def{
                                                 type={t_arrow,
                                                       [#adt{name="nested"}],
                                                       t_string}}]}},
@@ -3826,7 +3826,7 @@ record_inference_test_() ->
      end
     ].
 
-%% In the sample test file record_map_match_order.mlfe the ordering of maps
+%% In the sample test file record_map_match_order.alp the ordering of maps
 %% and records in the definition of a type impacts the unification and thus
 %% inference of a function's return type.  This test is to check for multiple
 %% orderings and regressions.
@@ -3844,8 +3844,8 @@ adt_ordering_test_() ->
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
              ?assertMatch({ok, 
-                           #mlfe_module{
-                              functions=[#mlfe_fun_def{
+                           #alpaca_module{
+                              functions=[#alpaca_fun_def{
                                             type={t_arrow,
                                                   [#adt{
                                                     vars=[{"a", {unbound, A, _}}],
@@ -3862,8 +3862,8 @@ adt_ordering_test_() ->
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
              ?assertMatch({ok, 
-                           #mlfe_module{
-                              functions=[#mlfe_fun_def{
+                           #alpaca_module{
+                              functions=[#alpaca_fun_def{
                                             type={t_arrow,
                                                   [#adt{
                                                       vars=[{"a", {unbound, A, _}}],
@@ -3883,8 +3883,8 @@ adt_ordering_test_() ->
                   "h () = f [1, 2]",
               ?assertMatch(
                  {ok, 
-                  #mlfe_module{
-                     functions=[#mlfe_fun_def{
+                  #alpaca_module{
+                     functions=[#alpaca_fun_def{
                                    type={t_arrow,
                                          [#adt{
                                              vars=[{"a", {unbound, A, _}}],
@@ -3892,8 +3892,8 @@ adt_ordering_test_() ->
                                                       {t_list, {unbound, A, _}}]
                                             }],
                                          {unbound, A, _}}},
-                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
-                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+                                #alpaca_fun_def{type={t_arrow, [t_unit], t_int}},
+                                #alpaca_fun_def{type={t_arrow, [t_unit], t_int}}]}},
                  module_typ_and_parse(Code))
       end
     ,fun() ->
@@ -3907,8 +3907,8 @@ adt_ordering_test_() ->
                  "h () = f [1, 2]",
               ?assertMatch(
                  {ok, 
-                  #mlfe_module{
-                     functions=[#mlfe_fun_def{
+                  #alpaca_module{
+                     functions=[#alpaca_fun_def{
                                    type={t_arrow,
                                          [#adt{
                                              vars=[{"a", {unbound, A, _}}],
@@ -3916,8 +3916,8 @@ adt_ordering_test_() ->
                                                       {t_map, t_atom, {unbound, A, _}}]
                                             }],
                                          {unbound, A, _}}},
-                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
-                                #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+                                #alpaca_fun_def{type={t_arrow, [t_unit], t_int}},
+                                #alpaca_fun_def{type={t_arrow, [t_unit], t_int}}]}},
 
                            module_typ_and_parse(Code))
      end
@@ -3932,13 +3932,13 @@ adt_ordering_test_() ->
                  "check_map () = get_x #{:x => 1}\n\n"
                  "check_record () = get_x {x=2}",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       type={t_arrow,
                                             [#adt{}],
                                             t_int}},
-                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
-                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}}]}},
+                                   #alpaca_fun_def{type={t_arrow, [t_unit], t_int}},
+                                   #alpaca_fun_def{type={t_arrow, [t_unit], t_int}}]}},
                 module_typ_and_parse(Code))
      end
     ,fun() ->
@@ -3952,13 +3952,13 @@ adt_ordering_test_() ->
                  "check_map () = get_x #{:x => 1}\n\n"
                  "check_record () = get_x {x=:b}",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       type={t_arrow,
                                             [#adt{vars=[{"a", {unbound, A, _}}]}],
                                             {unbound, A, _}}},
-                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_int}},
-                                   #mlfe_fun_def{type={t_arrow, [t_unit], t_atom}}]}},
+                                   #alpaca_fun_def{type={t_arrow, [t_unit], t_int}},
+                                   #alpaca_fun_def{type={t_arrow, [t_unit], t_atom}}]}},
                           module_typ_and_parse(Code))
      end
     ].
@@ -3971,8 +3971,8 @@ unify_with_error_test_() ->
                  "    0 -> throw :zero"
                  "  | _ -> x * 2",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       type={t_arrow, [t_int], t_int}}]}},
                 module_typ_and_parse(Code))
      end
@@ -3997,8 +3997,8 @@ function_argument_pattern_test_() ->
                  "f 0 = :zero\n\n"
                  "f x = :not_zero",
              ?assertMatch(
-                {ok, #mlfe_module{
-                        functions=[#mlfe_fun_def{
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       versions=[_, _],
                                       type={t_arrow, [t_int], t_atom}}]}},
                 module_typ_and_parse(Code))
@@ -4012,8 +4012,8 @@ function_argument_pattern_test_() ->
                    "my_map (None) _ = None\n\n"
                    "my_map Some a f = Some (f a)",
                ?assertMatch(
-                  {ok, #mlfe_module{
-                          functions=[#mlfe_fun_def{
+                  {ok, #alpaca_module{
+                          functions=[#alpaca_fun_def{
                                         versions=[_, _],
                                         type={t_arrow,
                                               [#adt{vars=[{_, {unbound, A, _}}]},
@@ -4030,8 +4030,8 @@ function_argument_pattern_test_() ->
                   "my_map _ None = None\n\n"
                   "my_map f Some a = Some (f a)",
               ?assertMatch(
-                 {ok, #mlfe_module{
-                         functions=[#mlfe_fun_def{
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
                                        versions=[_, _],
                                        type={t_arrow,
                                              [{t_arrow, 
@@ -4123,22 +4123,22 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
                  {ok, 
-                 #mlfe_module{
-                    functions=[#mlfe_fun_def{
+                 #alpaca_module{
+                    functions=[#alpaca_fun_def{
                                   type={t_arrow,
                                         [{t_arrow, [{unbound, A, _}], {unbound, B, _}},
                                          #adt{vars=[{_, {unbound, A, _}}]}],
                                         #adt{vars=[{_, {unbound, B, _}}]}}},
-                               #mlfe_fun_def{
+                               #alpaca_fun_def{
                                   type={t_arrow, [t_int], t_int}},
-                               #mlfe_fun_def{
+                               #alpaca_fun_def{
                                   type={t_arrow,
                                         [#t_record{
                                             members=[#t_record_member{
                                                         name=x,
                                                         type={unbound, C, _}}]}],
                                         #adt{vars=[{_, {unbound, C, _}}]}}},
-                               #mlfe_fun_def{
+                               #alpaca_fun_def{
                                   type={t_arrow, 
                                         [t_unit],
                                         #adt{vars=[{"a", t_int}]}}}]
@@ -4151,7 +4151,7 @@ no_process_leak_test() ->
     Code =
         "module no_leaks\n\n"
         "add a b = a + b",
-    {ok, _, _, M} = mlfe_ast_gen:parse_module(0, Code),
+    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),
     ProcessesAfter = wait_for_processes_to_die(ProcessesBefore, 10),

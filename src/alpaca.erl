@@ -14,7 +14,7 @@
 %%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
--module(mlfe).
+-module(alpaca).
 
 -export([ compile/1
         , compile/2
@@ -30,7 +30,7 @@
              , file/2
              ]).
 
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -61,7 +61,7 @@ compile({text, Code}, Opts) ->
     case type_modules(Mods) of
         {error, _}=Err -> Err;
         {ok, [TypedMod]} ->
-            {ok, Forms} = mlfe_codegen:gen(TypedMod, Opts),
+            {ok, Forms} = alpaca_codegen:gen(TypedMod, Opts),
             compile:forms(Forms, [report, verbose, from_core])
     end;
 
@@ -83,8 +83,8 @@ load_files(Filenames) ->
               [Res|Acc]
       end, [], Filenames).
 
-compile_module(#mlfe_module{name=N}=Mod, Opts) ->
-    {ok, Forms} = mlfe_codegen:gen(Mod, Opts),
+compile_module(#alpaca_module{name=N}=Mod, Opts) ->
+    {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
     #compiled_module{
        name=N,
@@ -100,7 +100,7 @@ parse_modules(Mods) ->
     F = fun
             (_, {error, _}=Err) -> Err;
         (ModCode, {ok, NV, Map, Acc}) ->
-                            case mlfe_ast_gen:parse_module(NV, ModCode) of
+                            case alpaca_ast_gen:parse_module(NV, ModCode) of
                                 {ok, NV2, Map2, Mod} ->
                                     {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
                                 {error, _}=Err ->
@@ -114,12 +114,12 @@ type_modules({ok, _, _, Mods}) ->
 type_modules({error, _}=Err) ->
     Err;
 type_modules(Mods) ->
-    mlfe_typer:type_modules(Mods).
+    alpaca_typer:type_modules(Mods).
 
 -ifdef(TEST).
 
 basic_file_test() ->
-    Res = file("test_files/basic_compile_file.mlfe"),
+    Res = file("test_files/basic_compile_file.alp"),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     ?assertEqual('basic_compile_file', N),
     ?assertEqual("basic_compile_file.beam", FN),
@@ -127,7 +127,7 @@ basic_file_test() ->
     ?assertEqual(1998, N:double(999)).
 
 basic_math_compile_test() ->
-    Res = file("test_files/basic_math.mlfe", []),
+    Res = file("test_files/basic_math.alp", []),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     ?assertEqual('basic_math', N),
     ?assertEqual("basic_math.beam", FN),
@@ -140,7 +140,7 @@ basic_math_compile_test() ->
     true = code:delete(N).
 
 basic_adt_compile_test() ->
-    Res = compile({files, ["test_files/basic_adt.mlfe"]}),
+    Res = compile({files, ["test_files/basic_adt.alp"]}),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(0, N:len('Nil')),
@@ -149,7 +149,7 @@ basic_adt_compile_test() ->
     true = code:delete(N).
 
 basic_concat_compile_test() ->
-    Res = compile({files, ["test_files/string_concat.mlfe"]}),
+    Res = compile({files, ["test_files/string_concat.alp"]}),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual("Hello, world", N:hello("world")),
@@ -165,7 +165,7 @@ compile_and_load(Files, Opts) ->
     lists:foldl(LoadFolder, [], Compiled).
 
 type_import_test() ->
-    Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"],
+    Files = ["test_files/basic_adt.alp", "test_files/type_import.alp"],
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     M = type_import,
@@ -173,7 +173,7 @@ type_import_test() ->
     [code:delete(N) || N <- ModuleNames].
 
 type_imports_and_pattern_test() ->
-    Files = ["test_files/basic_adt.mlfe", "test_files/list_opts.mlfe"],
+    Files = ["test_files/basic_adt.alp", "test_files/list_opts.alp"],
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     LO = list_opts,
@@ -183,14 +183,14 @@ type_imports_and_pattern_test() ->
     [code:delete(N) || N <- ModuleNames].
 
 private_types_error_test() ->
-    Files = ["test_files/unexported_adts.mlfe", "test_files/list_opts.mlfe"],
+    Files = ["test_files/unexported_adts.alp", "test_files/list_opts.alp"],
     Code = load_files(Files),
     ?assertEqual(
        {error, {unexported_type, list_opts, basic_adt, "my_list"}},
        type_modules(parse_modules(Code))).
 
 basic_pid_test() ->
-    Files = ["test_files/basic_pid_test.mlfe"],
+    Files = ["test_files/basic_pid_test.alp"],
     [M] = compile_and_load(Files, []),
     Pid = M:start_pid_fun(0),
     Pid ! {'Fetch', self()},
@@ -207,7 +207,7 @@ basic_pid_test() ->
     code:delete(M).
 
 basic_map_test() ->
-    Files =["test_files/basic_map_test.mlfe"],
+    Files =["test_files/basic_map_test.alp"],
     [M] = compile_and_load(Files, []),
     ?assertEqual({'Ok', 1}, M:get('one', M:test_map(unit))),
     ?assertEqual('NotFound', M:get('four', M:test_map(unit))),
@@ -219,7 +219,7 @@ basic_map_test() ->
     code:delete(M).
 
 basic_binary_test() ->
-    Files =["test_files/basic_binary.mlfe"],
+    Files =["test_files/basic_binary.alp"],
     [M] = compile_and_load(Files, []),
     ?assertEqual(1, M:count_one_twos(<<1, 2>>)),
     ?assertEqual(2, M:count_one_twos(<<1, 2, 1, 2, 3, 1, 2>>)),
@@ -235,7 +235,7 @@ basic_binary_test() ->
     code:delete(M).
 
 basic_unit_tests_test() ->
-    Files = ["test_files/basic_module_with_tests.mlfe"],
+    Files = ["test_files/basic_module_with_tests.alp"],
     [M] = compile_and_load(Files, [test]),
     %% Checking that the synthesized test functions are exported:
     ?assertEqual(passed, M:'add_2_and_2_test'()),
@@ -247,15 +247,15 @@ basic_unit_tests_test() ->
     end.
 
 simple_example_module_test() ->
-    [M] = compile_and_load(["test_files/simple_example.mlfe"], []),
+    [M] = compile_and_load(["test_files/simple_example.alp"], []),
     code:delete(M).
 
 comments_test() ->
-    [M] = compile_and_load(["test_files/comments.mlfe"], []),
+    [M] = compile_and_load(["test_files/comments.alp"], []),
     ?assertMatch(4, M:double(2)).
 
 higher_order_function_test() ->
-    [M] = compile_and_load(["test_files/higher_order_functions.mlfe"], []),
+    [M] = compile_and_load(["test_files/higher_order_functions.alp"], []),
     Dict0 = M:new({}),
     ?assertEqual('None', M:lookup(key, Dict0)),
     Dict1 = M:insert(key, value, Dict0),
@@ -264,18 +264,18 @@ higher_order_function_test() ->
     code:delete(M).
 
 simple_record_test() ->
-    [M] = compile_and_load(["test_files/simple_records.mlfe"], []),
+    [M] = compile_and_load(["test_files/simple_records.alp"], []),
     ?assertEqual({<<"sample">>, <<"person">>}, M:sample_person({})),
     code:delete(M).
 
 polymorphic_record_test() ->
-    [M] = compile_and_load(["test_files/polymorphic_record_test.mlfe"], []),
+    [M] = compile_and_load(["test_files/polymorphic_record_test.alp"], []),
     ?assertEqual(<<"bar">>, M:with_y({})),
     ?assertEqual(<<"baz">>, M:with_y_and_throwaway_x({})),
     code:delete(M).
 
 multiple_underscore_test() ->
-    [M] = compile_and_load(["test_files/multiple_underscore_test.mlfe"], []),
+    [M] = compile_and_load(["test_files/multiple_underscore_test.alp"], []),
     ?assertEqual(list, M:list_check({})),
     %% Compiler adds the __struct__ tag to distinguish between records
     %% and maps:
@@ -286,12 +286,12 @@ multiple_underscore_test() ->
     code:delete(M).
 
 circle_module_test() ->
-    [M] = compile_and_load(["test_files/circles.mlfe"], []),
+    [M] = compile_and_load(["test_files/circles.alp"], []),
     ?assertEqual(12.56636, M:area(M:new(2))),
     code:delete(M).
 
 records_with_x_module_test() ->
-    [M] = compile_and_load(["test_files/records_with_x.mlfe"], []),
+    [M] = compile_and_load(["test_files/records_with_x.alp"], []),
     ?assertEqual(2, M:get_x(M:make_xyz(2, 3, 4))),
     ?assertEqual(5, M:get_x(M:make_xy(5, 6))),
     code:delete(M).
@@ -300,13 +300,13 @@ records_with_x_module_test() ->
 %% correctly distinguish between maps and records that are compiled as
 %% maps.
 record_vs_map_match_order_test() ->
-    [M] = compile_and_load(["test_files/record_map_match_order.mlfe"], []),
+    [M] = compile_and_load(["test_files/record_map_match_order.alp"], []),
     ?assertEqual(1, M:check_map({})),
     ?assertEqual(2, M:check_record({})),
     code:delete(M).
     
 raise_errors_test() ->
-    [M] = compile_and_load(["test_files/error_tests.mlfe"], []),
+    [M] = compile_and_load(["test_files/error_tests.alp"], []),
     ?assertException(throw, <<"this should be a throw">>, M:raise_throw(unit)),
     ?assertException(exit, <<"exit here">>, M:raise_exit(unit)),
     ?assertException(error, <<"and an error">>, M:raise_error(unit)),
@@ -316,7 +316,7 @@ raise_errors_test() ->
     code:delete(M).
 
 function_pattern_args_test() ->
-    [M] = compile_and_load(["test_files/function_pattern_args.mlfe"], []),
+    [M] = compile_and_load(["test_files/function_pattern_args.alp"], []),
     ?assertEqual(true, M:is_zero(0)),
     ?assertEqual(false, M:is_zero(5)),
 
@@ -338,8 +338,8 @@ function_pattern_args_test() ->
 
 radius_test() ->
     [M1, M2] = compile_and_load(
-            ["test_files/radius.mlfe", 
-             "test_files/use_radius.mlfe"], 
+            ["test_files/radius.alp", 
+             "test_files/use_radius.alp"], 
             []),
     ?assertEqual(1, M1:test_radius(unit)),
     code:delete(M1),

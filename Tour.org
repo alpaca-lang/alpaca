@@ -1,7 +1,7 @@
 * Intro
-This document provides a tour of MLFE's current capabilities and limitations in a bit more depth for anyone looking to use it.
+This document provides a tour of Alpaca's current capabilities and limitations in a bit more depth for anyone looking to use it.
 
-Some of ML Flavoured Erlang's goals:
+Some of Alpaca's goals:
 
 - A statically typed, strictly evaluated (eager, not lazy), and functional language for the Erlang platform.
 - Infer types as much as possible so we only need to be explicit where it matters.
@@ -9,9 +9,9 @@ Some of ML Flavoured Erlang's goals:
 - Interoperate with existing Erlang code and libraries as safely as possible.
 
 ** Helpful Foundations
-If you're unfamiliar with Erlang itself, I'd highly recommend the excellent [[http://learnyousomeerlang.com/][Learn You Some Erlang for great good!]]  The sections on [[http://learnyousomeerlang.com/starting-out-for-real][the basic data types]] and on [[http://learnyousomeerlang.com/modules][modules]] will probably help a great deal to start understanding where MLFE fits and what it does.
+If you're unfamiliar with Erlang itself, I'd highly recommend the excellent [[http://learnyousomeerlang.com/][Learn You Some Erlang for great good!]]  The sections on [[http://learnyousomeerlang.com/starting-out-for-real][the basic data types]] and on [[http://learnyousomeerlang.com/modules][modules]] will probably help a great deal to start understanding where Alpaca fits and what it does.
 
-Much of MLFE in its current state borrows (in an unstructured manner) aspects of a number of languages that descend from [[https://en.wikipedia.org/wiki/ML_(programming_language)][ML]] including:
+Much of Alpaca in its current state borrows (in an unstructured manner) aspects of a number of languages that descend from [[https://en.wikipedia.org/wiki/ML_(programming_language)][ML]] including:
 
 - [[https://ocaml.org/][OCaml]]
 - [[https://www.haskell.org/][Haskell]]
@@ -20,15 +20,15 @@ Much of MLFE in its current state borrows (in an unstructured manner) aspects of
 While you probably don't need to know any of them in detail, some of the syntax in this document might make a bit more sense if you're familiar with one of the above (including ML).
 
 ** About This Document
-This document is exported from the Emacs org-mode doc ~Tour.org~ using ~org-md-export-to-markdown~.  Corrections and suggestions welcome via PRs to the main [[https://github.com/j14159/mlfe][MLFE repository]].
+This document is exported from the Emacs org-mode doc ~Tour.org~ using ~org-md-export-to-markdown~.  Corrections and suggestions welcome via PRs to the main [[https://github.com/j14159/alpaca][Alpaca repository]].
 * The Structure of a Program
-MLFE at present is really just a new way to write modules for an Erlang application.
+Alpaca at present is really just a new way to write modules for an Erlang application.
 
 ** What Modules Include
 The set of top-level elements permitted in a module are the following:
 
 - a module declaration, e.g. ~module my_module_name~.  This is required.
-- function exports.  These tell the compiler which functions should be publicly accessible to modules outside of the ones we write in MLFE.
+- function exports.  These tell the compiler which functions should be publicly accessible to modules outside of the ones we write in Alpaca.
 - type definitions.  These describe new types as ADTs.
 - test cases
 - comments, though these can go anywhere and are not restricted to the top level.
@@ -67,7 +67,7 @@ Note that variables and function names follow the same format, beginning with a 
 *** Booleans
 Just ~true~ and ~false~, not atoms as in Erlang although they're encoded as such after compilation.
 *** Numbers
-MLFE has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
+Alpaca has integers and floats which can't mix with each other at all.  They have separate arithmetic instructions as in OCaml:
 
 #+BEGIN_SRC
 1 + 2       -- integer
@@ -77,9 +77,9 @@ MLFE has integers and floats which can't mix with each other at all.  They have 
 #+END_SRC
 
 *** Atoms
-Atoms in MLFE are just text prefixed with ~:~, e.g. ~:this_is_an_atom~ and ~:soIsThis1~.
+Atoms in Alpaca are just text prefixed with ~:~, e.g. ~:this_is_an_atom~ and ~:soIsThis1~.
 *** Strings
-Strings in MLFE are all assumed UTF-8 and will be encoded as such:
+Strings in Alpaca are all assumed UTF-8 and will be encoded as such:
 #+BEGIN_SRC 
 "This is a string"
 "so is 한국 and 日本"
@@ -89,7 +89,7 @@ These are compiled as binaries under the hood.  If you're looking for Erlang's b
 c"character list!"
 #+END_SRC
 *** Binaries
-If you're not familiar with binaries, there's some [[http://learnyousomeerlang.com/starting-out-for-real][good coverage]] of them in [[http://learnyousomeerlang.com/][Learn You Some Erlang...]]  At present in MLFE they're a little more verbose but also a little more obvious, e.g.
+If you're not familiar with binaries, there's some [[http://learnyousomeerlang.com/starting-out-for-real][good coverage]] of them in [[http://learnyousomeerlang.com/][Learn You Some Erlang...]]  At present in Alpaca they're a little more verbose but also a little more obvious, e.g.
 #+BEGIN_SRC
 <<"this text is assumed to be UTF-8">>
 <<"But we can also be explicit": type=utf8>>
@@ -108,7 +108,7 @@ Endian settings can be ~big~, ~little~, or ~native~ as in Erlang.
 These types are all "parametrically polymorphic", or "generics" for those of us familiar with Java. This means that these types contain data of another type in a general manner so that we can have "a list of integers" and "a list of strings" without changing any of the code involving lists themselves.
 
 *** Tuples
-Tuples, like functions, have a specific arity (number of contained elements).  In MLFE the typing of tuples covers both their arity *and* the type of each element.  Let's introduce pattern matching here to illustrate their structure:
+Tuples, like functions, have a specific arity (number of contained elements).  In Alpaca the typing of tuples covers both their arity *and* the type of each element.  Let's introduce pattern matching here to illustrate their structure:
 #+BEGIN_SRC
 third my_tuple =
   match my_tuple with
@@ -228,7 +228,7 @@ identity my_rec =
     {x=_} -> my_rec
 #+END_SRC
 
-The return of ~identity({x=1, hello="world"})~ above is still the type ~{x: int, hello: string}~ in MLFE  even though the function ~identity~ only cares about the field ~x: int~.
+The return of ~identity({x=1, hello="world"})~ above is still the type ~{x: int, hello: string}~ in Alpaca  even though the function ~identity~ only cares about the field ~x: int~.
 
 **** What's Missing?
 There's not yet a way to access individual fields of a record without pattern matching (e.g. ~let my_rec = {x=1, hello="world"} in x.x~) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
@@ -250,7 +250,7 @@ f x =
   let doubled_x = double x in  -- a variable named "double_x"
   doubled_x + x                -- the expression returned as a result
 #+END_SRC
-As MLFE is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
+As Alpaca is an expression-oriented language, there are no return statements.  Just as in Erlang, the final expression in a function is the value returned to the caller.  The type of a function or variable is entirely inferred by the type checker:
 
 #+BEGIN_SRC
 {- Because the body of this function multiplies the parameter by a float,
@@ -270,7 +270,7 @@ print_hello () =
 #+END_SRC
 
 ** The Foreign Function Interface
-The FFI is how we call any non-MLFE code in the Erlang VM (e.g. Erlang, [[http://elixir-lang.org/][Elixir]], [[http://lfe.io/][LFE]], and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
+The FFI is how we call any non-Alpaca code in the Erlang VM (e.g. Erlang, [[http://elixir-lang.org/][Elixir]], [[http://lfe.io/][LFE]], and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
 
 Here we're using a simple guard function so that we know the FFI expression is returning characters (an Erlang string):
 #+BEGIN_SRC
@@ -351,7 +351,7 @@ map_get key the_map =
     | _ -> None
 #+END_SRC
 
-We can use the basic MLFE types as well, here's a type that describes parsed JSON data based on how the [[https://github.com/talentdeficit/jsx][JSX]] library represents it:
+We can use the basic Alpaca types as well, here's a type that describes parsed JSON data based on how the [[https://github.com/talentdeficit/jsx][JSX]] library represents it:
 
 #+BEGIN_SRC
 type json = int | float | string | bool
@@ -399,7 +399,7 @@ add x y = x + y
 test "add 2 2 should result in 4" =
   add 2 2
 #+END_SRC
-While the above test is type checked and will happily be compiled, we lack assertions to actually *test* the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, ~basic_module_with_tests.mlfe~:
+While the above test is type checked and will happily be compiled, we lack assertions to actually *test* the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, ~basic_module_with_tests.alp~:
 #+BEGIN_SRC
 module add_and_a_test
 
@@ -426,9 +426,9 @@ format_msg base x y =
   beam :lists :flatten [m] with msg, is_chars msg -> msg
 #+END_SRC
 
-It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in MLFE.
+It's a bit of an open question right now as to whether we'll try to pull test assertions from EUnit's include file directly (likely the preferable way) or implement some matchers directly in Alpaca.
 * Processes
-Process support in MLFE is still pretty basic but the following are all supported:
+Process support in Alpaca is still pretty basic but the following are all supported:
 
 - spawn a function from the current module as a process with ~spawn~
 - receive messages in a function with ~receive~
@@ -483,4 +483,4 @@ b () =
 type a_and_b = string | atom
 #+END_SRC
 
-As an aside, both the functions ~a/1~ and ~b/1~ above have the return type ~rec~, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in MLFE.
+As an aside, both the functions ~a/1~ and ~b/1~ above have the return type ~rec~, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in Alpaca.

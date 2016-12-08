@@ -91,19 +91,19 @@ Unary 500 plus.
 %% embedded soon.
 comment -> comment_line :
   {comment_line, L, Chars} = '$1',
-  #mlfe_comment{multi_line=false,
+  #alpaca_comment{multi_line=false,
                 line=L,
                 text=Chars}.
 comment -> comment_lines :
   {comment_lines, L, Chars} = '$1',
-  #mlfe_comment{multi_line=true,
+  #alpaca_comment{multi_line=true,
                 line=L,
                 text=Chars}.
 
 type_import -> import_type module_fun:
   {module_fun, _, MF} = '$2',
   [Mod, Type] = string:tokens(MF, "."),
-  #mlfe_type_import{module=list_to_atom(Mod), type=Type}.
+  #alpaca_type_import{module=list_to_atom(Mod), type=Type}.
 
 types_to_export -> symbol : ['$1'].
 types_to_export -> symbol ',' types_to_export : ['$1'|'$3'].
@@ -111,7 +111,7 @@ types_to_export -> symbol ',' types_to_export : ['$1'|'$3'].
 type_export -> export_type types_to_export :
   {_, L}  = '$1',
   Names = [N || {symbol, _, N} <- '$2'],
-  #mlfe_type_export{line=L, names=Names}.
+  #alpaca_type_export{line=L, names=Names}.
 
 module_def -> module atom : {module, '$1'}.
 
@@ -122,7 +122,7 @@ poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
   Members = '$2',
   Vars = [V || {type_var, _, _}=V <- Members],
-  #mlfe_type{name={type_name, L, N}, members=Members, vars=Vars}.
+  #alpaca_type{name={type_name, L, N}, members=Members, vars=Vars}.
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, L, N} = '$1',
@@ -139,22 +139,22 @@ type_expr -> record_type : '$1'.
 type_expr -> poly_type : '$1'.
 type_expr -> symbol :
   {symbol, L, N} = '$1',
-  #mlfe_type{name={type_name, L, N}, vars=[]}. % not polymorphic
+  #alpaca_type{name={type_name, L, N}, vars=[]}. % not polymorphic
 type_expr -> type_tuple : '$1'.
 type_expr -> '(' type_expr ')': '$2'.
 type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
 type_expr -> base_list type_expr:
-  {mlfe_list, '$2'}.
-type_expr -> base_map type_expr type_expr : {mlfe_map, '$2', '$3'}.
+  {alpaca_list, '$2'}.
+type_expr -> base_map type_expr type_expr : {alpaca_map, '$2', '$3'}.
 type_expr -> base_pid type_expr :
-  {mlfe_pid, '$2'}.
+  {alpaca_pid, '$2'}.
 
 type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
 type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].
 
-type_tuple -> '(' type_tuple_list ')': #mlfe_type_tuple{members='$2'}.
+type_tuple -> '(' type_tuple_list ')': #alpaca_type_tuple{members='$2'}.
 
 %%% A type_member is one of three things:
 %%%
@@ -168,33 +168,33 @@ type_tuple -> '(' type_tuple_list ')': #mlfe_type_tuple{members='$2'}.
 %%%     type U x = B | C x
 %%%     type V x y = D x | E (x, (int, x))
 %%%
-type_member -> type_constructor : #mlfe_constructor{name='$1', arg=none}.
-type_member -> type_constructor type_expr : #mlfe_constructor{name='$1', arg='$2'}.
+type_member -> type_constructor : #alpaca_constructor{name='$1', arg=none}.
+type_member -> type_constructor type_expr : #alpaca_constructor{name='$1', arg='$2'}.
 type_member -> type_expr : '$1'.
 
 type_members -> type_member : ['$1'].
 type_members -> type_member '|' type_members : ['$1'|'$3'].
 
 type -> type_declare poly_type_decl assign type_members :
-  '$2'#mlfe_type{members='$4'}.
+  '$2'#alpaca_type{members='$4'}.
 type -> type_declare symbol assign type_members :
   {symbol, L, N} = '$2',
-  #mlfe_type{name={type_name, L, N}, vars=[], members='$4'}.
+  #alpaca_type{name={type_name, L, N}, vars=[], members='$4'}.
 
 poly_type_decl -> symbol type_vars :
   {symbol, L, N} = '$1',
-  #mlfe_type{name={type_name, L, N}, vars='$2'}.
+  #alpaca_type{name={type_name, L, N}, vars='$2'}.
 poly_type -> poly_type type_vars :
-  '$1'#mlfe_type{vars='$1'#mlfe_type.vars ++ ['$2']}.
+  '$1'#alpaca_type{vars='$1'#alpaca_type.vars ++ ['$2']}.
 
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
 
-type_apply -> type_constructor term : #mlfe_type_apply{name='$1', arg='$2'}.
-type_apply -> type_constructor : #mlfe_type_apply{name='$1'}.
+type_apply -> type_constructor term : #alpaca_type_apply{name='$1', arg='$2'}.
+type_apply -> type_constructor : #alpaca_type_apply{name='$1'}.
 
 test_case -> test string assign simple_expr :
-  #mlfe_test{line=term_line('$1'), name='$2', expression='$4'}.
+  #alpaca_test{line=term_line('$1'), name='$2', expression='$4'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.
@@ -223,10 +223,10 @@ cons -> '[' ']' :
   {nil, L}.
 cons -> '[' term ']' :
   {_, L} = '$3',
-  #mlfe_cons{head='$2', tail={nil, L}, line=L}.
-cons -> term cons_infix term : #mlfe_cons{head='$1', tail='$3'}.
+  #alpaca_cons{head='$2', tail={nil, L}, line=L}.
+cons -> term cons_infix term : #alpaca_cons{head='$1', tail='$3'}.
 cons -> '[' literal_cons_items ']':
-  F = fun(X, Acc) -> #mlfe_cons{head=X, tail=Acc} end,
+  F = fun(X, Acc) -> #alpaca_cons{head=X, tail=Acc} end,
   lists:foldr(F, {nil, 0}, '$2').
 
 %% -----  Binaries  --------------------
@@ -244,11 +244,11 @@ bin_qualifier -> bin_sign assign boolean :
 bin_qualifiers -> bin_qualifier : ['$1'].
 bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
 
-bin_segment -> float : #mlfe_bits{value='$1', type=float, line=term_line('$1')}.
-bin_segment -> int : #mlfe_bits{value='$1', type=int, line=term_line('$1')}.
-bin_segment -> symbol : #mlfe_bits{value='$1', line=term_line('$1')}.
-bin_segment -> binary : #mlfe_bits{value='$1', line=term_line('$1'), type=binary}.
-bin_segment -> string : #mlfe_bits{value='$1', line=term_line('$1'), type=utf8}.
+bin_segment -> float : #alpaca_bits{value='$1', type=float, line=term_line('$1')}.
+bin_segment -> int : #alpaca_bits{value='$1', type=int, line=term_line('$1')}.
+bin_segment -> symbol : #alpaca_bits{value='$1', line=term_line('$1')}.
+bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
+bin_segment -> string : #alpaca_bits{value='$1', line=term_line('$1'), type=utf8}.
 %% TODO:  string bin_segment
 
 bin_segment -> bin_segment ':' bin_qualifiers :
@@ -257,40 +257,40 @@ bin_segment -> bin_segment ':' bin_qualifiers :
 bin_segments -> bin_segment : ['$1'].
 bin_segments -> bin_segment ',' bin_segments : ['$1'|'$3'].
 
-binary -> bin_open bin_close : #mlfe_binary{line=term_line('$1'), segments=[]}.
+binary -> bin_open bin_close : #alpaca_binary{line=term_line('$1'), segments=[]}.
 binary -> bin_open bin_segments bin_close :
-  #mlfe_binary{line=term_line('$1'), segments='$2'}.
+  #alpaca_binary{line=term_line('$1'), segments='$2'}.
 
 %% ----- Maps --------------------------
 map_pair -> term map_arrow term :
-  #mlfe_map_pair{line=term_line('$1'), key='$1', val='$3'}.
+  #alpaca_map_pair{line=term_line('$1'), key='$1', val='$3'}.
 map_literal_pairs -> map_pair : ['$1'].
 map_literal_pairs -> map_pair ',' map_literal_pairs : ['$1'|'$3'].
 
 map_literal -> map_open close_brace :
-  #mlfe_map{line=term_line('$1')}.
+  #alpaca_map{line=term_line('$1')}.
 map_literal -> map_open map_literal_pairs close_brace :
-  #mlfe_map{line=term_line('$1'), pairs='$2'}.
+  #alpaca_map{line=term_line('$1'), pairs='$2'}.
 
 %% Adding a pair to a map, e.g. #{:a => "b" :: existing_map}
 map_add -> map_open map_pair '|' term close_brace:
-  #mlfe_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
+  #alpaca_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
 
 record_member -> symbol assign simple_expr:
   {symbol, L, N} = '$1',
-  #mlfe_record_member{line=L, name=list_to_atom(N), val='$3'}.
+  #alpaca_record_member{line=L, name=list_to_atom(N), val='$3'}.
 
 record_members -> record_member: ['$1'].
 record_members -> record_member ',' record_members: ['$1' | '$3'].
 
 record -> open_brace record_members close_brace:
   {_, L} = '$1',
-  #mlfe_record{line=L, arity=length('$2'), members='$2'}.
+  #alpaca_record{line=L, arity=length('$2'), members='$2'}.
 
 %% Need to permit "empty" records for pattern matches:
 record -> open_brace close_brace:
   {_, L} = '$1',
-  #mlfe_record{line=L, arity=0, members=[]}.
+  #alpaca_record{line=L, arity=0, members=[]}.
 
 unit -> '(' ')':
   {_, L} = '$1',
@@ -299,7 +299,7 @@ unit -> '(' ')':
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
 tuple -> '(' tuple_list ')' :
-  #mlfe_tuple{arity=length('$2'), values='$2'}.
+  #alpaca_tuple{arity=length('$2'), values='$2'}.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
 infix -> term infixable term : make_infix('$2', '$1', '$3').
@@ -328,7 +328,7 @@ terms -> term terms : ['$1'|'$2'].
 
 type_check -> type_check_tok symbol :
   {_, Check, L} = '$1',
-  #mlfe_type_check{type=Check, line=L, expr='$2'}.
+  #alpaca_type_check{type=Check, line=L, expr='$2'}.
 
 compare -> eq : '$1'.
 compare -> neq : '$1'.
@@ -345,32 +345,32 @@ guards -> guard ',' guards : ['$1'|'$3'].
 
 match_pattern -> term : '$1'.
 match_clause -> match_pattern '->' simple_expr :
-  #mlfe_clause{pattern='$1', result='$3', line=term_line('$1')}.
+  #alpaca_clause{pattern='$1', result='$3', line=term_line('$1')}.
 match_clause -> match_pattern ',' guards '->' simple_expr :
-  #mlfe_clause{pattern='$1', guards='$3', result='$5', line=term_line('$1')}.
+  #alpaca_clause{pattern='$1', guards='$3', result='$5', line=term_line('$1')}.
 match_clauses -> match_clause : ['$1'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
 
 match_with  -> match simple_expr with match_clauses :
   {match, L} = '$1',
-  #mlfe_match{match_expr='$2', clauses='$4', line=L}.
+  #alpaca_match{match_expr='$2', clauses='$4', line=L}.
 
 send_to-> send term term :
   {send, L} = '$1',
-  #mlfe_send{line=L, message='$2', pid='$3'}.
+  #alpaca_send{line=L, message='$2', pid='$3'}.
 
 receive_block -> receive with match_clauses :
   {_, Line} = '$1',
-  #mlfe_receive{line=Line, clauses='$3'}.
+  #alpaca_receive{line=Line, clauses='$3'}.
 receive_block -> receive_block after int simple_expr :
   {_, _, Timeout} = '$3',
-  '$1'#mlfe_receive{timeout=Timeout, timeout_action='$4'}.
+  '$1'#alpaca_receive{timeout=Timeout, timeout_action='$4'}.
 
 %% Only supporting spawning functions inside the current module
 %% for now:
 spawn_pid -> spawn symbol terms:
   {_, L} = '$1',
-  #mlfe_spawn{line=L,
+  #alpaca_spawn{line=L,
               module=undefined,
               function='$2',
               args='$3'}.
@@ -383,7 +383,7 @@ definfix -> '(' infixable ')' terms assign simple_expr :
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
 ffi_call -> beam atom atom cons with match_clauses:
-  #mlfe_ffi{module='$2',
+  #alpaca_ffi{module='$2',
             function_name='$3',
             args='$4',
             clauses='$6'}.
@@ -409,13 +409,13 @@ case '$1' of
     [T] ->
         T;
     [{symbol, _, _} = S | T] ->
-        #mlfe_apply{name=S, args=T};
+        #alpaca_apply{name=S, args=T};
     [{module_fun, L, MF} | T] ->
         % this should be safe given the definition of a module-function
-        % reference in mlfe_scan.xrl:
+        % reference in alpaca_scan.xrl:
         [Mod, Fun] = string:tokens(MF, "."),
         Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
-        #mlfe_apply{name=Name, args=T};
+        #alpaca_apply{name=Name, args=T};
     [Term|Args] ->
         {error, {invalid_fun_application, Term, Args}}
 end.
@@ -440,7 +440,7 @@ expr -> defn : '$1'.
 expr -> definfix : '$1'.
 
 Erlang code.
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 
 -ignore_xref([format_error/1, parse_and_scan/1]).
 
@@ -464,17 +464,17 @@ make_infix(Op, A, B) ->
       {lte, L} ->  {bif, '=<', L, erlang, '=<'};
       {neq, L} ->  {bif, '/=', L, erlang, '/='}
     end,
-    #mlfe_apply{type=undefined,
+    #alpaca_apply{type=undefined,
                 name=Name,
                 args=[A, B]}.
 
 make_define([{symbol, L, _} = Name|A], Expr) ->
     case validate_args(A) of
         {ok, Args} ->
-            #mlfe_fun_def{
+            #alpaca_fun_def{
                name=Name, 
                arity=length(Args), 
-               versions=[#mlfe_fun_version{
+               versions=[#alpaca_fun_version{
                             line=L,
                             args=Args,
                             body=Expr}]}
@@ -494,15 +494,15 @@ validate_args(Args) ->
 
 validate_args([], GoodArgs) ->
     {ok, lists:reverse(GoodArgs)};
-validate_args([#mlfe_match{}=E|_], _) ->
+validate_args([#alpaca_match{}=E|_], _) ->
     throw({invalid_fun_parameter, E});
-validate_args([#mlfe_spawn{}=E|_], _) ->
+validate_args([#alpaca_spawn{}=E|_], _) ->
     throw({invalid_fun_parameter, E});
 validate_args([A|T], Memo) ->
     validate_args(T, [A|Memo]).
 
 %% Convert a nullary def into a variable binding:
-make_binding(#mlfe_fun_def{name=N, versions=[#mlfe_fun_version{args=[], body=B}]}, Expr) ->
+make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
     #var_binding{name=N, to_bind=B, expr=Expr};
 make_binding(Def, Expr) ->
     #fun_binding{def=Def, expr=Expr}.
@@ -511,24 +511,24 @@ term_line(Term) ->
     case Term of
         {_, L} when is_integer(L) -> L;
         {_, L, _} when is_integer(L) -> L;
-        #mlfe_cons{line=L} -> L;
-        #mlfe_map_pair{line=L} -> L;
-        #mlfe_map{line=L} -> L;
-        #mlfe_record{members=[#mlfe_record_member{line=L}|_]} -> L;
-        #mlfe_tuple{values=[H|_]} -> term_line(H);
-        #mlfe_type_apply{name=N} -> term_line(N)
+        #alpaca_cons{line=L} -> L;
+        #alpaca_map_pair{line=L} -> L;
+        #alpaca_map{line=L} -> L;
+        #alpaca_record{members=[#alpaca_record_member{line=L}|_]} -> L;
+        #alpaca_tuple{values=[H|_]} -> term_line(H);
+        #alpaca_type_apply{name=N} -> term_line(N)
     end.
 
-add_qualifier(#mlfe_bits{}=B, {size, {int, _, I}}) ->
-    B#mlfe_bits{size=I, default_sizes=false};
-add_qualifier(#mlfe_bits{}=B, {unit, {int, _, I}}) ->
-    B#mlfe_bits{unit=I, default_sizes=false};
-add_qualifier(#mlfe_bits{}=B, {bin_endian, _, E}) ->
-    B#mlfe_bits{endian=list_to_atom(E)};
-add_qualifier(#mlfe_bits{}=B, {base_type, _, T})
+add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->
+    B#alpaca_bits{size=I, default_sizes=false};
+add_qualifier(#alpaca_bits{}=B, {unit, {int, _, I}}) ->
+    B#alpaca_bits{unit=I, default_sizes=false};
+add_qualifier(#alpaca_bits{}=B, {bin_endian, _, E}) ->
+    B#alpaca_bits{endian=list_to_atom(E)};
+add_qualifier(#alpaca_bits{}=B, {base_type, _, T})
   when T =:= "int"; T =:= "float"; T =:= "binary"; T =:= "utf8" ->
-    B#mlfe_bits{type=list_to_atom(T)};
-add_qualifier(#mlfe_bits{}=B, {bin_text_encoding, Enc}) ->
-    B#mlfe_bits{type=list_to_atom(Enc)};
-add_qualifier(#mlfe_bits{}=B, {bin_sign, _, S}) ->
-    B#mlfe_bits{sign=list_to_atom(S)}.
+    B#alpaca_bits{type=list_to_atom(T)};
+add_qualifier(#alpaca_bits{}=B, {bin_text_encoding, Enc}) ->
+    B#alpaca_bits{type=list_to_atom(Enc)};
+add_qualifier(#alpaca_bits{}=B, {bin_sign, _, S}) ->
+    B#alpaca_bits{sign=list_to_atom(S)}.

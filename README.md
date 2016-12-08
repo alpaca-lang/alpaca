@@ -1,8 +1,8 @@
-mlfe
+Alpaca
 =====
 [![Build Status](https://travis-ci.org/j14159/mlfe.svg?branch=master)](https://travis-ci.org/j14159/mlfe)
 
-ML-flavoured Erlang.
+Alpaca is a statically typed, strict/eagerly evaluated language for the Erlang virtual machine (BEAM).  At present it relies on type inference rather than explicit type annotations.  It was formerly known as ML-flavoured Erlang (MLFE).
 
 # TLDR; How Do I Use It?
 Make sure the following are installed:
@@ -23,14 +23,14 @@ Make a new project with `rebar3 new app your_app_name` and in the
 
 Check out
 [the tour for the language basics](https://github.com/j14159/mlfe/blob/master/Tour.md),
-put source files ending in `.mlfe` in your source folders, run `rebar3
+put source files ending in `.alp` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
 
 # Intentions/Goals
 I want something that looks and operates a little bit like an ML on the Erlang VM with:
 
 - static typing of itself.  I'm deliberately ignoring typing of Erlang
-  code that calls into MLFE.
+  code that calls into Alpaca.
 - parametric polymorphism
 - infinitely recursive functions as a distinct and allowable type for processes
 looping on receive.
@@ -49,10 +49,10 @@ suggest possible union types if there isn't an appropriate one in scope.
 ## What Works Already
 
 - type inferencer with ADTs.  Tuples, maps, and records for product types and
-  unions for sum.  Please note that MLFE's records are not compatible with Erlang records as the former are currently compiled to maps.
+  unions for sum.  Please note that Alpaca's records are not compatible with Erlang records as the former are currently compiled to maps.
 - compile type-checked source to `.beam` binaries
 - simple FFI to Erlang
-- type-safe message flows for processes defined inside MLFE
+- type-safe message flows for processes defined inside Alpaca
 
 Here's an example module:
 
@@ -84,7 +84,7 @@ Here's an example module:
     start_a_process init = spawn will_be_a_process init
 
 # Licensing
-MLFE is released under the terms of the Apache License, Version 2.0
+Alpaca is released under the terms of the Apache License, Version 2.0
 
 Copyright 2016 Jeremy Pierre
 
@@ -105,7 +105,7 @@ Please note that this project is released with a Contributor Code of
 Conduct, version 1.4. By participating in this project you agree to abide by its
 terms.  See `code_of_conduct.md` for details.
 
-You can join `#mlfe` on [freenode](http://freenode.net) to discuss the
+You can join `#alpaca-lang` on [freenode](http://freenode.net) to discuss the
 language (directions, improvement) or get help.  This IRC channel is
 governed by the same code of conduct detailed in this repository.
 
@@ -116,8 +116,8 @@ especially with respect to comments.
 # Using It
 It's not very usable yet but the tests should give a relatively clear picture as to
 where we're going.  `test_files` contains some example source files used
-in unit tests.  You can call `mlfe:compile({files,
-[List, Of, File, Names, As, Strings]}, [list, of, options])` or `mlfe:compile({text,
+in unit tests.  You can call `alpaca:compile({files,
+[List, Of, File, Names, As, Strings]}, [list, of, options])` or `alpaca:compile({text,
 CodeAsAString}, [options, again])` for now.
 
 `'test'` is the only currently recognized option that can be  passed
@@ -126,7 +126,7 @@ checked and exported as functions that  [EUnit](http://erlang.org/doc/apps/eunit
 
 Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
-tests in `mlfe_typer.erl`.
+tests in `alpaca_typer.erl`.
 
 ## Prerequisites
 You will generally want the following two things installed:
@@ -135,16 +135,16 @@ You will generally want the following two things installed:
 but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
 - [Rebar3](https://rebar3.org)
 
-## Writing MLFE with Rebar3
+## Writing Alpaca with Rebar3
 Thanks to [@tsloughter](https://github.com/tsloughter)'s
 [MLFE Rebar3 plugin](https://github.com/tsloughter/rebar_prv_mlfe)
 it's pretty easy to get up and running.
 
 Make a new project with Rebar3 (substituting whatever project name
-you'd like for `mlfe_example`):
+you'd like for `alpaca_example`):
 
-    $ rebar3 new app mlfe_example
-    $ cd mlfe_example
+    $ rebar3 new app alpaca_example
+    $ cd alpaca_example
 
 In the `rebar.config` file in your project's root folder add the
 following (borrowed from @tsloughter's docs):
@@ -156,9 +156,9 @@ following (borrowed from @tsloughter's docs):
     {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
 
 Now any files in the project's source folders that end with the
-extension `.mlfe` will be compiled and included in Rebar3's output
+extension `.alp` will be compiled and included in Rebar3's output
 folders (provided they type-check and compile successfully of course).
-For a simple module, open `src/example.mlfe` and add the following:
+For a simple module, open `src/example.alp` and add the following:
 
     module example
 
@@ -176,8 +176,8 @@ from the Erlang shell after compiling like this:
     6
     2>
 
-Note that calling MLFE from Erlang won't do any type checking but if
-you've written a variety of MLFE modules in your project, all their
+Note that calling Alpaca from Erlang won't do any type checking but if
+you've written a variety of Alpaca modules in your project, all their
 interactions with each other will be type checked and safe (provided
 the compile succeeds).
 
@@ -190,14 +190,14 @@ repository and run tests and dialyzer with:
 
 There's no command line front-end for the compiler so unless you use
 @tsloughter's Rebar3 plugin detailed in the previous section, you will
-need to boot the erlang shell and then run `mlfe:compile/2` to build
-and type-check things written in MLFE.  For example, if you wanted to
+need to boot the erlang shell and then run `alpaca:compile/2` to build
+and type-check things written in Alpaca.  For example, if you wanted to
 compile the type import test file in the `test_files` folder:
 
     rebar3 shell
     ...
-    1> Files = ["test_files/basic_adt.mlfe", "test_files/type_import.mlfe"].
-    2> mlfe:compile({files, Files}, []).
+    1> Files = ["test_files/basic_adt.alp", "test_files/type_import.alp"].
+    2> alpaca:compile({files, Files}, []).
 
 This will result in either an error or a list of tuples of the following form:
 
@@ -205,7 +205,7 @@ This will result in either an error or a list of tuples of the following form:
 
 The files will not actually be written by the compiler so the binaries
 described by the tuples can either be loaded directly into the running
-VM (see the tests in `mlfe.erl`) or written manually for now unless of
+VM (see the tests in `alpaca.erl`) or written manually for now unless of
 course you're using the aforementioned rebar3 plugin/
 
 ## Built-In Stuff
@@ -321,7 +321,7 @@ a simple get-by-key function as follows:
         | _ -> None
 
 ## Modules (The Erlang Kind)
-ML-style modules aren't implemented at present.  For now modules in MLFE are the same as
+ML-style modules aren't implemented at present.  For now modules in Alpaca are the same as
 modules in Erlang with top-level entities including:
 
 - a module name (required)
@@ -477,7 +477,7 @@ the code, including but not limited to:
   collected and it's pretty trigger-happy about creating them.
 - there's a lot of cruft around error handling that should all be
   refactored into some sort of basic monad-like thing.  This is
-  extremely evident in `mlfe_ast_gen.erl` and `mlfe_typer.erl`.  Frankly
+  extremely evident in `alpaca_ast_gen.erl` and `alpaca_typer.erl`.  Frankly
   the latter is begging for a complete rewrite.
 - type unification error line numbers can be confusing.  Because of
   the sequence of unification steps, sometimes the unification error

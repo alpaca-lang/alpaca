@@ -14,10 +14,10 @@
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
 
--module(mlfe_codegen).
+-module(alpaca_codegen).
 -export([gen/2]).
 
--include("mlfe_ast.hrl").
+-include("alpaca_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -39,12 +39,12 @@
           wildcard_num=0 :: integer()
          }).
 
-make_env(#mlfe_module{functions=Funs}=Mod) ->
-    TopLevelFuns = [{N, A} || #mlfe_fun_def{name={symbol, _, N}, arity=A} <- Funs],
+make_env(#alpaca_module{functions=Funs}=Mod) ->
+    TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
-gen(#mlfe_module{}=Mod, Opts) ->
-    #mlfe_module{
+gen(#alpaca_module{}=Mod, Opts) ->
+    #alpaca_module{
        name=ModuleName,
        function_exports=Exports,
        functions=Funs,
@@ -73,7 +73,7 @@ gen_test_exports([], _, Memo) ->
     Memo;
 gen_test_exports(_, [], Memo) ->
     Memo;
-gen_test_exports([#mlfe_test{name={string, _, N}}|RemTests], [test|_]=Opts,
+gen_test_exports([#alpaca_test{name={string, _, N}}|RemTests], [test|_]=Opts,
                  Memo) ->
     gen_test_exports(
       RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
@@ -82,24 +82,24 @@ gen_test_exports(Tests, [_|Rem], Memo) ->
 
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
-gen_funs(Env, Funs, [#mlfe_fun_def{}=F|T]) ->
+gen_funs(Env, Funs, [#alpaca_fun_def{}=F|T]) ->
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env, 
-        #mlfe_fun_def{
+        #alpaca_fun_def{
            name={symbol, _, N}, 
-           versions=[#mlfe_fun_version{args=[{unit, _}], body=Body}]}) ->
+           versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}) ->
 
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #mlfe_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
+gen_fun(Env, #alpaca_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
     case Vs of
         %% If there's a single version with only symbol and/or unit
         %% args, don't compile a pattern match:
-        [#mlfe_fun_version{args=Args, body=Body}] ->
+        [#alpaca_fun_version{args=Args, body=Body}] ->
             case needs_pattern(Args) of
                 false ->
                     FName = cerl:c_fname(list_to_atom(N), length(Args)),
@@ -124,7 +124,7 @@ needs_pattern(Args) ->
         _  -> true
     end.
 
-gen_fun_patterns(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
+gen_fun_patterns(Env, #alpaca_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
     %% We need to manufacture variable names that we'll use in the
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
@@ -137,7 +137,7 @@ gen_fun_patterns(Env, #mlfe_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) 
           [gen_fun_version(Env, Version) || Version <- Vs]),
     {FName, cerl:c_fun(Args, B)}.
 
-gen_fun_version(Env, #mlfe_fun_version{args=Args, body=Body}) ->
+gen_fun_version(Env, #alpaca_fun_version{args=Args, body=Body}) ->
     Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
     {_, BodyExp} = gen_expr(Env, Body),
     cerl:c_clause(Patt, BodyExp).
@@ -147,7 +147,7 @@ gen_tests(Env, Tests) ->
 
 gen_tests(_Env, [], Memo) ->
     Memo;
-gen_tests(Env, [#mlfe_test{name={_, _, N}, expression=E}|Rem], Memo) ->
+gen_tests(Env, [#alpaca_test{name={_, _, N}, expression=E}|Rem], Memo) ->
     FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
     {_, Body} = gen_expr(Env, E),
     TestFun = {FName, cerl:c_fun([], Body)},
@@ -195,14 +195,14 @@ gen_expr(Env, {raise_error, _, Kind, Expr}) ->
 
 gen_expr(Env, {nil, _}) ->
     {Env, cerl:c_nil()};
-gen_expr(Env, #mlfe_cons{head=H, tail=T}) ->
+gen_expr(Env, #alpaca_cons{head=H, tail=T}) ->
     {Env2, H2} = gen_expr(Env, H),
     {Env3, T2} = gen_expr(Env2, T),
     {Env3, cerl:c_cons(H2, T2)};
-gen_expr(Env, #mlfe_binary{segments=Segs}) ->
+gen_expr(Env, #alpaca_binary{segments=Segs}) ->
     {Env2, Bits} = gen_bits(Env, Segs), 
     {Env2, cerl:c_binary(Bits)};
-gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
+gen_expr(Env, #alpaca_map{is_pattern=true}=M) ->
     Annotated = annotate_map_type(M),
     F = fun(P, {E, Ps}) -> 
                 {E2, P2} = gen_expr(E, P),
@@ -210,11 +210,11 @@ gen_expr(Env, #mlfe_map{is_pattern=true}=M) ->
         end,
     {Env2, Pairs} = lists:foldl(F, {Env, []}, Annotated),
     {Env2, cerl:c_map_pattern(lists:reverse(Pairs))};
-gen_expr(Env, #mlfe_map{}=M) ->
+gen_expr(Env, #alpaca_map{}=M) ->
     %% If the map isn't a pattern we're not worried about underscores:
     Pairs = [PP || {_, PP} <- [gen_expr(Env, P) || P <- annotate_map_type(M)]],
     {Env, cerl:c_map(Pairs)};
-gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
+gen_expr(Env, #alpaca_map_add{to_add=#alpaca_map_pair{key=K, val=V}, existing=B}) ->
     %% In R19 creating map expression like core erlang's parser does
     %% doesn't seem to work for me, neither with ann_c_map nor a simple
     %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
@@ -223,7 +223,7 @@ gen_expr(Env, #mlfe_map_add{to_add=#mlfe_map_pair{key=K, val=V}, existing=B}) ->
     {_, KExp} = gen_expr(Env, K),
     {_, VExp} = gen_expr(Env, V),
     {Env, cerl:c_call(cerl:c_atom(maps), cerl:c_atom(put), [KExp, VExp, M])};
-gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
+gen_expr(Env, #alpaca_map_pair{is_pattern=true, key=K, val=V}) ->
     {Env2, KExp} = gen_expr(Env, K),
     {Env3, VExp} = gen_expr(Env2, V),
 
@@ -231,45 +231,45 @@ gen_expr(Env, #mlfe_map_pair{is_pattern=true, key=K, val=V}) ->
     %% the following but that doesn't work for 18.2 nor 18.3.
     %% The LFE source put me on to the following:
     {Env3, cerl:ann_c_map_pair([], cerl:abstract(exact), KExp, VExp)};
-gen_expr(Env, #mlfe_map_pair{key=K, val=V}) ->
+gen_expr(Env, #alpaca_map_pair{key=K, val=V}) ->
     {_, K2} = gen_expr(Env, K),
     {_, V2} = gen_expr(Env, V),
     {Env, cerl:c_map_pair(K2, V2)};
-gen_expr(Env, #mlfe_record{}=R) ->
+gen_expr(Env, #alpaca_record{}=R) ->
     {_, RExp} = gen_expr(Env, record_to_map(R)),
     {Env, RExp};
-gen_expr(Env, #mlfe_type_check{type=is_string, expr={symbol, _, _}=S}) ->
+gen_expr(Env, #alpaca_type_check{type=is_string, expr={symbol, _, _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
     TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_binary'), [Exp]),
     {Env, TC};
-gen_expr(Env, #mlfe_type_check{type=is_chars, expr={symbol, _, _}=S}) ->
+gen_expr(Env, #alpaca_type_check{type=is_chars, expr={symbol, _, _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
     TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_list'), [Exp]),
     {Env, TC};
-gen_expr(Env, #mlfe_type_check{type=T, expr={symbol, _, _}=S}) ->
+gen_expr(Env, #alpaca_type_check{type=T, expr={symbol, _, _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
     TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom(T), [Exp]),
     {Env, TC};
-gen_expr(Env, #mlfe_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
     Apply = cerl:c_call(
               cerl:c_atom(Module),
               cerl:c_atom(FName),
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #mlfe_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
     FName = cerl:c_atom(N),
     Apply = cerl:c_call(
               cerl:c_atom(Module),
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
+gen_expr(Env, #alpaca_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined -> cerl:c_var(list_to_atom(Name));
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
-gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{name={symbol, _Line, Name}, args=Args}) ->
     FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
@@ -280,15 +280,15 @@ gen_expr(Env, #mlfe_apply{name={symbol, _Line, Name}, args=Args}) ->
               FName, 
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #mlfe_apply{name={{symbol, _L, N}, Arity}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{name={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
     Apply = cerl:c_apply(
               FName, 
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
 
-gen_expr(Env, #mlfe_ffi{}=FFI) ->
-    #mlfe_ffi{
+gen_expr(Env, #alpaca_ffi{}=FFI) ->
+    #alpaca_ffi{
        module=M,
        function_name=FN,
        args=Cons,
@@ -313,11 +313,11 @@ gen_expr(Env, #mlfe_ffi{}=FFI) ->
     {Env5, cerl:c_case(Apply, lists:reverse(Clauses2))};
 
 %% Pattern, expression
-gen_expr(Env, #mlfe_clause{pattern=P, guards=[], result=E}) ->
+gen_expr(Env, #alpaca_clause{pattern=P, guards=[], result=E}) ->
     {Env2, PExp} = gen_expr(Env, P),
     {Env3, EExp} = gen_expr(Env2, E),
     {Env3, cerl:c_clause([PExp], EExp)};
-gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
+gen_expr(Env, #alpaca_clause{pattern=P, guards=Gs, result=E}) ->
     NestG = fun(G, Acc) ->
                     {_, GExp} = gen_expr(Env, G),
                     cerl:c_call(
@@ -336,19 +336,19 @@ gen_expr(Env, #mlfe_clause{pattern=P, guards=Gs, result=E}) ->
     {Env3, EExp} = gen_expr(Env2, E),
     {Env3, cerl:c_clause([PExp], G, EExp)};
 
-gen_expr(Env, #mlfe_tuple{values=Vs}) ->
+gen_expr(Env, #alpaca_tuple{values=Vs}) ->
     {Env2, Vs2} = lists:foldl(fun(V, {E, VV}) ->
                                       {E2, V2} = gen_expr(E, V),
                                       {E2, [V2|VV]}
                               end, {Env, []}, Vs),
     {Env2, cerl:c_tuple(lists:reverse(Vs2))};
-gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=none}) ->
+gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=none}) ->
     {Env, cerl:c_atom(N)};
-gen_expr(Env, #mlfe_type_apply{name={type_constructor, _, N}, arg=A}) ->
+gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=A}) ->
     {Env2, AExp} = gen_expr(Env, A),
     {Env2, cerl:c_tuple([cerl:c_atom(N), AExp])};
 %% Expressions, Clauses
-gen_expr(Env, #mlfe_match{match_expr=Exp, clauses=Cs}) ->
+gen_expr(Env, #alpaca_match{match_expr=Exp, clauses=Cs}) ->
     {Env2, EExp} = gen_expr(Env, Exp),
     {Env3, Cs2} = lists:foldl(fun(C, {E, CC}) ->
                                       {E2, C2} = gen_expr(E, C),
@@ -356,7 +356,7 @@ gen_expr(Env, #mlfe_match{match_expr=Exp, clauses=Cs}) ->
                               end, {Env2, []}, Cs),
     {Env3, cerl:c_case(EExp, lists:reverse(Cs2))};
 
-gen_expr(Env, #mlfe_spawn{from_module=M,
+gen_expr(Env, #alpaca_spawn{from_module=M,
                           module=undefined,
                           function={symbol, _, FN},
                           args=Args}) ->
@@ -370,13 +370,13 @@ gen_expr(Env, #mlfe_spawn{from_module=M,
             cerl:c_atom('spawn'),
             [cerl:c_atom(M), cerl:c_atom(FN), ArgCons])};
 
-gen_expr(Env, #mlfe_receive{clauses=Cs, timeout_action=undefined}) ->
+gen_expr(Env, #alpaca_receive{clauses=Cs, timeout_action=undefined}) ->
     {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
                                       {E2, C2} = gen_expr(E, C),
                                       {E2, [C2|CC]}
                               end, {Env, []}, Cs),
     {Env2, cerl:c_receive(lists:reverse(Cs2))};
-gen_expr(Env, #mlfe_receive{
+gen_expr(Env, #alpaca_receive{
                  clauses=Cs,
                  timeout=TO,
                  timeout_action=TA}) ->
@@ -391,13 +391,13 @@ gen_expr(Env, #mlfe_receive{
     {_, TA2} = gen_expr(Env, TA),
     {Env2, cerl:c_receive(lists:reverse(Cs2), X, TA2)};
 
-gen_expr(Env, #mlfe_send{message=M, pid=P}) ->
+gen_expr(Env, #alpaca_send{message=M, pid=P}) ->
     {_, PExp} = gen_expr(Env, P),
     {_, MExp} = gen_expr(Env, M),
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
 gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
-    #mlfe_fun_def{name={symbol, _, N}, arity=Arity} = F,
+    #alpaca_fun_def{name={symbol, _, N}, arity=Arity} = F,
     NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
     {_, Exp} = gen_expr(NewEnv, E),
     {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};
@@ -423,22 +423,22 @@ gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 
 gen_bits(Env, [], AllSegs) ->
     {Env, lists:reverse(AllSegs)};
-gen_bits(Env, [#mlfe_bits{type=T, default_sizes=true}=TailBits], Segs)
+gen_bits(Env, [#alpaca_bits{type=T, default_sizes=true}=TailBits], Segs)
   when T == binary; T == utf8 ->
-    #mlfe_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
+    #alpaca_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
     {Env2, VExp} = gen_expr(Env, V),
     B = cerl:c_bitstr(VExp, cerl:c_atom('all'), cerl:c_int(8),
                       get_bits_type(T), bits_flags(Sign, E)),
     {Env2, lists:reverse([B|Segs])};
 
 gen_bits(Env,
-         [#mlfe_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
+         [#alpaca_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
          Segs) ->
     Lit = lists:reverse(literal_binary(S, utf8)),
     gen_bits(Env, Rem, Lit ++ Segs);
 
 gen_bits(Env, [Bits|Rem], Memo) ->
-    #mlfe_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
+    #alpaca_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
     {Env2, VExp} = gen_expr(Env, V),
     B = cerl:c_bitstr(VExp, cerl:c_int(S), cerl:c_int(U),
                       get_bits_type(T), bits_flags(Sign, E)),
@@ -464,30 +464,30 @@ literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
         end,
     [F(I) || I <- binary_to_list(Bin)].
 
-record_to_map(#mlfe_record{line=RL, is_pattern=Patt, members=Ms}) ->
-    F = fun(#mlfe_record_member{name=N, val=V, line=L}) ->
+record_to_map(#alpaca_record{line=RL, is_pattern=Patt, members=Ms}) ->
+    F = fun(#alpaca_record_member{name=N, val=V, line=L}) ->
                 MapV = record_to_map(V),
                 MapK = {atom, L, atom_to_list(N)},
-                #mlfe_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
+                #alpaca_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
         end,
-    #mlfe_map{is_pattern=Patt, 
+    #alpaca_map{is_pattern=Patt, 
               structure=record,
               line=RL, 
               pairs=lists:map(F, Ms)};
 record_to_map(NotRecord) ->
     NotRecord.
 
-annotate_map_type(#mlfe_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
+annotate_map_type(#alpaca_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
     V = {atom, 0, atom_to_list(S)},
     K = {atom, 0, "__struct__"},
-    P = #mlfe_map_pair{is_pattern=IsP, key=K, val=V},
+    P = #alpaca_map_pair{is_pattern=IsP, key=K, val=V},
     [P|Ps].
 
 -ifdef(TEST).
 
 parse_and_gen(Code) ->
-    {ok, _, _, Mod} = mlfe_ast_gen:parse_module(0, Code),
-    {ok, Forms} = mlfe_codegen:gen(Mod, []),
+    {ok, _, _, Mod} = alpaca_ast_gen:parse_module(0, Code),
+    {ok, Forms} = alpaca_codegen:gen(Mod, []),
     compile:forms(Forms, [report, verbose, from_core]).
 
 simple_compile_test() ->

@@ -17,11 +17,11 @@
 
 
 %%-------------------------------------------------------------------
-%% @doc mlfe top level supervisor.
+%% @doc alpaca top level supervisor.
 %% @end
 %%-------------------------------------------------------------------
 
--module('mlfe_sup').
+-module('alpaca_sup').
 
 -behaviour(supervisor).
 

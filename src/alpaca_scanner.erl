@@ -1,6 +1,6 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
--module(mlfe_scanner).
+-module(alpaca_scanner).
 -export([scan/1]).
 
 -ifdef(TEST).
@@ -8,7 +8,7 @@
 -endif.
 
 scan(Code) ->
-    mlfe_scan:string(Code).
+    alpaca_scan:string(Code).
 
 -ifdef(TEST).
 
