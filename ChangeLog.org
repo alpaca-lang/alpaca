@@ -1,3 +1,11 @@
+* v0.2.5
+- early infix function support (operators, e.g. ~|>~) from https://github.com/lepoetemaudit
+- multiple instances of ~_~ permitted in patterns
+- ~throw/1~, ~exit1/~, and ~error/1~ are now available
+- patterns in function arguments, e.g. ~g f Some x = Some (f x)~ or ~get_x {x=x} = x~
+- types default to private in their defining module with explicit export and import in others
+- minor type inferencer fixes for records and tuples
+  
 * v0.2.4
 - fixes for type aliases and unions involving them:  https://github.com/danabr
 - early record support with row polymorphism
