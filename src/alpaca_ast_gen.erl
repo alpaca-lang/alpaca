@@ -646,6 +646,14 @@ make_bindings(NV, MN, M, #alpaca_record{members=Members}=R) ->
              is_pattern=true},
     {NV2, M2, NewR};
 
+make_bindings(NV, MN, M, #alpaca_type_apply{arg=none}=TA) ->
+    {NV, M, TA};
+make_bindings(NV, MN, M, #alpaca_type_apply{arg=Arg}=TA) ->
+    case make_bindings(NV, MN, M, Arg) of
+        {NV2, M2, Arg2} -> {NV2, M2, TA#alpaca_type_apply{arg=Arg2}};
+        {error, _}=Err  -> Err
+    end;
+
 make_bindings(NV, _MN, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of
         undefined ->

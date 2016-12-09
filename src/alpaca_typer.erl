@@ -3192,7 +3192,7 @@ module_matching_lists_test() ->
         "a x = match x with "
         "Nil -> :nil"
         "| Cons (i, Nil), is_integer i -> :one_item"
-        "| Cons (i, x) -> :more_than_one",
+        "| Cons (i, xx) -> :more_than_one",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
@@ -3217,11 +3217,11 @@ type_var_protection_test() ->
         "a x = match x with "
         "Nil -> :nil"
         "| Cons (i, Nil), is_integer i -> :one_integer"
-        "| Cons (i, x) -> :more_than_one_integer\n\n"
+        "| Cons (i, xx) -> :more_than_one_integer\n\n"
         "b x = match x with "
         "Nil -> :nil"
         "| Cons (f, Nil), is_float f -> :one_float"
-        "| Cons (f, x) -> :more_than_one_float\n\n"
+        "| Cons (f, xx) -> :more_than_one_float\n\n"
         "c () = (Cons (1.0, Nil), Cons(1, Nil))",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),

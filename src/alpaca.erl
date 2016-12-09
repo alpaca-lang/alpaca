@@ -344,4 +344,14 @@ radius_test() ->
     ?assertEqual(1, M1:test_radius(unit)),
     code:delete(M1),
     code:delete(M2).
+
+%% There seems to be a compilation bug in the early formatter work I'm trying
+%% using Alpaca to write its own code formatter.  Figured I might as well just
+%% add the test here.
+own_formatter_test() ->
+    Files = ["src/alpaca_native_ast.alp", "src/alpaca_format.alp"],
+    [M1, M2] = compile_and_load(Files, []),
+    code:delete(M1),
+    code:delete(M2).
+
 -endif.

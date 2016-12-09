@@ -1,0 +1,17 @@
+module alpaca_native_ast
+
+export_type ast, symbol, expr
+
+type symbol = Symbol {name: string, line: int}
+
+type expr = Apply (symbol, list expr)
+
+type ast =
+    symbol
+  | expr
+  | Comment {multi_line: bool,
+             line: int,
+             text: string}
+  | Fun {name: symbol,
+         arity: int,
+         versions: list {line: int, args: list ast, body: expr}}
