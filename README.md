@@ -16,7 +16,7 @@ Make a new project with `rebar3 new app your_app_name` and in the
 (e.g. `your_app_name/rebar.config`) add the following:
 
     {plugins, [
-        {rebar_prv_alpaca, ".*", {git, "https://github.com/tsloughter/rebar_prv_alpaca.git", {branch, "master"}}}
+        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
     ]}.
 
     {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
@@ -137,7 +137,7 @@ but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
 
 ## Writing Alpaca with Rebar3
 Thanks to [@tsloughter](https://github.com/tsloughter)'s
-[Alpaca Rebar3 plugin](https://github.com/tsloughter/rebar_prv_alpaca)
+[Alpaca Rebar3 plugin](https://github.com/alpaca-lang/rebar_prv_alpaca)
 it's pretty easy to get up and running.
 
 Make a new project with Rebar3 (substituting whatever project name
@@ -150,7 +150,7 @@ In the `rebar.config` file in your project's root folder add the
 following (borrowed from @tsloughter's docs):
 
     {plugins, [
-        {rebar_prv_alpaca, ".*", {git, "https://github.com/tsloughter/rebar_prv_alpaca.git", {branch, "master"}}}
+        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
     ]}.
 
     {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
