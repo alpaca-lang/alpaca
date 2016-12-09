@@ -7,8 +7,7 @@ Alpaca is a statically typed, strict/eagerly evaluated, functional programming l
 # TLDR; How Do I Use It?
 Make sure the following are installed:
 
-- Erlang OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
+- Erlang OTP 18.2 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development at present uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
 
 Make a new project with `rebar3 new app your_app_name` and in the
@@ -22,14 +21,14 @@ Make a new project with `rebar3 new app your_app_name` and in the
     {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
 
 Check out
-[the tour for the language basics](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md)
+[the tour for the language basics](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md),
 put source files ending in `.alp` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
 
 # Intentions/Goals
-I want something that looks and operates a little bit like an ML on the Erlang VM with:
+Something that looks and operates a little bit like an ML on the Erlang VM with:
 
-- static typing of itself.  I'm deliberately ignoring typing of Erlang
+- static typing of itself.  We're deliberately ignoring typing of Erlang
   code that calls into Alpaca.
 - parametric polymorphism
 - infinitely recursive functions as a distinct and allowable type for processes
@@ -110,8 +109,7 @@ language (directions, improvement) or get help.  This IRC channel is
 governed by the same code of conduct detailed in this repository.
 
 Pull requests with improvements and bug reports with accompanying
-tests welcome.  I'm not particularly set on syntax just yet,
-especially with respect to comments.
+tests welcome.
 
 # Using It
 It's not very usable yet but the tests should give a relatively clear picture as to
@@ -131,8 +129,7 @@ tests in `alpaca_typer.erl`.
 ## Prerequisites
 You will generally want the following two things installed:
 
-- Erlang/OTP 18.2 or above (I often use [packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html)
-but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
+- Erlang/OTP 18.2 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development so far uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
 
 ## Writing Alpaca with Rebar3
@@ -442,27 +439,18 @@ A very incomplete list:
   to spawn a process and then send it its own pid.  Still thinking
   about how to do this better.
 - exception handling (try/catch)
-- any sort of standard library.  Biggest missing things to me right
+- any sort of standard library.  Biggest missing things right
   now are things like basic string manipulation functions and
   adapters for `gen_server`, etc.
 - anything like behaviours or things that would support them.  Traits,
-  type classes, ML modules, etc all smell like supersets to me but I'm
-  not sure which way to jump yet.
-- simpler FFI to Erlang via dialyzer.  I'm not certain how feasible
-  this is but I'd like to dig a little deeper to see if it's
-  possible.  Especially important since the FFI currently only type
-  checks the results of the patterns, not the existence of the module
-  and function being called, nor the arity, nor that the types of the
-  provided arguments could ever ever match.
+type classes, ML modules, etc all smell like supersets but we don't have a
+definite direction yet.
+- simpler FFI, there's an open issue for discussion:  https://github.com/alpaca-lang/alpaca/issues/7
 - annotations in the BEAM file output (source line numbers, etc).  Not
-  hard based on what I've seen in the [LFE](https://github.com/lfe)
+  hard based on what can be seen in the [LFE](https://github.com/lfe)
   code base.
-- support for typing anything other than a raw source file.  I need to
-  investigate reading/writing beam file annotations to help with this
-  I suspect.
-- pattern matching in function declarations directly rather than in
-  the body.
-- type annotations/restrictions/ascriptions.  I'm toying with the idea
+- support for typing anything other than a raw source file.
+- type annotations/restrictions/ascriptions.  Toying with the idea
   of putting these in comments so that if the documentation is wrong
   it yields a compiler error.
 - anonymous functions
@@ -470,7 +458,7 @@ A very incomplete list:
   with a non-unit result.
 
 ## Implementation Issues
-I've been learning-while-doing so there are a number of issues with
+This has been a process of learning-while-doing so there are a number of issues with
 the code, including but not limited to:
 
 - reference cells in the typer are processes that are never garbage
@@ -542,10 +530,10 @@ like [ETS](http://erlang.org/doc/man/ets.html) here in the near term.
 
 ## Recursion
 Infinitely recursive functions are typed as such and permitted as they're
-necessary for processes that loop on `receive`.  I'm presently planning on
-restricting bi-directional calls between modules for simplicity.  This means
-that given module `A` and `B`, calls can occur from functions in `A` to those in
-`B` or the opposite but *not* in both directions.
+necessary for processes that loop on `receive`.  Bi-directional calls between modules
+are disallowed for simplicity.  This means that given module `A` and `B`, calls
+can occur from functions in `A` to those in `B` or the opposite but *not* in
+both directions.
 
 I think this is generally pretty reasonable as bidirectional references probably
 indicate a failure to separate concerns but it has the additional benefit of
