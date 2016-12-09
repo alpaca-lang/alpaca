@@ -1,8 +1,8 @@
 Alpaca
 =====
-[![Build Status](https://travis-ci.org/j14159/mlfe.svg?branch=master)](https://travis-ci.org/j14159/mlfe)
+[![Build Status](https://travis-ci.org/alpaca-lang/alpaca.svg?branch=master)](https://travis-ci.org/alpaca-lang/alpaca)
 
-Alpaca is a statically typed, strict/eagerly evaluated language for the Erlang virtual machine (BEAM).  At present it relies on type inference rather than explicit type annotations.  It was formerly known as ML-flavoured Erlang (MLFE).
+Alpaca is a statically typed, strict/eagerly evaluated, functional programming language for the Erlang virtual machine (BEAM).  At present it relies on type inference rather than explicit type annotations.  It was formerly known as ML-flavoured Erlang (MLFE).
 
 # TLDR; How Do I Use It?
 Make sure the following are installed:
@@ -16,13 +16,13 @@ Make a new project with `rebar3 new app your_app_name` and in the
 (e.g. `your_app_name/rebar.config`) add the following:
 
     {plugins, [
-        {rebar_prv_mlfe, ".*", {git, "https://github.com/tsloughter/rebar_prv_mlfe.git", {branch, "master"}}}
+        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
     ]}.
 
-    {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
+    {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
 
 Check out
-[the tour for the language basics](https://github.com/j14159/mlfe/blob/master/Tour.md),
+[the tour for the language basics](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md)
 put source files ending in `.alp` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
 
@@ -137,7 +137,7 @@ but mostly use OTP 19.1 locally from [kerl](https://github.com/kerl/kerl) now)
 
 ## Writing Alpaca with Rebar3
 Thanks to [@tsloughter](https://github.com/tsloughter)'s
-[MLFE Rebar3 plugin](https://github.com/tsloughter/rebar_prv_mlfe)
+[Alpaca Rebar3 plugin](https://github.com/alpaca-lang/rebar_prv_alpaca)
 it's pretty easy to get up and running.
 
 Make a new project with Rebar3 (substituting whatever project name
@@ -150,10 +150,10 @@ In the `rebar.config` file in your project's root folder add the
 following (borrowed from @tsloughter's docs):
 
     {plugins, [
-        {rebar_prv_mlfe, ".*", {git, "https://github.com/tsloughter/rebar_prv_mlfe.git", {branch, "master"}}}
+        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
     ]}.
 
-    {provider_hooks, [{post, [{compile, {mlfe, compile}}]}]}.
+    {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
 
 Now any files in the project's source folders that end with the
 extension `.alp` will be compiled and included in Rebar3's output
@@ -223,7 +223,7 @@ Most of the basic Erlang data types are supported:
 - tuples, `("a", :tuple, "of arity", 4)`
 - maps (basic support), e.g. `#{:atom_key => "string value"}`.  These
 are statically typed as lists are (generics, parametric polymorphism).
-- records (basic support), these look a bit like OCaml and Elm records, e.g. `{x=1, hello="world"}` will produce a record with an `x: int` and `hello: string` field.  Please see the  [language tour](https://github.com/j14159/mlfe/blob/master/Tour.md) for more details.
+- records (basic support), these look a bit like OCaml and Elm records, e.g. `{x=1, hello="world"}` will produce a record with an `x: int` and `hello: string` field.  Please see the  [language tour](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md) for more details.
 - pids, these are also parametric (like lists, "generics").  If you're
   including them in a type you can do something like `type t = int |
   pid int` for a type that covers integers and processes that receive integers.
