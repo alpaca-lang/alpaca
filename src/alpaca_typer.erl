@@ -2074,10 +2074,8 @@ filter_to_fun([], _, _) ->
     not_found;
 filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
-    io:format("Found fun ~w~n", [Fun]),
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
-    io:format("ignoring fun ~w~n", [_F]),
     filter_to_fun(Rem, FN, Arity).
 
 %%% for clauses we need to add bindings to the environment for any symbols
