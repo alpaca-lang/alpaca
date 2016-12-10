@@ -1067,7 +1067,7 @@ unify_list(As, Bs, Env, L) ->
     unify_list(As, Bs, {[], []}, Env, L).
 
 arity_error(Env, L) ->
-    erlang:error({error, {arity_error, module_name(Env), L}}).
+    erlang:error({arity_error, module_name(Env), L}).
 
 unify_list([], [], {MemoA, MemoB}, _, _) ->
     {lists:reverse(MemoA), lists:reverse(MemoB)};
@@ -1561,7 +1561,15 @@ typ_of(Env, Lvl, #alpaca_apply{name=N, args=Args}) ->
         {error, {bad_variable_name, _}} -> ForwardFun();
         {error, _} = E -> E;
         {TypF, NextVar} ->
-            typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+            %% If the function in the environment is the wrong arity we want to
+            %% try to locate a matching one in the module.  This does not allow
+            %% for different arity functions in a sequence of let bindings
+            %% which could be a weakness:
+            try
+                typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+            catch
+                error:{arity_error, _, _} -> ForwardFun()
+            end
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
@@ -2067,7 +2075,7 @@ filter_to_fun([], _, _) ->
 filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
-filter_to_fun([_|Rem], FN, Arity) ->
+filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
 %%% for clauses we need to add bindings to the environment for any symbols
@@ -4143,6 +4151,45 @@ constrain_polymorphic_adt_funs_test_() ->
                                         [t_unit],
                                         #adt{vars=[{"a", t_int}]}}}]
                    }},
+                 module_typ_and_parse(Code))
+      end
+    ].
+
+different_arity_test_() ->
+    [fun() ->
+             Code = 
+                 "module arity_test\n\n"
+                 "add x = x + x\n\n"
+                 "add x y = x + y",
+             ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
+     end
+    , fun() ->
+              Code = 
+                  "module arity_test\n\n"
+                  "export add/2\n\n"
+                  "add x = x + x\n\n"
+                  "add x y = x + y",
+              ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code = 
+                  "module arity_test\n\n"
+                  "export add/1\n\n"
+                  "add x = x + x\n\n"
+                  "f x y = add x y",
+              ?assertMatch(
+                 {error, {not_found, _, "add", 2}}, 
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code = 
+                  "module arity_test\n\n"
+                  "export add/1\n\n"
+                  "add x = "
+                  "let f a b = a + b in "
+                  "f x",
+              ?assertMatch(
+                 {error, {not_found, _, SyntheticName, 1}}, 
                  module_typ_and_parse(Code))
       end
     ].
