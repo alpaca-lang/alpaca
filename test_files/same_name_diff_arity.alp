@@ -1,0 +1,9 @@
+module same_name_diff_arity
+
+export seq/1
+
+seq x = seq 0 x
+
+seq current top = match current with
+    x, x > top -> []
+  | x -> x :: (seq (current + 1) top)  

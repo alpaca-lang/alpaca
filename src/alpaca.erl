@@ -345,6 +345,11 @@ radius_test() ->
     code:delete(M1),
     code:delete(M2).
 
+allow_duplicate_definition_with_different_arity_test() ->
+    [M] = compile_and_load(["test_files/same_name_diff_arity.alp"], []),
+    ?assertEqual([0, 1, 2, 3], M:seq(3)),
+    code:delete(M).
+
 %% There seems to be a compilation bug in the early formatter work I'm trying
 %% using Alpaca to write its own code formatter.  Figured I might as well just
 %% add the test here.
