@@ -4194,6 +4194,35 @@ different_arity_test_() ->
       end
     ].
 
+types_in_types_test() ->
+    AstCode =
+        "module types_in_types\n\n"
+        "export format/1\n\n"
+        "export_type symbol,expr,ast\n\n"
+        "type symbol = Symbol string\n\n"
+        "type expr = symbol | Apply (expr, expr) "
+        "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
+        "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
+
+    FormatterCode = 
+        "module formatter\n\n"
+        %% With the following line absent typing will fail.  This is  because 
+        %% importing a type makes it available _inside_ the module that it
+        %% depends on in order to type but does not pull in any of those the
+        %% imported type depends on.  The specific error is:
+        %% `{error,{unknown_type,"symbol"}}`
+        % "import_type types_in_types.symbol\n\n"
+        "import_type types_in_types.expr\n\n"
+        "import_type types_in_types.ast\n\n"
+        "format ast_node = format 0 ast_node\n\n"
+        "format d Match {e=e, clauses=cs} = :match",
+    {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+    {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+
+    ?assertMatch(
+       {ok, [#alpaca_module{}, #alpaca_module{}]}, 
+       type_modules([M1, M2])).
+
 no_process_leak_test() ->
     Code =
         "module no_leaks\n\n"
