@@ -988,11 +988,17 @@ inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
                (#alpaca_constructor{type=#alpaca_type{}=T}=C) ->
                     {C, inst_type(T, EnvIn)}
             end,
-    Cons_f = fun({_, {error, _}=Err}) ->Err;
+    Cons_f = fun({error, _}=Err) ->Err;
                 ({C, {ok, Env, ADT, _}}) ->
                      #adt{vars=Vs} = get_cell(ADT),
                      #alpaca_constructor{arg=Arg} = C,
-                     Types = EnvIn#env.current_types,
+                     %% We need to include types from other modules even if 
+                     %% they're not exported so that types we *have* imported
+                     %% that depend on those we've not can still be instantiated
+                     %% correctly:
+                     ExtractTypes = fun(#alpaca_module{types=Ts}) -> Ts end,
+                     OtherTs = lists:flatten(lists:map(ExtractTypes, Env#env.modules)),
+                     Types = EnvIn#env.current_types ++ OtherTs,
                      Arrow = {type_arrow, inst_constructor_arg(Arg, Vs, Types), ADT},
                      {Env, Arrow}
              end,
@@ -1223,6 +1229,10 @@ type_modules(Mods) ->
         try type_modules(Mods, new_env(Mods), []) of
             Res -> exit(Res)
         catch
+            %% We want the underlying error that resulted in the bad match,
+            %% not the `badmatch` itself:
+            error:{badmatch, {error, _}=Err} ->
+                exit(Err);
             E:T ->
                 io:format("alpaca_typer:type_modules/2 crashed with ~p:~p~n"
                           "Stacktrace:~n~p~n", [E, T, erlang:get_stacktrace()]),
@@ -1737,7 +1747,8 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                         case unwrap(T) of
                             {t_receiver, Recv, Res} ->
                                 TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
-                                {t_receiver, Recv2, Res2}=collapse_receivers(TRec, Env2, Lvl),
+                                {t_receiver, Recv2, Res2} = 
+                                    collapse_receivers(TRec, Env2, Lvl),
                                 X = {t_receiver, Recv2,
                                       {t_arrow, JustTypes, Res2}},
                                 {[X|Types], update_counter(NextVar, Env2)};
@@ -4194,7 +4205,7 @@ different_arity_test_() ->
       end
     ].
 
-types_in_types_test() ->
+types_in_types_test_() ->
     AstCode =
         "module types_in_types\n\n"
         "export format/1\n\n"
@@ -4203,25 +4214,73 @@ types_in_types_test() ->
         "type expr = symbol | Apply (expr, expr) "
         "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
         "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
-
-    FormatterCode = 
-        "module formatter\n\n"
-        %% With the following line absent typing will fail.  This is  because 
-        %% importing a type makes it available _inside_ the module that it
-        %% depends on in order to type but does not pull in any of those the
-        %% imported type depends on.  The specific error is:
-        %% `{error,{unknown_type,"symbol"}}`
-        % "import_type types_in_types.symbol\n\n"
-        "import_type types_in_types.expr\n\n"
-        "import_type types_in_types.ast\n\n"
-        "format ast_node = format 0 ast_node\n\n"
-        "format d Match {e=e, clauses=cs} = :match",
-    {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
-    {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
-
-    ?assertMatch(
-       {ok, [#alpaca_module{}, #alpaca_module{}]}, 
-       type_modules([M1, M2])).
+    [fun() ->
+             %% Without importing `symbol` we should be fine if we're not
+             %% referencing its constructor directly:
+             FormatterCode = 
+                 "module formatter\n\n"
+                 "import_type types_in_types.expr\n\n"
+                 "import_type types_in_types.ast\n\n"
+                 "format ast_node = format 0 ast_node\n\n"
+                 "format d Match {e=e, clauses=cs} = :match",
+             {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+             {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+             
+             ?assertMatch(
+                {ok, [#alpaca_module{}, #alpaca_module{}]}, 
+                type_modules([M1, M2]))
+     end
+    , fun() ->
+              %% Importing `symbol` and not using it should be fine:
+              FormatterCode = 
+                  "module formatter\n\n"
+                  "import_type types_in_types.symbol\n\n"
+                  "import_type types_in_types.expr\n\n"
+                  "import_type types_in_types.ast\n\n"
+                  "format ast_node = format 0 ast_node\n\n"
+                  "format d Match {e=e, clauses=cs} = :match",
+              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              
+              ?assertMatch(
+                 {ok, [#alpaca_module{}, #alpaca_module{}]}, 
+                 type_modules([M1, M2]))
+      end
+    , fun() ->
+              %% NOT importing `symbol` and then trying to use its type 
+              %% constructor should yield an error:
+              FormatterCode = 
+                  "module formatter\n\n"
+                  "import_type types_in_types.expr\n\n"
+                  "import_type types_in_types.ast\n\n"
+                  "format ast_node = format 0 ast_node\n\n"
+                  "format d Match {e=e, clauses=cs} = :match\n\n"
+                  "format d Symbol _ = :symbol",
+              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              
+              ?assertMatch(
+                 {error, {bad_constructor, _, "Symbol"}},
+                 type_modules([M1, M2]))
+      end
+    , fun() ->
+              %% Importing `symbol` should let us use the constructor:
+              FormatterCode = 
+                  "module formatter\n\n"
+                  "import_type types_in_types.symbol\n\n"
+                  "import_type types_in_types.expr\n\n"
+                  "import_type types_in_types.ast\n\n"
+                  "format ast_node = format 0 ast_node\n\n"
+                  "format d Match {e=e, clauses=cs} = :match\n\n"
+                  "format d Symbol _ = :symbol",
+              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              
+              ?assertMatch(
+                 {ok, [#alpaca_module{}, #alpaca_module{}]},
+                 type_modules([M1, M2]))
+      end
+    ].
 
 no_process_leak_test() ->
     Code =
