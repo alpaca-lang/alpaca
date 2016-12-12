@@ -337,7 +337,7 @@ module_name(_) ->
 -spec unify_error(Env::env(), Line::integer(), typ(), typ()) ->
                          unification_error().
 unify_error(Env, Line, Typ1, Typ2) ->
-    {error, {cannot_unify, module_name(Env), Line, Typ1, Typ2}}.
+    {error, {cannot_unify, module_name(Env), Line, unwrap(Typ1), unwrap(Typ2)}}.
 
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
@@ -644,20 +644,27 @@ unify_adt(_C1, _C2,
                                 (_) -> false
                              end
                    end,
-    case lists:filter(MemberFilter(NB), MA) of
+
+    %% as a result of instantiating types some members might be in reference
+    %% cells.  We unpack them before searching for the right encompassing
+    %% type so we don't miss anything:
+    UnpackMembers = fun(Ms) -> [get_cell(M) || M <- Ms] end,
+
+    case lists:filter(MemberFilter(NB), UnpackMembers(MA)) of
         [#adt{vars=ToCheck}] ->
             UnifyFun = fun(_, {error, _}=Err)    -> Err;
                           ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
                        end,
             lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
         _ ->
-            case lists:filter(MemberFilter(NA), MB) of
+            case lists:filter(MemberFilter(NA), UnpackMembers(MB)) of
                 [#adt{vars=ToCheck}] ->
                     UnifyFun = fun(_, {error, _}=Err)    -> Err;
                                   ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
                                end,
                     lists:foldl(UnifyFun, ok, lists:zip(VarsA, ToCheck));
-                _ -> unify_error(Env, L, A, B)
+                _ -> 
+                    unify_error(Env, L, A, B)
             end
     end;
 
@@ -4255,7 +4262,8 @@ types_in_types_test_() ->
                   "import_type types_in_types.ast\n\n"
                   "format ast_node = format 0 ast_node\n\n"
                   "format d Match {e=e, clauses=cs} = :match\n\n"
-                  "format d Symbol _ = :symbol",
+                  "format d Symbol _ = :symbol\n\n"
+                  "foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
               {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
               {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
               
@@ -4264,6 +4272,15 @@ types_in_types_test_() ->
                  type_modules([M1, M2]))
       end
     , fun() ->
+              Ast =
+                  "module types_in_types\n\n"
+                  "export format/1\n\n"
+                  "export_type symbol,expr,ast\n\n"
+                  "type symbol = Symbol {name: string}\n\n"
+                  "type expr = symbol | Apply (expr, expr) "
+                  "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
+                  "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
+              
               %% Importing `symbol` should let us use the constructor:
               FormatterCode = 
                   "module formatter\n\n"
@@ -4272,8 +4289,9 @@ types_in_types_test_() ->
                   "import_type types_in_types.ast\n\n"
                   "format ast_node = format 0 ast_node\n\n"
                   "format d Match {e=e, clauses=cs} = :match\n\n"
-                  "format d Symbol _ = :symbol",
-              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
+                  "format d Symbol _ = :symbol\n\n"
+                  "foo () = format 0 Match {e=Symbol {name=\"x\"}, clauses=[]}",
+              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, Ast),
               {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
               
               ?assertMatch(
