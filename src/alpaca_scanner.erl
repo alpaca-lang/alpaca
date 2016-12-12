@@ -9,7 +9,7 @@
 
 scan(Code) ->
     % Sanitize break tokens with a regular expression
-    {ok, Re} = re:compile("\n(\s+)\n", [unicode]),
+    {ok, Re} = re:compile("\n([ \t]+)\n", [unicode]),
     Sanitized = re:replace(Code, Re, "\n\n", [{return,list},global]),
     alpaca_scan:string(Sanitized).
 
