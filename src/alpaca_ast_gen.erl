@@ -1183,6 +1183,30 @@ simple_module_test() ->
                                                              {symbol,11,"svar_6"}]}}]}]}},
        parse_module(0, Code)).
 
+break_test() ->
+    % We should tolerate whitespace between the two break tokens
+    Code = "module test_mod\n\n
+            a = 5\n   \n"
+           "b = 6\n\n",
+     ?assertMatch(
+       {ok, _, _,
+        #alpaca_module{
+           name='test_mod',
+           function_exports=[],
+           functions=[#alpaca_fun_def{
+                         name={symbol, 4, "a"},
+                         versions=[#alpaca_fun_version{
+                                      args=[],
+                                    body={int, 4, 5}}]},
+                      #alpaca_fun_def{
+                         name={symbol, 6, "b"},
+                         versions=[#alpaca_fun_version{
+                                      args=[],
+                                      body={int, 6, 6}}]}               
+       ]}},
+       parse_module(0, Code)).
+    
+
 rebinding_test_() ->
     %% Simple rebinding:
     {ok, A} = test_parse("f x = let y = 2 in x + y"),
