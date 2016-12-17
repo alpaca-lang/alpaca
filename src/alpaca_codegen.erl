@@ -27,6 +27,7 @@
 %% Tracks:
 %%   - names of top-level functions with their arity
 %%   - incrementing variable number for wildcard variables (underscores)
+%%   - numbers for synthesized function name generation
 %% 
 %% The top-level functions get looked up for correct Core Erlang call 
 %% construction.  Renaming instances of "_" (the wildcard or "don't care"
@@ -36,7 +37,8 @@
 %% the 'cerl' module.
 -record(env, {
           module_funs=[] :: list({string(), integer()}),
-          wildcard_num=0 :: integer()
+          wildcard_num=0 :: integer(),
+          synthetic_fun_num=0 :: integer()
          }).
 
 make_env(#alpaca_module{functions=Funs}=Mod) ->
@@ -286,6 +288,15 @@ gen_expr(Env, #alpaca_apply{expr={{symbol, _L, N}, Arity}, args=Args}) ->
               FName, 
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
+gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
+    FunName = "synth_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
+    Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
+    SynthBinding = #var_binding{
+                      name={symbol, L, FunName},
+                      to_bind=Expr,
+                      expr=#alpaca_apply{line=L, expr={symbol, L, FunName}, args=Args}},
+
+    gen_expr(Env2, SynthBinding);
 
 gen_expr(Env, #alpaca_ffi{}=FFI) ->
     #alpaca_ffi{

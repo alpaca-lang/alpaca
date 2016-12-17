@@ -350,6 +350,12 @@ allow_duplicate_definition_with_different_arity_test() ->
     ?assertEqual([0, 1, 2, 3], M:seq(3)),
     code:delete(M).
 
+apply_to_expressions_test() ->
+    [M] = compile_and_load(["test_files/apply_to_expression.alp"], []),
+    ?assertEqual(4, M:foo(unit)),
+    ?assertEqual(6, M:uses_fun(3)),
+    code:delete(M).
+
 %% There seems to be a compilation bug in the early formatter work I'm trying
 %% using Alpaca to write its own code formatter.  Figured I might as well just
 %% add the test here.
