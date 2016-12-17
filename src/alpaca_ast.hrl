@@ -436,11 +436,13 @@
 %%% in the third.
 
 -record(alpaca_apply, {type=undefined :: typ(),
-                     name=undefined :: undefined
-                                     | {alpaca_symbol(), integer()}
-                                     | {atom(), alpaca_symbol(), integer()}
-                                     | alpaca_symbol()
-                                     | alpaca_bif_name(),
+                       line=0 :: integer(),
+                       expr=undefined :: undefined
+                                       | {alpaca_symbol(), integer()}
+                                       | {atom(), alpaca_symbol(), integer()}
+                                       | alpaca_symbol()
+                                       | alpaca_bif_name()
+                                       | alpaca_expression(),
                      args=[] :: list(alpaca_expression())
                     }).
 -type alpaca_apply() :: #alpaca_apply{}.

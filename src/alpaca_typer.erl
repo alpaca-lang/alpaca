@@ -1506,7 +1506,7 @@ typ_of(Env, Lvl, {bif, AlpacaName, _, _, _}) ->
             {T, VarNum}
     end;
 
-typ_of(Env, Lvl, #alpaca_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
     Satisfy =
         fun() ->
                 %% Naively assume a single call to the same function for now.
@@ -1550,18 +1550,17 @@ typ_of(Env, Lvl, #alpaca_apply{name={Mod, {symbol, L, X}, Arity}, args=Args}) ->
         _  -> Error()
     end;
 
-typ_of(Env, Lvl, #alpaca_apply{name=N, args=Args}) ->
-    %% When a symbol isn't bound to a function in the environment,
-    %% attempt to find it in the module.  Here we're assuming that
-    %% the user has referred to a function that is defined later than
-    %% the one being typed.
-    {L, FN} = case N of
-                  {symbol, Line, FunName} -> {Line, FunName};
-                  {bif, FunName, Line, _, _} -> {Line, FunName}
-              end,
-
+typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
+    %% If the expression we're applying arguments to is a named function
+    %% (e.g. a symbol or bif), attempt to find it in the module.
+    %% This ForwardFun function is used specifically to find functions defined
+    %% later than the application we're trying to type.
     ForwardFun =
         fun() ->
+                FN = case Expr of
+                         {symbol, Line, FunName}    -> FunName;
+                         {bif, FunName, _, _, _} -> FunName
+                     end,
                 Mod = Env#env.current_module,
                 case get_fun(Mod, FN, length(Args)) of
                     {ok, _, Fun} ->
@@ -1574,14 +1573,17 @@ typ_of(Env, Lvl, #alpaca_apply{name=N, args=Args}) ->
                 end
         end,
 
-    case typ_of(Env, Lvl, N) of
+    case typ_of(Env, Lvl, Expr) of
         {error, {bad_variable_name, _}} -> ForwardFun();
         {error, _} = E -> E;
         {TypF, NextVar} ->
             %% If the function in the environment is the wrong arity we want to
-            %% try to locate a matching one in the module.  This does not allow
-            %% for different arity functions in a sequence of let bindings
-            %% which could be a weakness:
+            %% try to locate a matching one in the module.
+            %% This does not allow for different arity functions in a sequence 
+            %% of let bindings which could be a weakness.
+            %%
+            %% TODO:  some arity errors should disappear with support for 
+            %% automatic currying.
             try
                 typ_apply(Env, Lvl, TypF, NextVar, Args, L)
             catch
@@ -1708,7 +1710,7 @@ typ_of(#env{next_var=NV}=Env, Lvl, #alpaca_ffi{clauses=Cs, module={_, L, _}}) ->
 %% Spawning of functions in the current module:
 typ_of(Env, Lvl, #alpaca_spawn{line=L, module=undefined, function=F, args=Args}) ->
     %% make a function application and type it:
-    Apply = #alpaca_apply{name=F, args=Args},
+    Apply = #alpaca_apply{line=0, expr=F, args=Args},
 
     case typ_of(Env, Lvl, F) of
         {error, _}=Err -> Err;
@@ -1978,11 +1980,7 @@ type_receive(Env, Lvl, #alpaca_receive{clauses=Cs, line=Line, timeout_action=TA}
     end.
 
 %% Get the line number that should be reported by an application AST node.
-apply_line(#alpaca_apply{name={symbol, L, _}}) ->
-    L;
-apply_line(#alpaca_apply{name={_, {symbol, L, _}, _}}) ->
-    L;
-apply_line(#alpaca_apply{name={bif, _, L, _, _}}) ->
+apply_line(#alpaca_apply{line=L}) ->
     L.
 
 typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
@@ -2393,7 +2391,7 @@ clause_test_() ->
                      new_env(),
                      #alpaca_clause{pattern={symbol, 1, "x"},
                                   result=#alpaca_apply{
-                                            name={bif, '+', 1, erlang, '+'},
+                                            expr={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {int, 1, 2}]}}))
     ].
@@ -4298,6 +4296,21 @@ types_in_types_test_() ->
                  {ok, [#alpaca_module{}, #alpaca_module{}]},
                  type_modules([M1, M2]))
       end
+    ].
+
+expression_typing_test_() ->
+    [%% `1` is not a function from an int to something else:
+     ?_assertMatch(
+        {error, {cannot_unify, _, _, t_int, {t_arrow, [t_int], _}}}, 
+        top_typ_of("1 2")),
+     ?_assertMatch({{t_arrow, [t_unit], t_int}, _}, 
+                   top_typ_of(
+                     "g () = "
+                     "let f x = x + x in "
+                     "let g () = f in "
+                     "(g ()) 2"
+                    ))
+     
     ].
 
 no_process_leak_test() ->
