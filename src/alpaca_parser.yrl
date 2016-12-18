@@ -408,16 +408,16 @@ simple_expr -> terms :
 case '$1' of
     [T] ->
         T;
-    [{symbol, _, _} = S | T] ->
-        #alpaca_apply{name=S, args=T};
+    [{symbol, L, _} = S | T] ->
+        #alpaca_apply{line=L, expr=S, args=T};
     [{module_fun, L, MF} | T] ->
         % this should be safe given the definition of a module-function
         % reference in alpaca_scan.xrl:
         [Mod, Fun] = string:tokens(MF, "."),
         Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
-        #alpaca_apply{name=Name, args=T};
+        #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
-        {error, {invalid_fun_application, Term, Args}}
+        #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
 end.
 
 simple_expr -> binding : '$1'.
@@ -465,8 +465,9 @@ make_infix(Op, A, B) ->
       {neq, L} ->  {bif, '/=', L, erlang, '/='}
     end,
     #alpaca_apply{type=undefined,
-                name=Name,
-                args=[A, B]}.
+                  line=term_line(Name),
+                  expr=Name,
+                  args=[A, B]}.
 
 make_define([{symbol, L, _} = Name|A], Expr) ->
     case validate_args(A) of
@@ -511,6 +512,8 @@ term_line(Term) ->
     case Term of
         {_, L} when is_integer(L) -> L;
         {_, L, _} when is_integer(L) -> L;
+        {bif, _, L, _, _} -> L;
+        #alpaca_apply{line=L} -> L;
         #alpaca_cons{line=L} -> L;
         #alpaca_map_pair{line=L} -> L;
         #alpaca_map{line=L} -> L;

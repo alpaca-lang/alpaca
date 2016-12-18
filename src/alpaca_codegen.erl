@@ -27,6 +27,7 @@
 %% Tracks:
 %%   - names of top-level functions with their arity
 %%   - incrementing variable number for wildcard variables (underscores)
+%%   - numbers for synthesized function name generation
 %% 
 %% The top-level functions get looked up for correct Core Erlang call 
 %% construction.  Renaming instances of "_" (the wildcard or "don't care"
@@ -36,7 +37,8 @@
 %% the 'cerl' module.
 -record(env, {
           module_funs=[] :: list({string(), integer()}),
-          wildcard_num=0 :: integer()
+          wildcard_num=0 :: integer(),
+          synthetic_fun_num=0 :: integer()
          }).
 
 make_env(#alpaca_module{functions=Funs}=Mod) ->
@@ -250,26 +252,26 @@ gen_expr(Env, #alpaca_type_check{type=T, expr={symbol, _, _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
     TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom(T), [Exp]),
     {Env, TC};
-gen_expr(Env, #alpaca_apply{name={bif, _, _L, Module, FName}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{expr={bif, _, _L, Module, FName}, args=Args}) ->
     Apply = cerl:c_call(
               cerl:c_atom(Module),
               cerl:c_atom(FName),
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{name={Module, {symbol, _L, N}, _}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{expr={Module, {symbol, _L, N}, _}, args=Args}) ->
     FName = cerl:c_atom(N),
     Apply = cerl:c_call(
               cerl:c_atom(Module),
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{name={symbol, _Line, Name}, args=[{unit, _}]}) ->
+gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=[{unit, _}]}) ->
     FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined -> cerl:c_var(list_to_atom(Name));
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
-gen_expr(Env, #alpaca_apply{name={symbol, _Line, Name}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=Args}) ->
     FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
@@ -280,12 +282,21 @@ gen_expr(Env, #alpaca_apply{name={symbol, _Line, Name}, args=Args}) ->
               FName, 
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{name={{symbol, _L, N}, Arity}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{expr={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
     Apply = cerl:c_apply(
               FName, 
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
+gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
+    FunName = "synth_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
+    Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
+    SynthBinding = #var_binding{
+                      name={symbol, L, FunName},
+                      to_bind=Expr,
+                      expr=#alpaca_apply{line=L, expr={symbol, L, FunName}, args=Args}},
+
+    gen_expr(Env2, SynthBinding);
 
 gen_expr(Env, #alpaca_ffi{}=FFI) ->
     #alpaca_ffi{
