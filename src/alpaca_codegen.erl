@@ -45,6 +45,12 @@ make_env(#alpaca_module{functions=Funs}=Mod) ->
     TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
+prefix_modulename(Name) ->    
+    case Name of
+        erlang -> erlang;
+        _ -> list_to_atom("alpaca_" ++ atom_to_list(Name))
+    end.
+
 gen(#alpaca_module{}=Mod, Opts) ->
     #alpaca_module{
        name=ModuleName,
@@ -52,19 +58,20 @@ gen(#alpaca_module{}=Mod, Opts) ->
        functions=Funs,
        tests=Tests} = Mod,
     Env = make_env(Mod),
+    PrefixModuleName = prefix_modulename(ModuleName), 
     {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledTests = gen_tests(Env2, Tests),
 
     CompiledExports =
         [gen_export(E) || E <- Exports] ++ gen_test_exports(Tests, Opts, []),
     {ok, cerl:c_module(
-           cerl:c_atom(ModuleName),
+           cerl:c_atom(PrefixModuleName),
            [gen_export({"module_info", 0}),
             gen_export({"module_info", 1})] ++
                CompiledExports,
            [],
-           [module_info0(ModuleName),
-            module_info1(ModuleName)] ++
+           [module_info0(PrefixModuleName),
+            module_info1(PrefixModuleName)] ++
                CompiledFuns ++ CompiledTests)
     }.
 
@@ -254,14 +261,14 @@ gen_expr(Env, #alpaca_type_check{type=T, expr={symbol, _, _}=S}) ->
     {Env, TC};
 gen_expr(Env, #alpaca_apply{expr={bif, _, _L, Module, FName}, args=Args}) ->
     Apply = cerl:c_call(
-              cerl:c_atom(Module),
+              cerl:c_atom(prefix_modulename(Module)),
               cerl:c_atom(FName),
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
 gen_expr(Env, #alpaca_apply{expr={Module, {symbol, _L, N}, _}, args=Args}) ->
     FName = cerl:c_atom(N),
     Apply = cerl:c_call(
-              cerl:c_atom(Module),
+              cerl:c_atom(prefix_modulename(Module)),
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
@@ -376,10 +383,11 @@ gen_expr(Env, #alpaca_spawn{from_module=M,
                                   {_, AExp} = gen_expr(Env, A),
                                   cerl:c_cons(AExp, L) 
                           end, cerl:c_nil(), lists:reverse(Args)),
+    PrefixModuleName = prefix_modulename(M), 
     {Env, cerl:c_call(
             cerl:c_atom('erlang'),
             cerl:c_atom('spawn'),
-            [cerl:c_atom(M), cerl:c_atom(FN), ArgCons])};
+            [cerl:c_atom(PrefixModuleName), cerl:c_atom(FN), ArgCons])};
 
 gen_expr(Env, #alpaca_receive{clauses=Cs, timeout_action=undefined}) ->
     {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
@@ -519,7 +527,7 @@ module_with_internal_apply_test() ->
     {ok, _, Bin} = parse_and_gen(Code).
 
 infix_fun_test() ->
-    Name = infix_fun,
+    Name = alpaca_infix_fun,
     FN = atom_to_list(Name) ++ ".beam",
     Code =
         "module infix_fun\n\n"
@@ -533,7 +541,7 @@ infix_fun_test() ->
     true = code:delete(Name).
 
 fun_and_var_binding_test() ->
-    Name = fun_and_var_binding,
+    Name = alpaca_fun_and_var_binding,
     FN = atom_to_list(Name) ++ ".beam",
     Code =
         "module fun_and_var_binding\n\n"
@@ -548,7 +556,7 @@ fun_and_var_binding_test() ->
     true = code:delete(Name).
 
 unit_function_test() ->
-    Name = unit_function,
+    Name = alpaca_unit_function,
     FN = atom_to_list(Name) ++ ".beam",
     Code =
         "module unit_function\n\n"
@@ -574,7 +582,7 @@ parser_nested_letrec_test() ->
 
 %% This test will fail until I have implemented equality guards:
 module_with_match_test() ->
-    Name = compile_module_with_match,
+    Name = alpaca_compile_module_with_match,
     FN = atom_to_list(Name) ++ ".beam",
     Code =
         "module compile_module_with_match\n\n"
@@ -601,7 +609,7 @@ module_with_match_test() ->
     true = code:delete(Name).
 
 cons_test() ->
-    Name = compiler_cons_test,
+    Name = alpaca_compiler_cons_test,
     FN = atom_to_list(Name) ++ ".beam",
     Code =
         "module compiler_cons_test\n\n"
@@ -634,15 +642,15 @@ call_test() ->
 
     {ok, _, Bin1} = parse_and_gen(Code1),
     {ok, _, Bin2} = parse_and_gen(Code2),
-    {module, call_test_a} =
-        code:load_binary(call_test_a, "call_test_a.beam", Bin1),
-    {module, call_test_b} =
-        code:load_binary(call_test_b, "call_test_b.beam", Bin2),
+    {module, alpaca_call_test_a} =
+        code:load_binary(alpaca_call_test_a, "alpaca_call_test_a.beam", Bin1),
+    {module, alpaca_call_test_b} =
+        code:load_binary(alpaca_call_test_b, "alpaca_call_test_b.beam", Bin2),
 
-    Name = call_test_a,
+    Name = alpaca_call_test_a,
     ?assertEqual(3, Name:a(2)),
-    true = code:delete(call_test_a),
-    true = code:delete(call_test_b).
+    true = code:delete(alpaca_call_test_a),
+    true = code:delete(alpaca_call_test_b).
 
 ffi_test() ->
     Code =
@@ -652,12 +660,13 @@ ffi_test() ->
         "  1 -> :one\n"
         "| _ -> :not_one\n",
     {ok, _, Bin} = parse_and_gen(Code),
-    {module, ffi_test} = code:load_binary(ffi_test, "ffi_test.beam", Bin),
+    {module, alpaca_ffi_test} = code:load_binary(alpaca_ffi_test, 
+                                                 "alpaca_ffi_test.beam", Bin),
 
-    Mod = ffi_test,
+    Mod = alpaca_ffi_test,
     ?assertEqual('one', Mod:a("1")),
     ?assertEqual('not_one', Mod:a("2")),
-    true = code:delete(ffi_test).
+    true = code:delete(alpaca_ffi_test).
 
 %% TODO:  with union types, test/1 should return integers and floats
 %% just tagged with different type constructors.
@@ -670,8 +679,8 @@ type_guard_test() ->
         "   i, is_integer i -> i\n"
         " | f -> 0",
     {ok, _, Bin} = parse_and_gen(Code),
-    Mod = type_guard_test,
-    {module, Mod} = code:load_binary(Mod, "type_guard_test.beam", Bin),
+    Mod = alpaca_type_guard_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_type_guard_test.beam", Bin),
 
     %% Checking that when the result is NOT an integer we're falling back
     %% to integer 0 as expected in the code above:
@@ -690,8 +699,8 @@ multi_type_guard_test() ->
         " | i, is_integer i -> :just_int\n"
         " | f -> :not_int",
     {ok, _, Bin} = parse_and_gen(Code),
-    Mod = multi_type_guard_test,
-    {module, Mod} = code:load_binary(Mod, "multi_type_guard_test.beam", Bin),
+    Mod = alpaca_multi_type_guard_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_multi_type_guard_test.beam", Bin),
 
     ?assertEqual('got_four', Mod:check(2)),
     ?assertEqual('middle', Mod:check(4)),
@@ -702,8 +711,8 @@ multi_type_guard_test() ->
 module_info_helpers_test() ->
     Code = "module module_info_helpers_test\n",
     {ok, _, Bin} = parse_and_gen(Code),
-    Mod = module_info_helpers_test,
-    {module, Mod} = code:load_binary(Mod, "module_info_helpers_test.beam", Bin),
+    Mod = alpaca_module_info_helpers_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_module_info_helpers_test.beam", Bin),
     ?assertEqual(Mod, Mod:module_info(module)),
     ?assert(is_list(Mod:module_info())),
     true = code:delete(Mod).
