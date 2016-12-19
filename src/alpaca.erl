@@ -86,9 +86,10 @@ load_files(Filenames) ->
 compile_module(#alpaca_module{name=N}=Mod, Opts) ->
     {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
+    PrefixedName = list_to_atom("alpaca_" ++ atom_to_list(N)),
     #compiled_module{
-       name=N,
-       filename=atom_to_list(N) ++ ".beam",
+       name=PrefixedName,
+       filename=atom_to_list(PrefixedName) ++ ".beam",
        bytes=Bin}.
 
 read_file(_, [eof|Memo]) ->
@@ -121,16 +122,16 @@ type_modules(Mods) ->
 basic_file_test() ->
     Res = file("test_files/basic_compile_file.alp"),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
-    ?assertEqual('basic_compile_file', N),
-    ?assertEqual("basic_compile_file.beam", FN),
+    ?assertEqual('alpaca_basic_compile_file', N),
+    ?assertEqual("alpaca_basic_compile_file.beam", FN),
     ?assertMatch({module, N}, code:load_binary(N, FN, Bin)),
     ?assertEqual(1998, N:double(999)).
 
 basic_math_compile_test() ->
     Res = file("test_files/basic_math.alp", []),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
-    ?assertEqual('basic_math', N),
-    ?assertEqual("basic_math.beam", FN),
+    ?assertEqual('alpaca_basic_math', N),
+    ?assertEqual("alpaca_basic_math.beam", FN),
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(3, N:add2(1)),
     ?assertEqual(5, N:add(2, 3)),
@@ -156,9 +157,10 @@ basic_concat_compile_test() ->
     true = code:delete(N).
 
 compile_and_load(Files, Opts) ->
-    Compiled = compile({files, Files}, Opts),
+    Compiled = compile({files, Files}, Opts),    
     LoadFolder = fun(#compiled_module{name=N, filename=FN, bytes=Bin}, Acc) ->
-                         {module, N} = code:load_binary(N, FN, Bin),
+                         Prefixed = list_to_atom("alpaca_" ++ atom_to_list(N)),
+                         {module, N_} = code:load_binary(N, FN, Bin),
                          io:format("Loaded ~w ~s~n", [N, FN]),
                          [N|Acc]
                  end,
@@ -168,7 +170,7 @@ type_import_test() ->
     Files = ["test_files/basic_adt.alp", "test_files/type_import.alp"],
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
-    M = type_import,
+    M = alpaca_type_import,
     ?assertEqual(2, M:test_output(unit)),
     [code:delete(N) || N <- ModuleNames].
 
@@ -176,8 +178,8 @@ type_imports_and_pattern_test() ->
     Files = ["test_files/basic_adt.alp", "test_files/list_opts.alp"],
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
-    LO = list_opts,
-    ADT = basic_adt,
+    LO = alpaca_list_opts,
+    ADT = alpaca_basic_adt,
     ?assertEqual({'Some', 1}, LO:head_opt({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
     ?assertEqual('None', LO:head_opt('Nil')),
     [code:delete(N) || N <- ModuleNames].
