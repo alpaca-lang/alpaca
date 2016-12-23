@@ -17,7 +17,7 @@
 
 %%% ## Type-Tracking Data Types
 %%%
-%%% These are all of the specs the typer uses to track ALPACA types.
+%%% These are all of the specs the typer uses to track Alpaca types.
 
 -type typ_name() :: atom().
 
@@ -473,6 +473,7 @@
 -record(alpaca_module, {
           name=no_module :: atom(),
           function_exports=[] :: list({string(), integer()}),
+          function_imports=[] :: list({string(), integer()}|alpaca_symbol()),
           types=[] :: list(alpaca_type()),
           type_imports=[] :: list(alpaca_type_import()),
           type_exports=[] :: list(string()),
