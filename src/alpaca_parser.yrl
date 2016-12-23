@@ -477,7 +477,10 @@ fun_and_arity -> import_export_fun '/' int :
   {symbol, _, Name} = '$1',
   {int, _, Arity} = '$3',
   {Name, Arity}.
-
+fun_and_arity -> symbol '/' int :
+{symbol, _, Name} = '$1',
+{int, _, Arity} = '$3',
+{Name, Arity}.
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
   {_, _, Name} = '$1',
