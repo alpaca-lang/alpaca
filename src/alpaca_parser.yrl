@@ -223,6 +223,7 @@ const -> string : '$1'.
 const -> '_' : '$1'.
 const -> unit : '$1'.
 
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
 module_fun -> symbol '.' symbol '/' int :
   {symbol, L, Mod} = '$1',
   {symbol, _, Fun} = '$3',
@@ -232,6 +233,12 @@ module_fun -> symbol '.' symbol :
   {symbol, L, Mod} = '$1',
   {symbol, _, Fun} = '$3',
   #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun}.
+=======
+module_fun -> symbol '.' symbol :
+  {symbol, L, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {module_fun, L, Mod, Fun}.
+>>>>>>> Basic function import syntax
 
 %% ----- Lists  ------------------------
 literal_cons_items -> term : ['$1'].
@@ -430,6 +437,7 @@ import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 
 %% fun_list_items get turned into the correct tuple format above when they
 %% become a fun_subset (see a bit further below).
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
 fun_list_items -> import_export_fun :
   {symbol, _, F} = '$1',
   [F].
@@ -437,6 +445,15 @@ fun_list_items -> fun_and_arity : ['$1'].
 fun_list_items -> import_export_fun ',' fun_list_items :
   {symbol, _, F} = '$1',
   [F | '$3'].
+=======
+fun_list_items -> symbol : 
+  {symbol, _, F} = '$1',
+  [{F, all}].
+fun_list_items -> fun_and_arity : ['$1'].
+fun_list_items -> symbol ',' fun_list_items :
+  {symbol, _, F} = '$1',
+  [{F, all} | '$3'].
+>>>>>>> Basic function import syntax
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 
 %% Here we associate the module name with each of the functions being imported.
@@ -444,14 +461,19 @@ fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 %% functions that aren't defined in the module importing these functions.
 fun_subset -> symbol '.' '[' fun_list_items ']' : 
   {symbol, _, Mod} = '$1',
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
   F = fun({Name, Arity}) -> {Name, {list_to_atom(Mod), Arity}};
          (Name)          -> {Name, list_to_atom(Mod)}
   end,
   lists:map(F, '$4').
+=======
+  lists:map(fun({Name, Arity}) -> {Name, {Mod, Arity}} end, '$4').
+>>>>>>> Basic function import syntax
 
 %% Individually imported items now:
 
 %% module.foo means import all arities for foo:
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
 import_fun_item -> symbol '.' import_export_fun :
   {symbol, _, Mod} = '$1',
   {symbol, _, Fun} = '$3',
@@ -462,11 +484,24 @@ import_fun_item -> symbol '.' import_export_fun '/' int:
   {symbol, _, Fun} = '$3',
   {int, _, Arity} = '$5',  
   {Fun, {list_to_atom(Mod), Arity}}.
+=======
+import_fun_item -> symbol '.' symbol : 
+  {symbol, _, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {Fun, {Mod, all}}.
+%% module.foo/1 means only import foo/1:
+import_fun_item -> symbol '.' symbol '/' int: 
+  {symbol, _, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {int, _, Arity} = '$5',  
+  {Fun, {Mod, Arity}}.
+>>>>>>> Basic function import syntax
 import_fun_item -> fun_subset : '$1'.
 
 import_fun_items -> import_fun_item : ['$1'].
 import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
 
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
 import_export_fun -> symbol : '$1'.
 import_export_fun -> '(' infixable ')' :
   {infixable, L, C} = '$2',
@@ -476,6 +511,12 @@ fun_and_arity -> import_export_fun '/' int :
   {symbol, _, Name} = '$1',
   {int, _, Arity} = '$3',
   {Name, Arity}.
+=======
+fun_and_arity -> symbol '/' int :
+{symbol, _, Name} = '$1',
+{int, _, Arity} = '$3',
+{Name, Arity}.
+>>>>>>> Basic function import syntax
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
   {_, _, Name} = '$1',
@@ -494,8 +535,13 @@ case '$1' of
         T;
     [{symbol, L, _} = S | T] ->
         #alpaca_apply{line=L, expr=S, args=T};
+<<<<<<< 6b9725d15f3b6ca53caae78214d2a52bfe841579
     [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
         Name = {Mod, {symbol, L, Fun}, length(T)},
+=======
+    [{module_fun, L, Mod, Fun} | T] ->
+        Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
+>>>>>>> Basic function import syntax
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
