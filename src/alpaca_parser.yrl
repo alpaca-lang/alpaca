@@ -39,6 +39,7 @@ defn definfix binding
 module_def 
 
 import_export_fun
+
 export_def export_list fun_and_arity
 import_def import_fun_items import_fun_item
 
@@ -476,6 +477,7 @@ fun_and_arity -> import_export_fun '/' int :
   {symbol, _, Name} = '$1',
   {int, _, Arity} = '$3',
   {Name, Arity}.
+
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
   {_, _, Name} = '$1',
