@@ -163,6 +163,8 @@ update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I) ->
     {ok, M#alpaca_module{type_exports = Exports ++ Names}};
 update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es}) ->
     {ok, M#alpaca_module{function_exports=Es ++ Exports}};
+update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is}) ->
+    {ok, M#alpaca_module{function_imports=Imports ++ Is}};
 update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def) ->
     {ok, M#alpaca_module{functions=[Def|Funs]}};
 update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
@@ -912,9 +914,9 @@ application_test_() ->
                                     args=[{symbol, 1, "y"}, {symbol, 1, "z"}]}},
                    parse(alpaca_scanner:scan("x y z"))),
      ?_assertMatch({ok, #alpaca_apply{
-                           expr={'module', {symbol, 1, "fun"}, 2},
+                           expr={'mod', {symbol, 1, "fun"}, 2},
                            args=[{int, 1, 1}, {symbol, 1, "x"}]}},
-                   parse(alpaca_scanner:scan("module.fun 1 x")))
+                   parse(alpaca_scanner:scan("mod.fun 1 x")))
     ].
 
 module_def_test_() ->
@@ -927,6 +929,33 @@ module_def_test_() ->
 export_test_() ->
     [?_assertMatch({ok, {export, [{"add", 2}]}},
                    parse(alpaca_scanner:scan("export add/2")))
+    ].
+
+import_test_() ->
+    [?_assertMatch({ok, {import, [{"foo", {"some_mod", all}},
+                                  {"bar", {"some_mod", 2}}]}},
+                   parse(alpaca_scanner:scan("import some_mod.[foo, bar/2]"))),
+     ?_assertMatch(
+        {ok, {import, [{"foo", {"mod1", all}},
+                       {"bar", {"mod2", 1}},
+                       {"baz", {"mod2", all}}]}},
+        parse(alpaca_scanner:scan("import mod1.foo, mod2.[bar/1, baz]"))),
+     fun() ->
+             Code =
+                 "module two_lines_of_imports\n\n"
+                 "import foo.bar/2\n\n"
+                 "import math.[add/2, sub/2, mult]",
+             ?assertMatch(
+                {ok,
+                 _,
+                 _,
+                 #alpaca_module{
+                    function_imports=[{"bar", {"foo", 2}},
+                                      {"add", {"math", 2}},
+                                      {"sub", {"math", 2}},
+                                      {"mult", {"math", all}}]}},
+                parse_module(0, Code))
+     end
     ].
 
 expr_test_() ->
