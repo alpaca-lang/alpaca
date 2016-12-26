@@ -1762,9 +1762,15 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                                       {t_arrow, JustTypes, Res2}},
                                 {[X|Types], update_counter(NextVar, Env2)};
                             _ ->
-                                
-                                {[{t_arrow, JustTypes, T}|Types],
-                                 update_counter(NextVar, Env2)}
+                                %% Nullary funs are really values - for type
+                                %% checking we're only interested in their 
+                                %% return value
+                                case JustTypes of
+                                    [] -> [N, unwrap(T)], {[T|Types],
+                                          update_counter(NextVar, Env2)};
+                                    _ -> {[{t_arrow, JustTypes, T}|Types],
+                                         update_counter(NextVar, Env2)}
+                                end                         
                         end
                 end
         end,

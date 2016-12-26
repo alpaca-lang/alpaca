@@ -256,6 +256,11 @@ comments_test() ->
     [M] = compile_and_load(["test_files/comments.alp"], []),
     ?assertMatch(4, M:double(2)).
 
+top_level_value_test() ->
+    [M] = compile_and_load(["test_files/values.alp"], []),
+    ?assertMatch({42, <<"Vicugna pacos">>}, M:test_values({})),
+    code:delete(M).
+
 higher_order_function_test() ->
     [M] = compile_and_load(["test_files/higher_order_functions.alp"], []),
     Dict0 = M:new({}),

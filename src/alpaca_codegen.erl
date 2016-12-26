@@ -192,6 +192,10 @@ gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
     {Env#env{wildcard_num=N+1}, cerl:c_var(Name)};
 gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
     case proplists:get_value(V, Funs) of
+        %% Switch out references to zero-arg funs to applications
+        %% of them, simulating constant values
+        0 ->
+            {Env, cerl:c_apply(cerl:c_fname(list_to_atom(V), 0), [])};
         Arity when is_integer(Arity) ->
             {Env, cerl:c_fname(list_to_atom(V), Arity)};
         undefined ->
@@ -553,6 +557,21 @@ fun_and_var_binding_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(8, Name:test_func(2)),
+    true = code:delete(Name).
+
+value_test() ->
+    Name = alpaca_value_function,
+    FN = atom_to_list(Name) ++ ".beam",
+    Code =
+        "module value_function\n\n"
+        "export test_func/1\n\n"
+        "test_int = 42\n\n"
+        "test_func () =\n"
+        "  test_int\n\n",
+
+    {ok, _, Bin} = parse_and_gen(Code),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    ?assertEqual(42, Name:test_func({})),
     true = code:delete(Name).
 
 unit_function_test() ->

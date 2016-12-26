@@ -1,0 +1,10 @@
+module values
+
+export test_values/1
+
+test_int = 41
+ 
+test_string = "Vicugna pacos"
+
+-- Note the use of the value of test_int in an expression
+test_values () = (test_int + 1, test_string)
