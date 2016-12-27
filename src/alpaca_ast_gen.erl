@@ -1006,6 +1006,26 @@ defn_test_() ->
         {ok, {error, non_literal_value, {symbol, 1, "x"}}},
         parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
      ?_assertMatch(
+        {ok, {error, non_literal_value, {symbol, 1, "x"},                  
+                         {alpaca_record,2,1,false,
+                             [{alpaca_record_member,1,one,undefined,
+                                  {int,1,10}},
+                              {alpaca_record_member,1,two,undefined,
+                                  {alpaca_apply,undefined,1,
+                                      {symbol,1,"sideEffectingFun"},
+                                      [{int,1,5}]}}]}}},
+        parse(alpaca_scanner:scan("x={one = 10, two = (sideEffectingFun 5)}"))),        
+     ?_assertMatch(
+        {ok, {error, non_literal_value, {symbol, 1, "x"}, 
+                     {alpaca_cons,undefined,0,
+                             {int,1,1},
+                             {alpaca_cons,undefined,0,
+                                 {alpaca_apply,undefined,1,
+                                     {symbol,1,"sideEffectingFun"},
+                                     [{int,1,5}]},
+                                 {nil,0}}}}},
+        parse(alpaca_scanner:scan("x=[1, (sideEffectingFun 5)]"))),        
+     ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "double"},
                        versions=[#alpaca_fun_version{
