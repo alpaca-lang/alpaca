@@ -731,9 +731,10 @@ user_types_test_() ->
 
 defn_test_() ->
     [
-     %% TODO:  I'm not sure if I want to allow nullary functions
-     %% at the top level when they're not allowed in let forms.
-     %% Strikes me as potentially quite confusing.
+     %% Zero-arg funs are disallowed; these are treated as constant
+     %% values. They are only permitted to be literals, at least for now;
+     %% this ensures that they are side-effect free and referentially
+     %% transparent
      ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "x"},
@@ -741,6 +742,9 @@ defn_test_() ->
                                     args=[], 
                                     body={int, 1, 5}}]}},
                    parse(alpaca_scanner:scan("x=5"))),
+     ?_assertMatch(
+        {ok, {error, non_literal_value, {symbol, 1, "x"}}},
+        parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
      ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "double"},

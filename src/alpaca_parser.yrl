@@ -375,12 +375,16 @@ spawn_pid -> spawn symbol terms:
               function='$2',
               args='$3'}.
 
-defn -> terms assign simple_expr : make_define('$1', '$3').
+defn -> terms assign simple_expr : make_define('$1', '$3', 'top').
 definfix -> '(' infixable ')' terms assign simple_expr : 
   {infixable, L, C} = '$2',
-  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$4', '$6').
+  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$4', '$6', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
+
+binding -> let terms assign simple_expr in simple_expr : 
+    make_binding(make_define('$2', '$4', 'let'), '$6').
+
 
 ffi_call -> beam atom atom cons with match_clauses:
   #alpaca_ffi{module='$2',
@@ -469,8 +473,23 @@ make_infix(Op, A, B) ->
                   expr=Name,
                   args=[A, B]}.
 
-make_define([{symbol, L, _} = Name|A], Expr) ->
+make_define([{symbol, L, _} = Name|A], Expr, Level) ->
     case validate_args(A) of
+        {ok, []} ->
+            %% If this is a zero-arg function, at the toplevel, it's a value
+            %% and therefore its body must be restricted to literals only
+            case {Level, is_literal(Expr)} of
+                {top, false} -> 
+                    {error, non_literal_value, Name};
+                _ -> 
+                    #alpaca_fun_def{
+                      name=Name,
+                      arity=0,
+                      versions=[#alpaca_fun_version{
+                                   line=L,
+                                   args=[],
+                                   body=Expr}]}
+            end;
         {ok, Args} ->
             #alpaca_fun_def{
                name=Name, 
@@ -482,7 +501,7 @@ make_define([{symbol, L, _} = Name|A], Expr) ->
 %        {error, _} = E ->
 %            E
     end;
-make_define([BadName|Args], _Expr) ->
+make_define([BadName|Args], _Expr, _) ->
     {error, {invalid_function_name, BadName, Args}}.
 
 %% Unit is only valid for single argument functions as a way around
@@ -501,6 +520,10 @@ validate_args([#alpaca_spawn{}=E|_], _) ->
     throw({invalid_fun_parameter, E});
 validate_args([A|T], Memo) ->
     validate_args(T, [A|Memo]).
+
+is_literal({int, _, _}) -> true;
+is_literal({string, _, _}) -> true;
+is_literal(_) -> false.
 
 %% Convert a nullary def into a variable binding:
 make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
