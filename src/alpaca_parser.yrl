@@ -607,9 +607,17 @@ is_literal({alpaca_cons, _, _, Value, Sub}) ->
         false -> false;
         true -> is_literal(Sub)
     end;
-is_literal({alpaca_binary, _, _}) -> true;
+is_literal({alpaca_binary, _, Members}) ->
+    MemberExprs = lists:map(
+        fun({alpaca_bits, _, _, M, _, _, _, _, _}) ->
+            M
+    end, Members),
+    all_literals(MemberExprs);
 is_literal({alpaca_type_apply, _, _, Expr}) ->
     is_literal(Expr);
+is_literal({atom, _, _}) -> true;
+is_literal({boolean, _, _}) -> true;
+is_literal({chars, _, _}) -> true;
 is_literal(_) -> false.
 
 all_literals([]) -> true;
