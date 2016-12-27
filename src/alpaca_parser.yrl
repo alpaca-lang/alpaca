@@ -550,7 +550,7 @@ make_define([{symbol, L, _} = Name|A], Expr, Level) ->
             %% and therefore its body must be restricted to literals only
             case {Level, is_literal(Expr)} of
                 {top, false} -> 
-                    {error, non_literal_value, Name};
+                    {error, non_literal_value, Name, Expr};
                 _ -> 
                     #alpaca_fun_def{
                       name=Name,
@@ -591,10 +591,31 @@ validate_args([#alpaca_spawn{}=E|_], _) ->
 validate_args([A|T], Memo) ->
     validate_args(T, [A|Memo]).
 
+%% Determine whether an expression is a literal
 is_literal({int, _, _}) -> true;
 is_literal({string, _, _}) -> true;
+is_literal({float, _, _}) -> true;
+is_literal({alpaca_record, _, _, _, Members}) ->
+    MemberExprs = lists:map(
+        fun({alpaca_record_member, _, _, _, M}) -> 
+            M 
+        end, Members),  
+    all_literals(MemberExprs);
+is_literal({nil, _}) -> true;
+is_literal({alpaca_cons, _, _, Value, Sub}) ->
+    case is_literal(Value) of
+        false -> false;
+        true -> is_literal(Sub)
+    end;
+is_literal({alpaca_binary, _, _}) -> true;
 is_literal(_) -> false.
 
+all_literals([]) -> true;
+all_literals([M|Rest]) ->
+    case is_literal(M) of
+        true -> all_literals(Rest);
+        false -> false
+    end.
 %% Convert a nullary def into a variable binding:
 make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
     #var_binding{name=N, to_bind=B, expr=Expr};
