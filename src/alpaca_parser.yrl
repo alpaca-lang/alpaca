@@ -548,6 +548,8 @@ is_literal({alpaca_type_apply, _, _, Expr}) ->
 is_literal({atom, _, _}) -> true;
 is_literal({boolean, _, _}) -> true;
 is_literal({chars, _, _}) -> true;
+is_literal({alpaca_tuple, _, _, Members}) ->
+    all_literals(Members);
 is_literal(_) -> false.
 
 all_literals([]) -> true;
@@ -556,6 +558,7 @@ all_literals([M|Rest]) ->
         true -> all_literals(Rest);
         false -> false
     end.
+    
 %% Convert a nullary def into a variable binding:
 make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
     #var_binding{name=N, to_bind=B, expr=Expr};
