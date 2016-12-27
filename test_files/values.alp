@@ -22,5 +22,7 @@ test_bool = true
 
 test_chars = c"x"
 
+test_tuple = (100, "100")
+
 -- Note the use of the value of test_int in an expression
 let test_values () = (test_int + 1, test_string)
