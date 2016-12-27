@@ -4086,6 +4086,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "let my_map f Some a = Some (f a)\n\n"
                   "let doubler x = x * x\n\n"
                   "let foo () = my_map doubler 2",
+
               ?assertMatch(
                  {error, {cannot_unify, _, _, #adt{}, t_int}},
                  module_typ_and_parse(Code))

@@ -827,6 +827,9 @@ defn_test_() ->
                                  {nil,0}}}}},
         parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
      ?_assertMatch(
+        {ok, {error, non_literal_value, {symbol, 1, "x"}}},
+        parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
+     ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "double"},
                        versions=[#alpaca_fun_version{
