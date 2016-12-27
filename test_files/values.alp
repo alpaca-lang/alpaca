@@ -16,5 +16,13 @@ let test_bool = true
 let test_chars = c"x"
 let test_tuple = (100, "100")
 
+test_float = 0.5
+
+test_record = {x = 19}
+
+test_binary = <<1234567890>>
+
+test_array = [1, 2, 3, 4]
+
 -- Note the use of the value of test_int in an expression
 let test_values () = (test_int + 1, test_string)
