@@ -538,6 +538,8 @@ is_literal({alpaca_cons, _, _, Value, Sub}) ->
         true -> is_literal(Sub)
     end;
 is_literal({alpaca_binary, _, _}) -> true;
+is_literal({alpaca_type_apply, _, _, Expr}) ->
+    is_literal(Expr);
 is_literal(_) -> false.
 
 all_literals([]) -> true;
