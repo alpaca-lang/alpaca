@@ -1762,9 +1762,15 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                                       {t_arrow, JustTypes, Res2}},
                                 {[X|Types], update_counter(NextVar, Env2)};
                             _ ->
-                                
-                                {[{t_arrow, JustTypes, T}|Types],
-                                 update_counter(NextVar, Env2)}
+                                %% Nullary funs are really values - for type
+                                %% checking we're only interested in their 
+                                %% return value
+                                case JustTypes of
+                                    [] -> [N, unwrap(T)], {[T|Types],
+                                          update_counter(NextVar, Env2)};
+                                    _ -> {[{t_arrow, JustTypes, T}|Types],
+                                         update_counter(NextVar, Env2)}
+                                end                         
                         end
                 end
         end,
@@ -3695,7 +3701,7 @@ send_message_test_() ->
                  "module send_example_1\n\n"
                  "f x = receive with "
                  "  i -> f (i + x)\n\n"
-                 "spawn_and_message_f = "
+                 "spawn_and_message_f () = "
                  "  let p = spawn f 0 in "
                  "  send 1 p",
              ?assertMatch(
@@ -3707,7 +3713,7 @@ send_message_test_() ->
                   "module send_to_bad_pid\n\n"
                   "f x = receive with "
                   "  i -> f (i + x)\n\n"
-                  "spawn_and_message_f = "
+                  "spawn_and_message_f () = "
                   "  let p = spawn f 0 in "
                   "  send 1.0 p",
               ?assertMatch(
@@ -4077,7 +4083,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "my_map _ None = None\n\n"
                   "my_map f Some a = Some (f a)\n\n"
                   "doubler x = x * x\n\n"
-                  "foo = my_map doubler 2",
+                  "foo () = my_map doubler 2",
               ?assertMatch(
                  {error, {cannot_unify, _, _, #adt{}, t_int}},
                  module_typ_and_parse(Code))

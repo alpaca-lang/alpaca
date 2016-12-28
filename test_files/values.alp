@@ -1,0 +1,30 @@
+module values
+
+export test_values/1
+
+type simple_adt = AnInt int | AString string
+
+test_int = 41
+ 
+test_string = "Vicugna pacos"
+
+test_float = 0.5
+
+test_record = {x = 19}
+
+test_binary = <<1: size=8, 2: size=8>>
+
+test_array = [1, 2, 3, 4]
+
+test_adt = AnInt 5
+
+test_atom = :nope
+
+test_bool = true
+
+test_chars = c"x"
+
+test_tuple = (100, "100")
+
+-- Note the use of the value of test_int in an expression
+test_values () = (test_int + 1, test_string)
