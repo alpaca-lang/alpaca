@@ -158,7 +158,7 @@ _    : {token, {'_', TokenLine}}.
   Text = string:sub_string(TokenChars, 3),
   {token, {comment_line, TokenLine, Text}}.
 {-([^-]|(-+[^-}]))*-+} :
-  validate_comment(TokenLine, string:substr(TokenChars, 3)).
+  validate_comment(TokenLine, string:sub_string(TokenChars, 3, length(TokenChars)-2)).
 
 
 
