@@ -24,7 +24,7 @@ O  = [\.\*<>\|\$~\^=\?\+@%/]
 OP = {O}{O}*
 ATOM = :[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
-WS  = [\s\n]
+WS  = [\000-\s]
 BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
 TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_chars|is_pid|is_binary
@@ -154,10 +154,10 @@ _    : {token, {'_', TokenLine}}.
 {BRK} : {token, {break, TokenLine}}.
 
 %% Comments
---[.]*\n :
+--[^\n]* :
   Text = string:sub_string(TokenChars, 3),
   {token, {comment_line, TokenLine, Text}}.
-({-([^-]|(-+[^}]))*-})|(--.*) :
+{-([^-]|(-+[^-}]))*-+} :
   validate_comment(TokenLine, string:substr(TokenChars, 3)).
 
 
