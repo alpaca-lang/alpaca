@@ -57,7 +57,10 @@ g_line_comment() ->
          ["--", unicode:characters_to_binary(Comment), $\n]).
 
 g_block_comment() ->
-    ?LET(Comment, string(),
+    ?LET(Comment,
+         ?SUCHTHAT(Str, string(),
+                   nomatch == re:run(unicode:characters_to_binary(Str), "{-", 
+                                     [{capture, none}])),
          ["{-", unicode:characters_to_binary(Comment), "-}"]).
 
 %%% Type generators
