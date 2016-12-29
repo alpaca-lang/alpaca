@@ -58,7 +58,6 @@ g_module_name() ->
               ?SUCHTHAT(Name, g_sym(N), not lists:member(Name, keywords())),
               Module)).
 
-
 %%% Type generators
 
 g_type_declaration(KnownTypes) ->
