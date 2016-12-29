@@ -179,7 +179,6 @@ to_binary({constructor, Constructor}) ->
 to_binary(Binary) when is_binary(Binary) ->
     Binary.
 
-
 %%% Function generators
 
 g_function() ->
@@ -247,7 +246,6 @@ g_block_comment() ->
                    nomatch == re:run(unicode:characters_to_binary(Str), "({-|-})",
                                      [{capture, none}])),
          [<<"{-">>, unicode:characters_to_binary(Comment), <<"-}">>]).
-
 
 %%% Whitespace generators
 
