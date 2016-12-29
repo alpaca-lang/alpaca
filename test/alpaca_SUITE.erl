@@ -31,7 +31,7 @@ g_module() ->
          ?LET(Tokens, g_sprinkle_whitespace(["module", Mod, $\n]),
               ?LET(ModuleDef, g_sprinkle_comments(Tokens),
                    list_to_binary(ModuleDef)))).
-%%
+
 %% @doc Generate a module name.
 %% Module names are turned into atoms. The module name is internally prefixed
 %% with 'alpaca_'. Atom max length is 255.
@@ -59,7 +59,7 @@ g_line_comment() ->
 g_block_comment() ->
     ?LET(Comment,
          ?SUCHTHAT(Str, string(),
-                   nomatch == re:run(unicode:characters_to_binary(Str), "{-", 
+                   nomatch == re:run(unicode:characters_to_binary(Str), "({-|-})",
                                      [{capture, none}])),
          ["{-", unicode:characters_to_binary(Comment), "-}"]).
 
