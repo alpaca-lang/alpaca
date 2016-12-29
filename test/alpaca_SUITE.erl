@@ -15,13 +15,12 @@ prop_can_compile_module_def() ->
     ?FORALL(Module, g_module(), can_compile(Module)).
 
 can_compile(Code) ->
-    case alpaca:compile({text, [Code]}) of
-        {ok, _, _} -> true;
-        {ok, _, _, _} -> true;
-        {error, _} ->
-            ct:fail("failed to compile:~n~p~n", [Code]),
-            false
-    end.
+    ?WHENFAIL(ct:pal("failed to compile:~n~p~n", [Code]),
+              case alpaca:compile({text, [Code]}) of
+                  {ok, _, _} -> true;
+                  {ok, _, _, _} -> true;
+                  {error, _} -> false
+              end).
 
 %%% Module generators
 
