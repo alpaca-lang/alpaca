@@ -41,7 +41,6 @@ can_compile(Code) ->
                            {error, _} -> false
                        end)).
 
-
 %%% Module generators
 
 %% @doc Generate module declaration.
@@ -190,7 +189,6 @@ g_function_name() ->
 
 g_function_body() ->
     g_basic_value().
-
 
 %%% Value generators
 
