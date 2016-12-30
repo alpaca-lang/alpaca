@@ -103,6 +103,7 @@ expand_exports([M|Tail], Memo) ->
                                 } <- M#alpaca_module.functions, N =:= Name]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
+
     expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
 
 %% Assumes that expand_exports has already been run on the supplied modules.
