@@ -100,14 +100,14 @@ read_file(Device, Memo) ->
 parse_modules(Mods) ->
     F = fun
             (_, {error, _}=Err) -> Err;
-        (ModCode, {ok, NV, Map, Acc}) ->
-                            case alpaca_ast_gen:parse_module(NV, ModCode) of
-                                {ok, NV2, Map2, Mod} ->
-                                    {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
-                                {error, _}=Err ->
-                                    Err
-                            end
-                    end,
+            (ModCode, {ok, NV, Map, Acc}) ->
+                case alpaca_ast_gen:parse_module(NV, ModCode) of
+                    {ok, NV2, Map2, Mod} ->
+                        {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
+                    {error, _}=Err ->
+                        Err
+                end
+        end,
 lists:foldl(F, {ok, 0, maps:new(), []}, Mods).
 
 type_modules({ok, _, _, Mods}) ->

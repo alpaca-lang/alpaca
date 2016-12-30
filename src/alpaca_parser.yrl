@@ -462,7 +462,13 @@ fun_and_arity -> symbol '/' int :
 {int, _, Arity} = '$3',
 {Name, Arity}.
 export_list -> fun_and_arity : ['$1'].
+export_list -> symbol :
+  {_, _, Name} = '$1',
+  [Name].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
+export_list -> symbol ',' export_list :
+  {_, _, Name} = '$1',
+  [Name | '$3'].
 
 %% TODO:  we should be able to apply the tail to the result of
 %%        an expression that yields a function.  This check

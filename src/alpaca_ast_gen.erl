@@ -45,6 +45,28 @@ parse_module(Tokens, Mod) ->
             end
     end.
 
+%% Rename bindings to account for variable names escaping receive, rewrite 
+%% exports that don't specify arity, resolve missing functions with imports.
+rename_and_resolve(Modules) ->
+    AllExports = rewrite_exports(Modules, []),
+    {error, not_implemented}.
+
+%% Any export that doesn't specify arity will be transformed into individual
+%% exports of each arity.
+rewrite_exports([], Memo) ->
+    Memo;
+rewrite_exports([M|Tail], Memo) ->
+    F = fun({_, _}=FunWithArity) -> 
+                FunWithArity;
+           (Name) when is_list(Name) ->
+                [{Name, A} || #alpaca_fun_def{
+                                 name={symbol, _, N}, 
+                                 arity=A
+                                } <- M#alpaca_module.functions, N =:= Name]
+        end,
+    Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
+    rewrite_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
+
 %% Group all functions by name and arity:
 group_funs(Funs, ModuleName) ->
     OrderedKeys = 
@@ -1343,5 +1365,31 @@ rebinding_test_() ->
 
 type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
+
+rewrite_exports_test_() ->
+    [fun() ->
+             Def = fun(Name, Arity) ->
+                           #alpaca_fun_def{name={symbol, 0, Name}, arity=Arity}
+                   end,
+
+             Ms = [#alpaca_module{
+                      function_exports=["foo", {"bar", 1}],
+                      functions=[Def("foo", 1), Def("foo", 2), Def("bar", 1)]}],
+             [#alpaca_module{function_exports=FEs}] = rewrite_exports(Ms, []),
+             ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
+     end
+    , fun() ->
+              Code =
+                  "module test_export_all_funs\n\n"
+                  "export foo, bar/1\n\n"
+                  "foo x = x\n\n"
+                  "foo x y = x + y\n\n"
+                  "bar x = x",
+
+              {ok, _, _, Mod} = parse_module(0, Code),
+              [#alpaca_module{function_exports=FEs}] = rewrite_exports([Mod], []),
+              ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
+      end
+    ].
 
 -endif.
