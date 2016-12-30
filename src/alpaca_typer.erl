@@ -3178,7 +3178,8 @@ module_with_types_test() ->
 
 recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
-        "\n\nlet succeed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",   
+        "\n\nlet succeed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
+
     [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
@@ -3260,7 +3261,6 @@ type_var_protection_test() ->
         "let c () = (Cons (1.0, Nil), Cons(1, Nil))",
 
     [M] = alpaca_ast_gen:make_modules([Code]),
-
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
