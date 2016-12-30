@@ -1,0 +1,9 @@
+module batch_export
+
+export mult/2, foo
+
+foo x = x
+
+foo x y = x + y
+
+mult x y = x * y

@@ -2541,7 +2541,7 @@ module_typing_test() ->
         "add x y = x + y\n\n"
         "head l = match l with\n"
         "  h :: t -> h",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     ?assertMatch({ok, #alpaca_module{
                          functions=[
                                     #alpaca_fun_def{
@@ -2563,7 +2563,7 @@ module_with_forward_reference_test() ->
         "export add/2\n\n"
         "add x y = adder x y\n\n"
         "adder x y = x + y",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     ?assertMatch(
        {ok, #alpaca_module{
@@ -2584,8 +2584,7 @@ simple_inter_module_test() ->
         "module inter_module_two\n\n"
         "export adder/2\n\n"
         "adder x y = x + y",
-    {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
-    {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
+    [M1, M2] = alpaca_ast_gen:make_modules([Mod1, Mod2]),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch(
@@ -2607,8 +2606,7 @@ bidirectional_module_fail_test() ->
         "export adder/2, failing_fun/1\n\n"
         "adder x y = x + y\n\n"
         "failing_fun x = inter_module_one.add x x",
-    {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
-    {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
+    [M1, M2] = alpaca_ast_gen:make_modules([Mod1, Mod2]),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch({error, {bidirectional_module_ref,
@@ -2650,7 +2648,7 @@ infinite_mutual_recursion_test() ->
         "module mutual_rec_test\n\n"
         "a x = b x\n\n"
         "b x = let y = x + 1 in a y",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     E = new_env(),
     ?assertMatch({ok, #alpaca_module{
                          name=mutual_rec_test,
@@ -2670,7 +2668,7 @@ terminating_mutual_recursion_test() ->
         "b x = match x with\n"
         "  10 -> :ten\n"
         "| y -> a y",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     E = new_env(),
     ?assertMatch({ok, #alpaca_module{
                          name=terminating_mutual_rec_test,
@@ -3067,7 +3065,7 @@ rename_constructor_wildcard_test() ->
         "| Pair (_, _) -> :tuple\n"
         "| Pair (_, Pair (_, _)) -> :nested_t"
         "| Pair (_, Pair (_, Pair(_, _))) -> :double_nested_t",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
@@ -3091,7 +3089,7 @@ module_with_map_in_adt_test() ->
         "a x = match x with\n"
         "    h :: t -> h"
         "  | #{:key => v} -> v",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     ?assertMatch({ok, _}, type_modules([M])).
 
 module_with_adt_map_error_test() ->
@@ -3101,7 +3099,7 @@ module_with_adt_map_error_test() ->
         "a x = match x with\n"
         "    h :: t, is_string h -> h"
         "  | #{:key => v}, is_chars v -> v",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
@@ -3117,7 +3115,7 @@ json_union_type_test() ->
         "  | f, is_float f -> :float"
         "  | (_, _) :: _ -> :json_object"
         "  | _ :: _ -> :json_array",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
@@ -3152,7 +3150,7 @@ module_with_types_test() ->
         "| f, is_float f -> :float\n"
         "| (_, _) -> :tuple"
         "| (_, (_, _)) -> :nested",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
@@ -3177,14 +3175,14 @@ module_with_types_test() ->
 recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
 recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     Code = polymorphic_tree_code() ++
           "\n\nfail () = height 1",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({error,
                    {cannot_unify,tree,15,
@@ -3211,7 +3209,7 @@ builtin_types_as_type_variables_test() ->
         "module optlist\n\n"
         "type proplist 'k 'v = list ('k, 'v)\n\n"
         "type optlist 'v = proplist atom 'v",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
@@ -3223,7 +3221,7 @@ module_matching_lists_test() ->
         "Nil -> :nil"
         "| Cons (i, Nil), is_integer i -> :one_item"
         "| Cons (i, xx) -> :more_than_one",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch({ok, #alpaca_module{
@@ -3253,7 +3251,7 @@ type_var_protection_test() ->
         "| Cons (f, Nil), is_float f -> :one_float"
         "| Cons (f, xx) -> :more_than_one_float\n\n"
         "c () = (Cons (1.0, Nil), Cons(1, Nil))",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
@@ -3292,7 +3290,7 @@ type_var_protection_fail_unify_test() ->
         "c () = "
         "let x = Cons (1.0, Nil) in "
         "Cons (1, x)",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
@@ -3455,7 +3453,7 @@ polymorphic_spawn_test() ->
 %%% Things like receive, send, and spawn.
 
 module_typ_and_parse(Code) ->
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     case type_modules([M]) of
         {ok, [M2]} -> {ok, M2};
         Err        -> Err
@@ -4234,8 +4232,7 @@ types_in_types_test_() ->
                  "import_type types_in_types.ast\n\n"
                  "format ast_node = format 0 ast_node\n\n"
                  "format d Match {e=e, clauses=cs} = :match",
-             {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
-             {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+             [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
              
              ?assertMatch(
                 {ok, [#alpaca_module{}, #alpaca_module{}]}, 
@@ -4250,8 +4247,7 @@ types_in_types_test_() ->
                   "import_type types_in_types.ast\n\n"
                   "format ast_node = format 0 ast_node\n\n"
                   "format d Match {e=e, clauses=cs} = :match",
-              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
-              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
               
               ?assertMatch(
                  {ok, [#alpaca_module{}, #alpaca_module{}]}, 
@@ -4268,8 +4264,7 @@ types_in_types_test_() ->
                   "format d Match {e=e, clauses=cs} = :match\n\n"
                   "format d Symbol _ = :symbol\n\n"
                   "foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
-              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
-              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
               
               ?assertMatch(
                  {error, {bad_constructor, _, "Symbol"}},
@@ -4295,8 +4290,7 @@ types_in_types_test_() ->
                   "format d Match {e=e, clauses=cs} = :match\n\n"
                   "format d Symbol _ = :symbol\n\n"
                   "foo () = format 0 Match {e=Symbol {name=\"x\"}, clauses=[]}",
-              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, Ast),
-              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
+              [M1, M2] = alpaca_ast_gen:make_modules([Ast, FormatterCode]),
               
               ?assertMatch(
                  {ok, [#alpaca_module{}, #alpaca_module{}]},
@@ -4323,7 +4317,7 @@ no_process_leak_test() ->
     Code =
         "module no_leaks\n\n"
         "add a b = a + b",
-    {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
+    [M] = alpaca_ast_gen:make_modules([Code]),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),
     ProcessesAfter = wait_for_processes_to_die(ProcessesBefore, 10),
