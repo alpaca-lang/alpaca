@@ -425,11 +425,11 @@ import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 %% become a fun_subset (see a bit further below).
 fun_list_items -> symbol : 
   {symbol, _, F} = '$1',
-  [{F, all}].
+  [F].
 fun_list_items -> fun_and_arity : ['$1'].
 fun_list_items -> symbol ',' fun_list_items :
   {symbol, _, F} = '$1',
-  [{F, all} | '$3'].
+  [F | '$3'].
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 
 %% Here we associate the module name with each of the functions being imported.
@@ -437,7 +437,10 @@ fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 %% functions that aren't defined in the module importing these functions.
 fun_subset -> symbol '.' '[' fun_list_items ']' : 
   {symbol, _, Mod} = '$1',
-  lists:map(fun({Name, Arity}) -> {Name, {Mod, Arity}} end, '$4').
+  F = fun({Name, Arity}) -> {Name, {list_to_atom(Mod), Arity}};
+         (Name)          -> {Name, list_to_atom(Mod)}
+  end,
+  lists:map(F, '$4').
 
 %% Individually imported items now:
 
@@ -445,13 +448,13 @@ fun_subset -> symbol '.' '[' fun_list_items ']' :
 import_fun_item -> symbol '.' symbol : 
   {symbol, _, Mod} = '$1',
   {symbol, _, Fun} = '$3',
-  {Fun, {Mod, all}}.
+  {Fun, list_to_atom(Mod)}.
 %% module.foo/1 means only import foo/1:
 import_fun_item -> symbol '.' symbol '/' int: 
   {symbol, _, Mod} = '$1',
   {symbol, _, Fun} = '$3',
   {int, _, Arity} = '$5',  
-  {Fun, {Mod, Arity}}.
+  {Fun, {list_to_atom(Mod), Arity}}.
 import_fun_item -> fun_subset : '$1'.
 
 import_fun_items -> import_fun_item : ['$1'].
