@@ -3263,7 +3263,6 @@ type_var_protection_test() ->
         "let c () = (Cons (1.0, Nil), Cons(1, Nil))",
 
     [M] = alpaca_ast_gen:make_modules([Code]),
-
     Env = new_env(),
     Res = type_module(M, Env),
     ?assertMatch(
