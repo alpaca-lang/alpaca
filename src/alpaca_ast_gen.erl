@@ -105,7 +105,6 @@ expand_exports([M|Tail], Memo) ->
                                 } <- M#alpaca_module.functions, N =:= Name]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
-
     expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
 
 %% Assumes that expand_exports has already been run on the supplied modules.
@@ -1597,6 +1596,7 @@ rebinding_test_() ->
 
 type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
+
 
 expand_exports_test_() ->
     [fun() ->
