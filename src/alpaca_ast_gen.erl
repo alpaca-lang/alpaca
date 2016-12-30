@@ -1614,8 +1614,8 @@ expand_imports_test_() ->
 
              [Mod1, Mod2] = make_modules([Code1, Code2]),
              WithExports = expand_exports([Mod1, Mod2]),
-
              [M1, M2] = expand_imports(WithExports),
+
              ?assertMatch(
                 #alpaca_module{
                    function_exports=[_, _],
