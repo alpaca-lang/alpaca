@@ -2643,7 +2643,6 @@ simple_inter_module_test() ->
         "let adder x y = x + y",
 
     [M1, M2] = alpaca_ast_gen:make_modules([Mod1, Mod2]),
-
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch(
@@ -3359,7 +3358,6 @@ type_var_protection_fail_unify_test() ->
         "  Cons (1, x)",
 
     [M] = alpaca_ast_gen:make_modules([Code]),
-
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
