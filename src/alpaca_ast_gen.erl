@@ -1572,7 +1572,6 @@ rebinding_test_() ->
 type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
 
-
 expand_exports_test_() ->
     [fun() ->
              Def = fun(Name, Arity) ->
