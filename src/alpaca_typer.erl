@@ -2621,7 +2621,6 @@ module_with_forward_reference_test() ->
         "let adder x y = x + y",
 
     [M] = alpaca_ast_gen:make_modules([Code]),
-
     Env = new_env(),
     ?assertMatch(
        {ok, #alpaca_module{
@@ -4392,6 +4391,7 @@ no_process_leak_test() ->
     Code =
         "module no_leaks\n"
         "let add a b = a + b",
+
     [M] = alpaca_ast_gen:make_modules([Code]),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),
