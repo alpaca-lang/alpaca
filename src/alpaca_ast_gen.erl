@@ -1,7 +1,7 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, parse_module/2]).
+-export([parse/1, make_modules/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module:
@@ -13,15 +13,35 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% Generating an Alpaca module AST from text source requires the following
+%% steps:
+%%
+%%   1. text to tokens with alpaca_scanner:scan/1
+%%   2. tokens to module with parse_module/1
+%%   3. expanding and resolving module imports and exports, making pattern
+%%      bindings and renaming variable names.
+%%
+%% This third step requires all parsed modules to be available so that when an
+%% statement tries to import all of a function's available arity versions (e.g.
+%% `import m.foo` instead of `import m.foo/1, m.foo/2`) the pass can find out
+%% which specific function versions should be available.
+%%
+%% A single function make_modules/1 provides one entry point that can be used
+%% to cover all three steps for a list of code strings.
+
+make_modules(Code) ->
+    Modules = [parse_module(SourceCode) || SourceCode <- Code],
+    rename_and_resolve(Modules).
+
 parse({ok, Tokens, _}) ->
     parse(Tokens);
 parse(Tokens) when is_list(Tokens) ->
     alpaca_parser:parse(Tokens).
 
-parse_module(NextVarNum, Text) when is_list(Text) ->
+parse_module(Text) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    rebind_and_validate_module(NextVarNum,
-                               parse_module(Tokens, #alpaca_module{}));
+    {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}),
+    M.
 
 parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
@@ -45,11 +65,26 @@ parse_module(Tokens, Mod) ->
             end
     end.
 
-%% Rename bindings to account for variable names escaping receive, rewrite 
+%% Rename bindings to account for variable names escaping receive, rewrite
 %% exports that don't specify arity, resolve missing functions with imports.
+%%
+%% This doesn't do much in the way of checking validity of exports and imports
+%% beyond ensuring that a module exists when all arities of a function are being
+%% imported.  We leave proper in-depth checking of the inter-module calls to the
+%% typer as it already does a reasonable job.  Checking for the existence of a
+%% module for imports with unqualified arity occurs only because we need to know
+%% how to rewrite calls to functions that aren't defined within the module being
+%% parsed as inter-module function calls.  They're rewritten as such in the AST
+%% generation stage so that both the typer and the code generation stages can be
+%% ignorant as to how imports should work.
 rename_and_resolve(Modules) ->
     Expanded = expand_imports(expand_exports(Modules)),
-    {error, not_implemented}.
+    F = fun(Mod, {NV, Memo}) ->
+                {ok, NV2, Map, Mod2} = rebind_and_validate_module(NV, Mod),
+                {NV2, [Mod2#alpaca_module{rename_map=Map}|Memo]}
+        end,
+    {_, Ms} = lists:foldl(F, {0, []}, Expanded),
+    lists:reverse(Ms).
 
 %% Any export that doesn't specify arity will be transformed into individual
 %% exports of each arity.
@@ -68,6 +103,7 @@ expand_exports([M|Tail], Memo) ->
                                 } <- M#alpaca_module.functions, N =:= Name]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
+
     expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
 
 %% Assumes that expand_exports has already been run on the supplied modules.
@@ -133,7 +169,7 @@ drop_dupes_preserve_order([H|T], Memo) ->
 
 rebind_and_validate_module(_, {error, _} = Err) ->
     Err;
-rebind_and_validate_module(NextVarNum, {ok, #alpaca_module{}=Mod}) ->
+rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod) ->
     validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
 
 rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod) ->
@@ -760,16 +796,14 @@ user_types_test_() ->
                                                vars=[{type_var, 1, "x"}]}]}
                            }]}},
         test_parse("type my_list 'x = Nil | Cons ('x, my_list 'x)")),
-     ?_assertMatch({error, {duplicate_type, "t"}},
-                   parse_module(0,
-                                "module dupe_types_1\n\n"
+     ?_assertError({badmatch, {error, {duplicate_type, "t"}}},
+                   make_modules(["module dupe_types_1\n\n"
                                 "type t = A | B\n\n"
-                                "type t = C | int")),
-     ?_assertMatch({error, {duplicate_constructor, "A"}},
-                   parse_module(0,
-                                "module dupe_type_constructor\n\n"
-                                "type t = A int | B\n\n"
-                                "type u = X float | A\n\n")),
+                                "type t = C | int"])),
+     ?_assertError({badmatch, {error, {duplicate_constructor, "A"}}},
+                   make_modules(["module dupe_type_constructor\n\n"
+                                 "type t = A int | B\n\n"
+                                 "type u = X float | A\n\n"])),
      %% Making sure multiple type variables work here:
      ?_assertMatch({ok, #alpaca_type{
                            name={type_name, 1, "either"},
@@ -996,20 +1030,21 @@ import_test_() ->
                        {"baz", mod2}]}},
         parse(alpaca_scanner:scan("import mod1.foo, mod2.[bar/1, baz]"))),
      fun() ->
-             Code =
+             Code1 =
                  "module two_lines_of_imports\n\n"
                  "import foo.bar/2\n\n"
                  "import math.[add/2, sub/2, mult]",
+             Code2 =
+                 "module foo\n\nexport bar/2",
+             Code3 = "module math\n\nexport add/2, sub/2, mult/1",
+
              ?assertMatch(
-                {ok,
-                 _,
-                 _,
-                 #alpaca_module{
+                #alpaca_module{
                     function_imports=[{"bar", {foo, 2}},
                                       {"add", {math, 2}},
                                       {"sub", {math, 2}},
-                                      {"mult", math}]}},
-                parse_module(0, Code))
+                                      {"mult", math}]},
+                parse_module(Code1))
      end
     ].
 
@@ -1046,8 +1081,7 @@ module_with_let_test() ->
         "  let adder a b = a + b in\n"
         "  adder x y",
     ?assertMatch(
-       {ok, _, _,
-        #alpaca_module{
+       [#alpaca_module{
            name='test_mod',
            function_exports=[{"add",2}],
            functions=[#alpaca_fun_def{
@@ -1068,8 +1102,8 @@ module_with_let_test() ->
                                               expr=#alpaca_apply{
                                                       expr={symbol,7,"svar_2"},
                                                       args=[{symbol,7,"svar_0"},
-                                                            {symbol,7,"svar_1"}]}}}]}]}},
-       parse_module(0, Code)).
+                                                            {symbol,7,"svar_1"}]}}}]}]}],
+       make_modules([Code])).
 
 match_test_() ->
     [?_assertMatch(
@@ -1252,8 +1286,7 @@ simple_module_test() ->
         "let add x y = adder x y\n\n"
         "let sub x y = x - y",
     ?assertMatch(
-       {ok, _, _,
-        #alpaca_module{
+       [#alpaca_module{
            name='test_mod',
            function_exports=[{"add",2},{"sub",2}],
            functions=[
@@ -1287,8 +1320,8 @@ simple_module_test() ->
                                       body=#alpaca_apply{type=undefined,
                                                        expr={bif, '-', 11, erlang, '-'},
                                                        args=[{symbol,11,"svar_5"},
-                                                             {symbol,11,"svar_6"}]}}]}]}},
-       parse_module(0, Code)).
+                                                             {symbol,11,"svar_6"}]}}]}]}],
+       make_modules([Code])).
 
 break_test() ->
     % We should tolerate whitespace between the two break tokens
@@ -1296,8 +1329,7 @@ break_test() ->
             let a = 5\n   \n"
            "let b = 6\n\n",
      ?assertMatch(
-       {ok, _, _,
-        #alpaca_module{
+       [#alpaca_module{
            name='test_mod',
            function_exports=[],
            functions=[#alpaca_fun_def{
@@ -1310,8 +1342,8 @@ break_test() ->
                          versions=[#alpaca_fun_version{
                                       args=[],
                                       body={int, 6, 6}}]}               
-       ]}},
-       parse_module(0, Code)).
+       ]}],
+       make_modules([Code])).
     
 
 rebinding_test_() ->
@@ -1419,7 +1451,7 @@ expand_exports_test_() ->
                   "foo x y = x + y\n\n"
                   "bar x = x",
 
-              {ok, _, _, Mod} = parse_module(0, Code),
+              [Mod] = make_modules([Code]),
               [#alpaca_module{function_exports=FEs}] = expand_exports([Mod], []),
               ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
       end
@@ -1437,9 +1469,9 @@ expand_imports_test_() ->
                  "module m2\n\n"
                  "import m1.foo",
 
-             {ok, _, _, Mod1} = parse_module(0, Code1),
-             {ok, _, _, Mod2} = parse_module(0, Code2),
+             [Mod1, Mod2] = make_modules([Code1, Code2]),
              WithExports = expand_exports([Mod1, Mod2]),
+
              [M1, M2] = expand_imports(WithExports),
              ?assertMatch(
                 #alpaca_module{
@@ -1456,7 +1488,7 @@ expand_imports_test_() ->
                   "module m\n\n"
                   "import n.foo",
 
-              {ok, _, _, Mod} = parse_module(0, Code),
+              Mod = parse_module(Code),
               ?assertThrow({error, {no_module, n}},
                            expand_imports(expand_exports([Mod])))
       end
