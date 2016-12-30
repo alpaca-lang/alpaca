@@ -57,7 +57,7 @@ compile(What) ->
     compile(What, []).
 
 compile({text, Code}, Opts) ->
-    {ok, _, _, Mods} = parse_modules([Code]),
+    Mods = alpaca_ast_gen:make_modules([Code]),
     case type_modules(Mods) of
         {error, _}=Err -> Err;
         {ok, [TypedMod]} ->
@@ -67,7 +67,7 @@ compile({text, Code}, Opts) ->
 
 compile({files, Filenames}, Opts) ->
     Code = load_files(Filenames),
-    {ok, Mods} = type_modules(parse_modules(Code)),
+    {ok, Mods} = type_modules(alpaca_ast_gen:make_modules(Code)),
     Compiled = lists:foldl(
                  fun(M, Acc) ->
                          [compile_module(M, Opts)|Acc]
@@ -97,23 +97,6 @@ read_file(_, [eof|Memo]) ->
 read_file(Device, Memo) ->
     read_file(Device, [io:get_line(Device, '')|Memo]).
 
-parse_modules(Mods) ->
-    F = fun
-            (_, {error, _}=Err) -> Err;
-            (ModCode, {ok, NV, Map, Acc}) ->
-                case alpaca_ast_gen:parse_module(NV, ModCode) of
-                    {ok, NV2, Map2, Mod} ->
-                        {ok, NV2, maps:merge(Map, Map2), [Mod|Acc]};
-                    {error, _}=Err ->
-                        Err
-                end
-        end,
-lists:foldl(F, {ok, 0, maps:new(), []}, Mods).
-
-type_modules({ok, _, _, Mods}) ->
-    type_modules(Mods);
-type_modules({error, _}=Err) ->
-    Err;
 type_modules(Mods) ->
     alpaca_typer:type_modules(Mods).
 
@@ -164,7 +147,7 @@ compile_and_load(Files, Opts) ->
                          io:format("Loaded ~w ~s~n", [N, FN]),
                          [N|Acc]
                  end,
-    lists:foldl(LoadFolder, [], Compiled).
+    lists:reverse(lists:foldl(LoadFolder, [], Compiled)).
 
 type_import_test() ->
     Files = ["test_files/basic_adt.alp", "test_files/type_import.alp"],
@@ -189,7 +172,7 @@ private_types_error_test() ->
     Code = load_files(Files),
     ?assertEqual(
        {error, {unexported_type, list_opts, basic_adt, "my_list"}},
-       type_modules(parse_modules(Code))).
+       type_modules(alpaca_ast_gen:make_modules(Code))).
 
 basic_pid_test() ->
     Files = ["test_files/basic_pid_test.alp"],
@@ -361,6 +344,13 @@ apply_to_expressions_test() ->
     [M] = compile_and_load(["test_files/apply_to_expression.alp"], []),
     ?assertEqual(4, M:foo(unit)),
     ?assertEqual(6, M:uses_fun(3)),
+    code:delete(M).
+
+batch_export_test() ->
+    [M] = compile_and_load(["test_files/batch_export.alp"], []),
+    ?assertEqual(1, M:foo(1)),
+    ?assertEqual(5, M:foo(2, 3)),
+    ?assertEqual(8, M:mult(2, 4)),
     code:delete(M).
 
 %% There seems to be a compilation bug in the early formatter work I'm trying
