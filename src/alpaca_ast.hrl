@@ -473,7 +473,7 @@
 -record(alpaca_module, {
           name=no_module :: atom(),
           function_exports=[] :: list({string(), integer()}|string()),
-          function_imports=[] :: list({string(), integer()}|alpaca_symbol()),
+          function_imports=[] :: list({atom(), {string(), integer()}|string()}),
           types=[] :: list(alpaca_type()),
           type_imports=[] :: list(alpaca_type_import()),
           type_exports=[] :: list(string()),

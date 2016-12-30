@@ -48,14 +48,17 @@ parse_module(Tokens, Mod) ->
 %% Rename bindings to account for variable names escaping receive, rewrite 
 %% exports that don't specify arity, resolve missing functions with imports.
 rename_and_resolve(Modules) ->
-    AllExports = rewrite_exports(Modules, []),
+    Expanded = expand_imports(expand_exports(Modules)),
     {error, not_implemented}.
 
 %% Any export that doesn't specify arity will be transformed into individual
 %% exports of each arity.
-rewrite_exports([], Memo) ->
+expand_exports(Modules) ->
+    expand_exports(Modules, []).
+
+expand_exports([], Memo) ->
     Memo;
-rewrite_exports([M|Tail], Memo) ->
+expand_exports([M|Tail], Memo) ->
     F = fun({_, _}=FunWithArity) -> 
                 FunWithArity;
            (Name) when is_list(Name) ->
@@ -65,7 +68,37 @@ rewrite_exports([M|Tail], Memo) ->
                                 } <- M#alpaca_module.functions, N =:= Name]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
-    rewrite_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
+    expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
+
+%% Assumes that expand_exports has already been run on the supplied modules.
+%% Runs through each module's imports and converts any import without arity
+%% to individual imports for each arity of that function exported from its
+%% defining module.
+expand_imports(Modules) ->
+    %% Use a map from a module's name to its exported functions to
+    %% expand all imports unqualified with arity:
+    F = fun(#alpaca_module{}=Mod, Map) ->
+                #alpaca_module{name=N, function_exports=FEs} = Mod,
+                maps:put(N, FEs, Map)
+        end,
+    ExportMap = lists:foldl(F, maps:new(), Modules),
+    expand_imports(Modules, ExportMap, []).
+
+expand_imports([], _, Memo) ->
+    Memo;
+expand_imports([M|Tail], ExportMap, Memo) ->
+    F = fun({_, {_, _}}=FunWithArity) ->
+                FunWithArity;
+           ({Fun, Mod}) when is_atom(Mod) ->
+                Default = {error, {no_module, Mod}},
+                case maps:get(Mod, ExportMap, Default) of
+                    {error, _}=Err -> throw(Err);
+                    Funs           -> [{Fun, {Mod, A}} || {_, A} <- Funs]
+                end
+        end,
+    Imports = lists:flatten(lists:map(F, M#alpaca_module.function_imports)),
+    M2 = M#alpaca_module{function_imports=Imports},
+    expand_imports(Tail, ExportMap, [M2|Memo]).
 
 %% Group all functions by name and arity:
 group_funs(Funs, ModuleName) ->
@@ -954,13 +987,13 @@ export_test_() ->
     ].
 
 import_test_() ->
-    [?_assertMatch({ok, {import, [{"foo", {"some_mod", all}},
-                                  {"bar", {"some_mod", 2}}]}},
+    [?_assertMatch({ok, {import, [{"foo", some_mod},
+                                  {"bar", {some_mod, 2}}]}},
                    parse(alpaca_scanner:scan("import some_mod.[foo, bar/2]"))),
      ?_assertMatch(
-        {ok, {import, [{"foo", {"mod1", all}},
-                       {"bar", {"mod2", 1}},
-                       {"baz", {"mod2", all}}]}},
+        {ok, {import, [{"foo", mod1},
+                       {"bar", {mod2, 1}},
+                       {"baz", mod2}]}},
         parse(alpaca_scanner:scan("import mod1.foo, mod2.[bar/1, baz]"))),
      fun() ->
              Code =
@@ -972,10 +1005,10 @@ import_test_() ->
                  _,
                  _,
                  #alpaca_module{
-                    function_imports=[{"bar", {"foo", 2}},
-                                      {"add", {"math", 2}},
-                                      {"sub", {"math", 2}},
-                                      {"mult", {"math", all}}]}},
+                    function_imports=[{"bar", {foo, 2}},
+                                      {"add", {math, 2}},
+                                      {"sub", {math, 2}},
+                                      {"mult", math}]}},
                 parse_module(0, Code))
      end
     ].
@@ -1366,7 +1399,7 @@ rebinding_test_() ->
 type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
 
-rewrite_exports_test_() ->
+expand_exports_test_() ->
     [fun() ->
              Def = fun(Name, Arity) ->
                            #alpaca_fun_def{name={symbol, 0, Name}, arity=Arity}
@@ -1375,7 +1408,7 @@ rewrite_exports_test_() ->
              Ms = [#alpaca_module{
                       function_exports=["foo", {"bar", 1}],
                       functions=[Def("foo", 1), Def("foo", 2), Def("bar", 1)]}],
-             [#alpaca_module{function_exports=FEs}] = rewrite_exports(Ms, []),
+             [#alpaca_module{function_exports=FEs}] = expand_exports(Ms, []),
              ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
      end
     , fun() ->
@@ -1387,9 +1420,45 @@ rewrite_exports_test_() ->
                   "bar x = x",
 
               {ok, _, _, Mod} = parse_module(0, Code),
-              [#alpaca_module{function_exports=FEs}] = rewrite_exports([Mod], []),
+              [#alpaca_module{function_exports=FEs}] = expand_exports([Mod], []),
               ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
       end
     ].
 
+expand_imports_test_() ->
+    [fun() ->
+             Code1 =
+                 "module m1\n\n"
+                 "export foo\n\n"
+                 "foo x = x\n\n"
+                 "foo x y = x + y",
+
+             Code2 =
+                 "module m2\n\n"
+                 "import m1.foo",
+
+             {ok, _, _, Mod1} = parse_module(0, Code1),
+             {ok, _, _, Mod2} = parse_module(0, Code2),
+             WithExports = expand_exports([Mod1, Mod2]),
+             [M1, M2] = expand_imports(WithExports),
+             ?assertMatch(
+                #alpaca_module{
+                   function_exports=[_, _],
+                   function_imports=[]},
+                M1),
+             ?assertMatch(
+                #alpaca_module{
+                   function_imports=[{"foo", {m1, 1}}, {"foo", {m1, 2}}]},
+                M2)
+     end
+    , fun() ->
+              Code =
+                  "module m\n\n"
+                  "import n.foo",
+
+              {ok, _, _, Mod} = parse_module(0, Code),
+              ?assertThrow({error, {no_module, n}},
+                           expand_imports(expand_exports([Mod])))
+      end
+    ].
 -endif.
