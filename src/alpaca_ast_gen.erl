@@ -103,6 +103,7 @@ expand_exports([M|Tail], Memo) ->
                                 } <- M#alpaca_module.functions, N =:= Name]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
+
     expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
 
 %% Assumes that expand_exports has already been run on the supplied modules.
@@ -1033,6 +1034,9 @@ import_test_() ->
                  "module two_lines_of_imports\n\n"
                  "import foo.bar/2\n\n"
                  "import math.[add/2, sub/2, mult]",
+             Code2 =
+                 "module foo\n\nexport bar/2",
+             Code3 = "module math\n\nexport add/2, sub/2, mult/1",
 
              ?assertMatch(
                 #alpaca_module{
@@ -1467,6 +1471,7 @@ expand_imports_test_() ->
 
              [Mod1, Mod2] = make_modules([Code1, Code2]),
              WithExports = expand_exports([Mod1, Mod2]),
+
              [M1, M2] = expand_imports(WithExports),
              ?assertMatch(
                 #alpaca_module{
