@@ -2,11 +2,11 @@ module records_with_x
 
 export make_xy/2, make_xyz/3, get_x/1, get_x_and_the_record/1
 
-make_xy x y = {x=x, y=y}
+let make_xy x y = {x=x, y=y}
 
-make_xyz x y z = {x=x, y=y, z=z}
+let make_xyz x y z = {x=x, y=y, z=z}
 
-get_x rec =
+let get_x rec =
   match rec with
     {x=x} -> x
 
@@ -19,6 +19,6 @@ get_x rec =
    (int, {x: int, y: int, z: int})
 
 -}
-get_x_and_the_record rec =
+let get_x_and_the_record rec =
   match rec with
     {x=x} -> (x, rec)

@@ -6,6 +6,6 @@ import_type basic_adt.my_list
 
 import_type basic_adt.opt
 
-head_opt Cons (h, _) = Some h
+let head_opt Cons (h, _) = Some h
 
-head_opt Nil = None
+let head_opt Nil = None

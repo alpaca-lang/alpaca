@@ -3,12 +3,12 @@
     module simple_example
 
     -- a basic top-level function:
-    add2 x = x + 2
+    let add2 x = x + 2
 
     -- a basic infix function
-    (|>) x f = f x
+    let (|>) x f = f x
 
-    something_with_let_bindings x =
+    let something_with_let_bindings x =
       -- a function:
       let adder a b = a + b in
       -- a variable (immutable):
@@ -22,10 +22,10 @@
        messages, that increments its state by received integers
        and can be queried for its state
     -}
-    will_be_a_process x = receive with
+    let will_be_a_process x = receive with
         i -> will_be_a_process (x + i)
       | Fetch sender ->
         let sent = send x sender in
         will_be_a_process x
 
-    start_a_process init = spawn will_be_a_process init
+    let start_a_process init = spawn will_be_a_process init

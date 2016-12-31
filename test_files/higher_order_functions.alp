@@ -4,12 +4,12 @@ export new/1, lookup/2, insert/3
 
 type option 'x = None | Some 'x
 
-new () =
+let new () =
   let ret k = None in ret
 
-lookup k d = d k
+let lookup k d = d k
 
-insert k v d =
+let insert k v d =
   let d2 k2 =
     match (k2 == k) with
       true  -> Some v

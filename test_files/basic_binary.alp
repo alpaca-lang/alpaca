@@ -15,6 +15,6 @@ let first_three_bits bin =
 let utf8_bins () =
   <<"안녕": type=utf8>>
 
-drop_hello bin =
+let drop_hello bin =
   match bin with
     <<"hello": type=utf8, rest: type=utf8>> -> rest
