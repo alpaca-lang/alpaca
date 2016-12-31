@@ -1232,22 +1232,22 @@ break_test() ->
 
 rebinding_test_() ->
     %% Simple rebinding:
-    {ok, A} = test_parse("f x = let y = 2 in x + y"),
+    {ok, A} = test_parse("let f x = let y = 2 in x + y"),
     %% Check for duplicate definition error:
-    {ok, B} = test_parse("f x = \nlet x = 1 in x + x"),
+    {ok, B} = test_parse("let f x = \nlet x = 1 in x + x"),
     %% Check for good pattern match variable names:
-    {ok, C} = test_parse("f x = match x with\n"
+    {ok, C} = test_parse("let f x = match x with\n"
                          "  (a, 0) -> a\n"
                          "| (a, b) -> b"),
     %% Check for duplication in pattern match variable names:
-    {ok, D} = test_parse("f x = match x with\n"
+    {ok, D} = test_parse("let f x = match x with\n"
                          " x -> 0"),
     %% Check for good pattern match variable names in lists:
-    {ok, E} = test_parse("f x = match x with\n"
+    {ok, E} = test_parse("let f x = match x with\n"
                          "  [_, b, 0] -> b\n"
                          "| h :: t -> h"),
     %% Check for dupe variable names in lists:
-    {ok, F} = test_parse("f x y = match x with\n"
+    {ok, F} = test_parse("let f x y = match x with\n"
                          " h :: y -> h"),
 
     [?_assertMatch({_, _, #alpaca_fun_def{
