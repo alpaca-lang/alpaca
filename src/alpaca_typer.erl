@@ -4275,6 +4275,7 @@ types_in_types_test_() ->
                   "let format d Match {e=e, clauses=cs} = :match\n\n"
                   "let format d Symbol _ = :symbol\n\n"
                   "let foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
+
               [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
               
               ?assertMatch(
