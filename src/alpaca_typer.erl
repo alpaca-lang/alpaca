@@ -4260,10 +4260,11 @@ types_in_types_test_() ->
                   "module formatter\n\n"
                   "import_type types_in_types.expr\n\n"
                   "import_type types_in_types.ast\n\n"
-                  "format ast_node = format 0 ast_node\n\n"
-                  "format d Match {e=e, clauses=cs} = :match\n\n"
-                  "format d Symbol _ = :symbol\n\n"
-                  "foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
+                  "let format ast_node = format 0 ast_node\n\n"
+                  "let format d Match {e=e, clauses=cs} = :match\n\n"
+                  "let format d Symbol _ = :symbol\n\n"
+                  "let foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
+
               [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
               
               ?assertMatch(
@@ -4282,14 +4283,15 @@ types_in_types_test_() ->
               
               %% Importing `symbol` should let us use the constructor:
               FormatterCode = 
-                  "module formatter\n\n"
-                  "import_type types_in_types.symbol\n\n"
-                  "import_type types_in_types.expr\n\n"
+                  "module formatter\n"
+                  "import_type types_in_types.symbol\n"
+                  "import_type types_in_types.expr\n"
                   "import_type types_in_types.ast\n\n"
-                  "format ast_node = format 0 ast_node\n\n"
-                  "format d Match {e=e, clauses=cs} = :match\n\n"
-                  "format d Symbol _ = :symbol\n\n"
-                  "foo () = format 0 Match {e=Symbol {name=\"x\"}, clauses=[]}",
+                  "let format ast_node = format 0 ast_node\n\n"
+                  "let format d Match {e=e, clauses=cs} = :match\n\n"
+                  "let format d Symbol _ = :symbol\n\n"
+                  "let foo () = format 0 Match {e=Symbol {name=\"x\"}, clauses=[]}",
+
               [M1, M2] = alpaca_ast_gen:make_modules([Ast, FormatterCode]),
               
               ?assertMatch(
@@ -4305,7 +4307,7 @@ expression_typing_test_() ->
         top_typ_of("1 2")),
      ?_assertMatch({{t_arrow, [t_unit], t_int}, _}, 
                    top_typ_of(
-                     "g () = "
+                     "let g () = "
                      "let f x = x + x in "
                      "let g () = f in "
                      "(g ()) 2"
@@ -4316,7 +4318,7 @@ expression_typing_test_() ->
 no_process_leak_test() ->
     Code =
         "module no_leaks\n\n"
-        "add a b = a + b",
+        "let add a b = a + b",
     [M] = alpaca_ast_gen:make_modules([Code]),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),

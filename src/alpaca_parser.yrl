@@ -387,10 +387,10 @@ spawn_pid -> spawn symbol terms:
               function='$2',
               args='$3'}.
 
-defn -> terms assign simple_expr : make_define('$1', '$3', 'top').
-definfix -> '(' infixable ')' terms assign simple_expr : 
+defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
+definfix -> let '(' infixable ')' terms assign simple_expr : 
   {infixable, L, C} = '$2',
-  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$4', '$6', 'top').
+  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$5', '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 

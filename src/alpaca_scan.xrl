@@ -151,7 +151,7 @@ _    : {token, {'_', TokenLine}}.
 
 %% Whitespace ignore
 {WS} : skip_token.
-{BRK} : {token, {break, TokenLine}}.
+\;\; : {token, {break, TokenLine}}.
 
 %% Comments
 --[^\n]* :
