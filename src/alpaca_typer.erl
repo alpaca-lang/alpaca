@@ -2503,13 +2503,13 @@ binary_test_() ->
                    top_typ_of("<<1>>")),
      ?_assertMatch({{t_arrow, [t_binary], t_binary}, _},
                    top_typ_of(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
      ?_assertMatch({error, {cannot_unify, _, 1, t_float, t_int}},
-                   top_typ_of("f () = let x = 1.0 in <<x: type=int>>")),
+                   top_typ_of("let f () = let x = 1.0 in <<x: type=int>>")),
      ?_assertMatch({{t_arrow, [t_binary], t_string}, _},
                    top_typ_of(
-                     "drop_hello bin = "
+                     "let drop_hello bin = "
                      "  match bin with"
                      "    <<\"hello\": type=utf8, rest: type=utf8>> -> rest"))
     ].
@@ -2525,7 +2525,7 @@ map_test_() ->
                      "  \"two\" => 2}")),
      ?_assertMatch({{t_arrow, [{t_map, t_atom, t_int}], t_string}, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "    #{:one => i}, is_integer i -> \"has one\"\n"
                      "  | _ -> \"doesn't have one\"")),
      ?_assertMatch({{t_map, t_atom, t_int}, _},
@@ -2538,8 +2538,8 @@ module_typing_test() ->
     Code =
         "module typing_test\n\n"
         "export add/2\n\n"
-        "add x y = x + y\n\n"
-        "head l = match l with\n"
+        "let add x y = x + y\n\n"
+        "let head l = match l with\n"
         "  h :: t -> h",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     ?assertMatch({ok, #alpaca_module{
@@ -2561,8 +2561,8 @@ module_with_forward_reference_test() ->
     Code =
         "module forward_ref\n\n"
         "export add/2\n\n"
-        "add x y = adder x y\n\n"
-        "adder x y = x + y",
+        "let add x y = adder x y\n\n"
+        "let adder x y = x + y",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     ?assertMatch(
@@ -2579,11 +2579,11 @@ module_with_forward_reference_test() ->
 simple_inter_module_test() ->
     Mod1 =
         "module inter_module_one\n\n"
-        "add x y = inter_module_two.adder x y",
+        "let add x y = inter_module_two.adder x y",
     Mod2 =
         "module inter_module_two\n\n"
         "export adder/2\n\n"
-        "adder x y = x + y",
+        "let adder x y = x + y",
     {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
     {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
@@ -2601,12 +2601,12 @@ bidirectional_module_fail_test() ->
     Mod1 =
         "module inter_module_one\n\n"
         "export add/2\n\n"
-        "add x y = inter_module_two.adder x y",
+        "let add x y = inter_module_two.adder x y",
     Mod2 =
         "module inter_module_two\n\n"
         "export adder/2, failing_fun/1\n\n"
-        "adder x y = x + y\n\n"
-        "failing_fun x = inter_module_one.add x x",
+        "let adder x y = x + y\n\n"
+        "let failing_fun x = inter_module_one.add x x",
     {ok, NV, _, M1} = alpaca_ast_gen:parse_module(0, Mod1),
     {ok, _, _, M2} = alpaca_ast_gen:parse_module(NV, Mod2),
     E = new_env(),
@@ -2620,17 +2620,17 @@ bidirectional_module_fail_test() ->
 recursive_fun_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_rec}, _},
                    top_typ_of(
-                     "f x =\n"
+                     "let f x =\n"
                      "let y = x + 1 in\n"
                      "f y")),
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
      ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_atom}},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "  0 -> :zero\n"
                      "| 1 -> 1\n"
                      "| y -> y - 1\n")),
@@ -2640,7 +2640,7 @@ recursive_fun_test_() ->
           {t_list, {unbound, B, _}}}, _}
         when A =/= B,
              top_typ_of(
-               "my_map l f = match l with\n"
+               "let my_map l f = match l with\n"
                "  [] -> []\n"
                "| h :: t -> (f h) :: (my_map t f)"))
     ].
@@ -2648,8 +2648,8 @@ recursive_fun_test_() ->
 infinite_mutual_recursion_test() ->
     Code =
         "module mutual_rec_test\n\n"
-        "a x = b x\n\n"
-        "b x = let y = x + 1 in a y",
+        "let a x = b x\n\n"
+        "let b x = let y = x + 1 in a y",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     E = new_env(),
     ?assertMatch({ok, #alpaca_module{
@@ -2666,8 +2666,8 @@ infinite_mutual_recursion_test() ->
 terminating_mutual_recursion_test() ->
     Code =
         "module terminating_mutual_rec_test\n\n"
-        "a x = let y = x + 1 in b y\n\n"
-        "b x = match x with\n"
+        "let a x = let y = x + 1 in b y\n\n"
+        "let b x = match x with\n"
         "  10 -> :ten\n"
         "| y -> a y",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
@@ -2695,7 +2695,7 @@ ffi_test_() ->
                      "| (:error, x) -> :error")),
      ?_assertMatch({{t_arrow, [{unbound, _, _}], t_atom}, _},
                    top_typ_of(
-                     "f x = beam :a :b [x] with\n"
+                     "let f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
                      "| _ -> :not_one"))
 
@@ -2704,16 +2704,16 @@ ffi_test_() ->
 equality_test_() ->
     [?_assertMatch({t_bool, _}, top_typ_of("1 == 2")),
      ?_assertMatch({{t_arrow, [t_int], t_bool}, _},
-                   top_typ_of("f x = 1 == x")),
+                   top_typ_of("let f x = 1 == x")),
      ?_assertMatch({error, {cannot_unify, _, _, _, _}}, top_typ_of("1.0 == 1")),
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      " a, a == 0 -> :zero\n"
                      "|b -> :not_zero")),
      ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "  a -> a + 1\n"
                      "| a, a == 1.0 -> 1"))
     ].
@@ -2724,7 +2724,7 @@ type_guard_test_() ->
      %% coerce all of the patterns to t_int:
      ?_assertMatch({{t_arrow, [t_int], t_int}, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "   i, is_integer i -> i\n"
                      " | _ -> 0")),
      %% Calls to Erlang should use a type checking guard to coerce the
@@ -2746,7 +2746,7 @@ type_guard_test_() ->
      ?_assertMatch(
         {{t_arrow, [{t_tuple, [t_atom, {unbound, _, _}]}], t_atom}, _},
         top_typ_of(
-          "f x = match x with\n"
+          "let f x = match x with\n"
           "   (msg, _), msg == :error -> :error\n"
           " | (msg, _) -> :ok"))
 
@@ -2759,7 +2759,7 @@ type_guard_test_() ->
 union_adt_test_() ->
     [?_assertMatch({error, {cannot_unify, _, 1, t_int, t_atom}},
                    top_typ_with_types(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "  0 -> :zero"
                      "| i, is_integer i -> i",
                      [])),
@@ -2770,7 +2770,7 @@ union_adt_test_() ->
                      #adt{name="t", vars=[]}},
                     _},
                    top_typ_with_types(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "  0 -> :zero"
                      "| i, is_integer i -> i",
                      [#alpaca_type{name={type_name, 1, "t"},
@@ -2788,7 +2788,7 @@ type_tuple_test_() ->
                      t_atom},
                     _},
                    top_typ_with_types(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "   0 -> :zero"
                      "| (i, 0) -> :adt",
                      [#alpaca_type{name={type_name, 1, "t"},
@@ -2802,7 +2802,7 @@ type_tuple_test_() ->
                      t_atom},
                     _},
                    top_typ_with_types(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "   0 -> :zero"
                      "| (i, 0) -> :adt",
                      [#alpaca_type{name={type_name, 1, "t"},
@@ -2815,7 +2815,7 @@ type_tuple_test_() ->
      ?_assertMatch(
         {error, {bad_variable, 1, "y"}},
         top_typ_with_types(
-          "f x = match x with "
+          "let f x = match x with "
           " 0 -> :zero"
           "| (i, 0) -> :adt"
           "| (0, (i, 0)) -> :nested",
@@ -2840,7 +2840,7 @@ same_polymorphic_adt_union_test_() ->
                      {t_tuple, [t_atom, t_atom]}},
                     _},
                    top_typ_with_types(
-                     "f x y ="
+                     "let f x y ="
                      "  let a = match x with"
                      "  (0.0, 0) -> :zero "
                      "| (0.0, 0, :atom) -> :zero_atom in "
@@ -2865,7 +2865,7 @@ type_constructor_test_() ->
                      t_atom},
                     _},
                    top_typ_with_types(
-                     "f x = match x with "
+                     "let f x = match x with "
                      "i, is_integer i -> :is_int"
                      "| A i -> :is_a",
                      [#alpaca_type{name={type_name, 1, "t"},
@@ -2880,7 +2880,7 @@ type_constructor_test_() ->
           #adt{name="even_odd", vars=[]}},
          _},
         top_typ_with_types(
-          "f x = match x % 2 with "
+          "let f x = match x % 2 with "
           "  0 -> Even x"
           "| 1 -> Odd x",
           [#alpaca_type{name={type_name, 1, "even_odd"},
@@ -2897,7 +2897,7 @@ type_constructor_test_() ->
           t_atom},
          _},
         top_typ_with_types(
-          "f x = match x with "
+          "let f x = match x with "
           "  i, is_integer i -> :int"
           "| f, is_float f   -> :float"
           "| (k, v)          -> :keyed_value",
@@ -2917,7 +2917,7 @@ type_constructor_test_() ->
           #adt{name="my_list", vars=[{"x", {unbound, V, _}}]}},
          _},
         top_typ_with_types(
-          "f x = Cons (x, Cons (x, Nil))",
+          "let f x = Cons (x, Cons (x, Nil))",
           [#alpaca_type{
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
@@ -2934,7 +2934,7 @@ type_constructor_test_() ->
      ?_assertMatch(
         {error, {cannot_unify, _, _, t_float, t_int}},
         top_typ_with_types(
-          "f x = Cons (1, Cons (2.0, Nil))",
+          "let f x = Cons (1, Cons (2.0, Nil))",
           [#alpaca_type{
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
@@ -2954,7 +2954,7 @@ type_constructor_test_() ->
           #adt{name="t", vars=[]}},
          _},
         top_typ_with_types(
-          "f x = Constructor [1]",
+          "let f x = Constructor [1]",
           [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
@@ -2967,7 +2967,7 @@ type_constructor_test_() ->
           #adt{name="t", vars=[]}},
          _},
         top_typ_with_types(
-          "f x = Constructor #{1 => \"one\"}",
+          "let f x = Constructor #{1 => \"one\"}",
           [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
@@ -2980,7 +2980,7 @@ type_constructor_test_() ->
           #adt{name="t", vars=[]}},
          _},
         top_typ_with_types(
-          "f x = Constructor 1",
+          "let f x = Constructor 1",
           [#alpaca_type{
               name={type_name, 1, "t"},
               vars=[],
@@ -2996,8 +2996,8 @@ type_constructor_test_() ->
 type_constructor_with_pid_arg_test() ->
     Code = "module constructor\n\n"
            "type t = Constructor pid int\n\n"
-           "a x = receive with i -> x + i\n\n"
-           "make () = Constructor (spawn a 2)",
+           "let a x = receive with i -> x + i\n\n"
+           "let make () = Constructor (spawn a 2)",
      ?assertMatch({ok, _}, module_typ_and_parse(Code)).
 
 
@@ -3008,10 +3008,10 @@ type_constructor_multi_level_type_alias_arg_test() ->
         "type proplist 'v = twotuplelist atom 'v\n\n"
         "type checklist = proplist bool\n\n"
         "type constructor = Constructor checklist\n\n",
-    Valid = Code ++ "make () = Constructor [(:test_passed, true)]",
-    BadKey = Code ++ "make () = Constructor [(1, true)]",
-    BadVal = Code ++ "make () = Constructor [(:test_passed, 1)]",
-    BadArg = Code ++ "make () = Constructor 1",
+    Valid = Code ++ "let make () = Constructor [(:test_passed, true)]",
+    BadKey = Code ++ "let make () = Constructor [(1, true)]",
+    BadVal = Code ++ "let make () = Constructor [(:test_passed, 1)]",
+    BadArg = Code ++ "let make () = Constructor 1",
     ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Valid)),
     ?assertMatch({error, {cannot_unify, _, _, _, _}},
                  module_typ_and_parse(BadKey)),
@@ -3026,10 +3026,10 @@ type_var_replacement_test_() ->
                  "module nested\n\n"
                  "type option 'a = Some 'a | None\n\n"
                  "type either 'a = Left 'a | Right option int\n\n"
-                 "foo x =\n"
+                 "let foo x =\n"
                  "  match x with\n"
                  "    Right Some a -> a\n\n"
-                 "tester () = foo Right Some 1",
+                 "let tester () = foo Right Some 1",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{},
@@ -3042,10 +3042,10 @@ type_var_replacement_test_() ->
                  "module nested\n\n"
                  "type option 'a = Some 'a | None\n\n"
                  "type either 'a = Left 'a | Right option 'a\n\n"
-                 "foo x =\n"
+                 "let foo x =\n"
                  "  match x with\n"
                  "    Right Some a -> a\n\n"
-                 "tester () = foo Right Some 1",
+                 "let tester () = foo Right Some 1",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{},
@@ -3061,7 +3061,7 @@ rename_constructor_wildcard_test() ->
     Code =
         "module module_with_wildcard_constructor_tuples\n\n"
         "type t = int | float | Pair (string, t)\n\n"
-        "a x = match x with\n"
+        "let a x = match x with\n"
         "i, is_integer i -> :int\n"
         "| f, is_float f -> :float\n"
         "| Pair (_, _) -> :tuple\n"
@@ -3088,7 +3088,7 @@ module_with_map_in_adt_test() ->
     Code =
         "module module_with_map_in_adt_test\n\n"
         "type t 'v = list 'v | map atom 'v\n\n"
-        "a x = match x with\n"
+        "let a x = match x with\n"
         "    h :: t -> h"
         "  | #{:key => v} -> v",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
@@ -3098,7 +3098,7 @@ module_with_adt_map_error_test() ->
     Code =
         "module module_with_map_in_adt_test\n\n"
         "type t 'v = list 'v | map atom 'v\n\n"
-        "a x = match x with\n"
+        "let a x = match x with\n"
         "    h :: t, is_string h -> h"
         "  | #{:key => v}, is_chars v -> v",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
@@ -3112,7 +3112,7 @@ json_union_type_test() ->
         "type json = int | float | string | bool "
         "          | list json "
         "          | list (string, json)\n\n"
-        "json_to_atom j = match j with "
+        "let json_to_atom j = match j with "
         "    i, is_integer i -> :int"
         "  | f, is_float f -> :float"
         "  | (_, _) :: _ -> :json_object"
@@ -3147,7 +3147,7 @@ module_with_types_test() ->
     Code =
         "module module_with_types\n\n"
         "type t = int | float | (string, t)\n\n"
-        "a x = match x with\n"
+        "let a x = match x with\n"
         "i, is_integer i -> :int\n"
         "| f, is_float f -> :float\n"
         "| (_, _) -> :tuple"
@@ -3176,14 +3176,14 @@ module_with_types_test() ->
 
 recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
-          "\n\nsucceed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
+          "\n\nlet succeed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch({ok, _}, Res).
 
 recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     Code = polymorphic_tree_code() ++
-          "\n\nfail () = height 1",
+          "\n\nlet fail () = height 1",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch({error,
@@ -3197,11 +3197,11 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
 polymorphic_tree_code() ->
     "module tree\n\n"
     "type tree 'a = Leaf | Node (tree 'a, 'a, tree 'a)\n\n"
-    "height t =\n"
+    "let height t =\n"
     "  match t with\n"
     "    Leaf -> 0\n"
     "  | Node (l, _, r) -> 1 + (max (height l) (height r))\n\n"
-    "max a b =\n"
+    "let max a b =\n"
     "  match (a > b) with\n"
     "    true -> a\n"
     "  | false -> b".
@@ -3219,10 +3219,10 @@ module_matching_lists_test() ->
     Code =
         "module module_matching_lists\n\n"
         "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
-        "a x = match x with "
-        "Nil -> :nil"
-        "| Cons (i, Nil), is_integer i -> :one_item"
-        "| Cons (i, xx) -> :more_than_one",
+        "let a x = match x with "
+        "  Nil -> :nil"
+        "  | Cons (i, Nil), is_integer i -> :one_item"
+        "  | Cons (i, xx) -> :more_than_one",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
@@ -3244,15 +3244,17 @@ type_var_protection_test() ->
     Code =
         "module module_matching_lists\n\n"
         "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
-        "a x = match x with "
-        "Nil -> :nil"
-        "| Cons (i, Nil), is_integer i -> :one_integer"
-        "| Cons (i, xx) -> :more_than_one_integer\n\n"
-        "b x = match x with "
-        "Nil -> :nil"
-        "| Cons (f, Nil), is_float f -> :one_float"
-        "| Cons (f, xx) -> :more_than_one_float\n\n"
-        "c () = (Cons (1.0, Nil), Cons(1, Nil))",
+        "let a x = match x with "
+        "  Nil -> :nil"
+        "  | Cons (i, Nil), is_integer i -> :one_integer"
+        "  | Cons (i, xx) -> :more_than_one_integer\n\n"
+
+        "let b x = match x with "
+        "  Nil -> :nil"
+        "  | Cons (f, Nil), is_float f -> :one_float"
+        "  | Cons (f, xx) -> :more_than_one_float\n\n"
+
+        "let c () = (Cons (1.0, Nil), Cons(1, Nil))",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Env = new_env(),
     Res = type_module(M, Env),
@@ -3289,9 +3291,9 @@ type_var_protection_fail_unify_test() ->
     Code =
         "module module_matching_lists\n\n"
         "type my_list 'x = Nil | Cons ('x, my_list 'x)\n\n"
-        "c () = "
-        "let x = Cons (1.0, Nil) in "
-        "Cons (1, x)",
+        "let c () = "
+        "  let x = Cons (1.0, Nil) in "
+        "  Cons (1, x)",
     {ok, _, _, M} = alpaca_ast_gen:parse_module(0, Code),
     Res = type_modules([M]),
     ?assertMatch(
@@ -3300,7 +3302,7 @@ type_var_protection_fail_unify_test() ->
 type_error_in_test_test() ->
     Code =
         "module type_error_in_test\n\n"
-        "add x y = x + y\n\n"
+        "let add x y = x + y\n\n"
         "test \"add floats\" = add 1.0 2.0",
     Res = module_typ_and_parse(Code),
     ?assertEqual(
@@ -3311,7 +3313,7 @@ type_error_in_test_test() ->
 typed_tests_test() ->
     Code =
         "module type_error_in_test\n\n"
-        "add x y = x + y\n\n"
+        "let add x y = x + y\n\n"
         "test \"add floats\" = add 1 2",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, #alpaca_module{
@@ -3322,23 +3324,23 @@ polymorphic_list_as_return_value_test_() ->
     [fun() ->
              Code =
                  "module list_tests\n\n"
-                 "is_empty l =\n"
+                 "let is_empty l =\n"
                  "    match l with\n"
                  "        []   -> true\n"
                  "    | _ :: _ -> false\n\n"
-                 "a () = is_empty []\n\n"
-                 "b () = is_empty [:ok]\n\n"
-                 "c () = is_empty [1]",
+                 "let a () = is_empty []\n\n"
+                 "let b () = is_empty [:ok]\n\n"
+                 "let c () = is_empty [1]",
              Res = module_typ_and_parse(Code),
              ?assertMatch({ok, _}, Res)
      end
     ,fun() ->
              Code =
                  "module poly_list_head\n\n"
-                 "head l =\n"
+                 "let head l =\n"
                  "  match l with\n"
                  "    a :: _ -> a\n\n"
-                 "foo () = head [1, 2]",
+                 "let foo () = head [1, 2]",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{},
@@ -3352,13 +3354,13 @@ polymorphic_adt_as_return_value_test() ->
     Code =
         "module option\n\n"
         "type option 't = Some 't | None\n\n"
-        "is_none opt =\n"
+        "let is_none opt =\n"
         "    match opt with\n"
         "        None   -> true\n"
         "    |   Some _ -> false\n\n"
-        "a () = is_none None\n\n"
-        "b () = is_none (Some :a)\n\n"
-        "c () = is_none (Some 1)",
+        "let a () = is_none None\n\n"
+        "let b () = is_none (Some :a)\n\n"
+        "let c () = is_none (Some 1)",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, _}, Res).
 
@@ -3366,23 +3368,23 @@ polymorphic_map_as_return_value_test_() ->
     [fun() ->
              Code =
                  "module empty_map\n\n"
-                 "is_empty m =\n"
+                 "let is_empty m =\n"
                  "    match m with\n"
                  "        #{} -> true\n"
                  "        | _ -> false\n\n"
-                 "a () = is_empty #{}\n\n"
-                 "b () = is_empty #{:a => 1}\n\n"
-                 "c () = is_empty #{1 => :a}\n\n",
+                 "let a () = is_empty #{}\n\n"
+                 "let b () = is_empty #{:a => 1}\n\n"
+                 "let c () = is_empty #{1 => :a}\n\n",
              Res = module_typ_and_parse(Code),
              ?assertMatch({ok, _}, Res)
      end
      , fun() ->
                Code =
                    "module poly_map\n\n"
-                   "get_a m =\n"
+                   "let get_a m =\n"
                    "  match m with\n"
                    "    #{:a => a} -> a\n\n"
-                   "foo () = get_a #{:a => 1}",
+                   "let foo () = get_a #{:a => 1}",
                ?assertMatch(
                   {ok, #alpaca_module{
                           functions=[#alpaca_fun_def{
@@ -3400,22 +3402,22 @@ polymorphic_map_as_return_value_test_() ->
 polymorphic_tuple_as_return_value_test() ->
     Code =
         "module poly_tuple\n\n"
-        "second t =\n"
+        "let second t =\n"
         "  match t with\n"
         "    (_, x)  -> x\n\n"
-        "a () = second (1, 2) \n\n"
-        "b () = second (:a, :b)",
+        "let a () = second (1, 2) \n\n"
+        "let b () = second (:a, :b)",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, _}, Res).
 
 polymorphic_process_as_return_value_test() ->
     Code =
         "module poly_process\n\n"
-        "behaviour state state_f =\n"
+        "let behaviour state state_f =\n"
         "  receive with\n"
         "    x -> behaviour (state_f state x) state_f \n\n"
-        "a () = let f x y = x + y in spawn behaviour 1 f\n\n"
-        "b () = \n"
+        "let a () = let f x y = x + y in spawn behaviour 1 f\n\n"
+        "let b () = \n"
         "  let f x y = x +. y in\n"
         "  let p = spawn behaviour 1.0 f in\n"
         "  let u = send :a p in\n"
@@ -3425,7 +3427,7 @@ polymorphic_process_as_return_value_test() ->
 
 polymorphic_spawn_test() ->
     FunCode = 
-        "behaviour state state_f =\n"
+        "let behaviour state state_f =\n"
         "  receive with\n"
         "    x -> behaviour (state_f state x) state_f",
     BaseEnv = new_env(),
@@ -3475,7 +3477,7 @@ receive_test_() ->
              Code =
                  "module receive_adt\n\n"
                  "type my_union = float | int\n\n"
-                 "a () = receive with "
+                 "let a () = receive with "
                  "  i, is_integer i -> :received_int"
                  "| f, is_float f -> :received_float",
              ?assertMatch(
@@ -3493,10 +3495,10 @@ receive_test_() ->
      fun() ->
              Code =
                  "module union_receives\n\n"
-                 "f x = receive with "
+                 "let f x = receive with "
                  "    0 -> :ok"
                  "  | i -> g (i + x)\n\n"
-                 "g x = receive with "
+                 "let g x = receive with "
                  "  i -> f (i - x)",
              ?assertMatch(
                 {ok, #alpaca_module{
@@ -3521,10 +3523,10 @@ receive_test_() ->
              Code =
                  "module union_for_two_receivers\n\n"
                  "type t = A | B\n\n"
-                 "a () = receive with "
-                 "A -> b ()\n\n"
-                 "b () = receive with "
-                 "B -> a () after 5 a()",
+                 "let a () = receive with "
+                 "    A -> b ()\n\n"
+                 "let b () = receive with "
+                 "    B -> a () after 5 a()",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{
@@ -3547,7 +3549,7 @@ receive_test_() ->
      fun() ->
              Code =
                  "module receive_in_let\n\n"
-                 "f x = "
+                 "let f x = "
                  "  let y = receive with "
                  "    i -> i "
                  "  in let z = receive with "
@@ -3567,7 +3569,7 @@ receive_test_() ->
      fun() ->
              Code =
                  "module receive_in_let\n\n"
-                 "f x = "
+                 "let f x = "
                  "  let y = receive with "
                  "    i -> i "
                  "  in let z = receive with "
@@ -3584,9 +3586,9 @@ spawn_test_() ->
              Code =
                  "module spawn_module\n\n"
                  "export f/1, start_f/1\n\n"
-                 "f x = receive with "
+                 "let f x = receive with "
                  " i -> f (x + i)\n\n"
-                 "start_f init = spawn f init",
+                 "let start_f init = spawn f init",
              ?assertMatch({ok, #alpaca_module{
                                   functions=[#alpaca_fun_def{
                                                 name={symbol, 5, "f"},
@@ -3606,9 +3608,9 @@ spawn_test_() ->
     , fun() ->
               Code =
                   "module spawn_composed_receiver\n\n"
-                  "recv () = receive with "
+                  "let recv () = receive with "
                   "  i, is_integer i -> i\n\n"
-                  "not_recv () = (recv ()) + 2",
+                  "let not_recv () = (recv ()) + 2",
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_fun_def{
@@ -3631,14 +3633,14 @@ spawn_test_() ->
               Code =
                   "module spawn_composed_pid\n\n"
                   "type t = A int | B int\n\n"
-                  "a x = let y = receive with "
+                  "let a x = let y = receive with "
                   "    B xx -> b (x + xx)\n"
                   "  | A xx -> xx + x in "
                   "  a (x + y)\n\n"
-                  "b x = receive with "
+                  "let b x = receive with "
                   "    A xx -> a (x + xx)\n"
                   "  | B xx -> b (xx + x)\n\n"
-                  "start_a init = spawn a init",
+                  "let start_a init = spawn a init",
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_fun_def{
@@ -3667,14 +3669,14 @@ spawn_test_() ->
                   "module unify_failure_for_spawn\n\n"
                   "type t = A int\n\n"
                   "type u = B int\n\n"
-                  "a x = let y = receive with "
+                  "let a x = let y = receive with "
                   "    B xx -> b (x + xx)\n"
                   "  | A xx -> xx + x in "
                   "  a (x + y)\n\n"
-                  "b x = receive with "
+                  "let b x = receive with "
                   "    A xx -> a (x + xx)\n"
                   "  | B xx -> b (xx + x)\n\n"
-                  "start_a init = spawn a [init]",
+                  "let start_a init = spawn a [init]",
               ?assertMatch(
                  {error, {cannot_unify, _, _, #adt{name="u"}, #adt{name="t"}}},
                  module_typ_and_parse(Code))
@@ -3683,8 +3685,8 @@ spawn_test_() ->
               Code =
                   "module non_receiver_pid\n\n"
                   "export f/1, start_f/1\n\n"
-                  "f x = f (x + 1)\n\n"
-                  "start_f () = spawn f 0",
+                  "let f x = f (x + 1)\n\n"
+                  "let start_f () = spawn f 0",
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_fun_def{
@@ -3699,9 +3701,9 @@ send_message_test_() ->
     [fun() ->
              Code =
                  "module send_example_1\n\n"
-                 "f x = receive with "
+                 "let f x = receive with "
                  "  i -> f (i + x)\n\n"
-                 "spawn_and_message_f () = "
+                 "let spawn_and_message_f () = "
                  "  let p = spawn f 0 in "
                  "  send 1 p",
              ?assertMatch(
@@ -3711,9 +3713,9 @@ send_message_test_() ->
     , fun() ->
               Code =
                   "module send_to_bad_pid\n\n"
-                  "f x = receive with "
+                  "let f x = receive with "
                   "  i -> f (i + x)\n\n"
-                  "spawn_and_message_f () = "
+                  "let spawn_and_message_f () = "
                   "  let p = spawn f 0 in "
                   "  send 1.0 p",
               ?assertMatch(
@@ -3723,7 +3725,7 @@ send_message_test_() ->
     , fun() ->
               Code =
                   "module send_to_non_pid\n\n"
-                  "f x = send 1 2",
+                  "let f x = send 1 2",
               ?assertMatch(
                  {error, {cannot_unify, send_to_non_pid, _, t_int, {t_pid, _}}},
                  module_typ_and_parse(Code))
@@ -3731,8 +3733,8 @@ send_message_test_() ->
     , fun() ->
               Code =
                   "module send_to_non_receiver\n\n"
-                  "f x = f (x+1)\n\n"
-                  "start_f x = "
+                  "let f x = f (x+1)\n\n"
+                  "let start_f x = "
                   "  let p = spawn f x in "
                   "  send 1 p",
               ?assertMatch(
@@ -3751,7 +3753,7 @@ record_inference_test_() ->
                    top_typ_of("{x=1, y=2.0}")),
      fun() ->
              Code =
-                 "f r = match r with\n"
+                 "let f r = match r with\n"
                  "  {x = x1} -> x1 + 1",
              ?assertMatch({{t_arrow, 
                             [#t_record{
@@ -3765,9 +3767,9 @@ record_inference_test_() ->
      fun() ->
              Code =
                  "module record_inference_test_unify\n\n"
-                 "f r = match r with\n"
+                 "let f r = match r with\n"
                  "  {x = x1} -> (x1 * 2, r)\n\n"
-                 "g () = f {x=1, y=2}",
+                 "let g () = f {x=1, y=2}",
              ?assertMatch({ok, 
                            #alpaca_module{
                               functions=[#alpaca_fun_def{
@@ -3804,7 +3806,7 @@ record_inference_test_() ->
                           module_typ_and_parse(Code))
      end,
      ?_assertException(error, {missing_record_field, 1, y},
-                   top_typ_of("f () = "
+                   top_typ_of("let f () = "
                               "  let g r = match r with "
                               "    {x=x1, y=y1} -> x1 + y1 in "
                               "  g {x=1}")),
@@ -3812,7 +3814,7 @@ record_inference_test_() ->
              Code =
                  "module record_inference_record_adt_test\n\n"
                  "type my_adt 'a = Adt | {x: int, a: 'a}\n\n"
-                 "f r = match r with \n"
+                 "let f r = match r with \n"
                  "    {x=x1, a=a1} -> x1 + a1\n"
                  "  | Adt -> 0",
              ?assertMatch(
@@ -3845,7 +3847,7 @@ record_inference_test_() ->
                  "                      lname: string, "
                  "                      address: {street: string,"
                  "                                city: string}}\n\n"
-                 "fname r = match r with\n"
+                 "let fname r = match r with\n"
                  "  Nested {address={street=s}}, is_string s ->  s",
              ?assertMatch({ok, #alpaca_module{
                                   functions=[#alpaca_fun_def{
@@ -3870,7 +3872,7 @@ adt_ordering_test_() ->
              Code = 
                  "module simple_adt_order_1\n\n"
                  "type t 'a = Some 'a | None\n\n"
-                 "f x = match x with\n"
+                 "let f x = match x with\n"
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
              ?assertMatch({ok, 
@@ -3888,7 +3890,7 @@ adt_ordering_test_() ->
              Code = 
                  "module simple_adt_order_2\n\n"
                  "type t 'a = None | Some 'a\n\n"
-                 "f x = match x with\n"
+                 "let f x = match x with\n"
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
              ?assertMatch({ok, 
@@ -3906,11 +3908,11 @@ adt_ordering_test_() ->
               Code =
                   "module list_and_map_order_1\n\n"
                   "type t 'a = list 'a | map atom 'a\n\n"
-                  "f x = match x with\n"
+                  "let f x = match x with\n"
                   "    a :: _ -> a\n"
                   "  | #{:a => a} -> a\n\n"
-                  "g () = f #{:a => 1, :b => 2}\n\n"
-                  "h () = f [1, 2]",
+                  "let g () = f #{:a => 1, :b => 2}\n\n"
+                  "let h () = f [1, 2]",
               ?assertMatch(
                  {ok, 
                   #alpaca_module{
@@ -3930,11 +3932,11 @@ adt_ordering_test_() ->
               Code =
                  "module list_and_map_order_2\n\n"
                  "type t 'a = map atom 'a | list 'a \n\n"
-                 "f x = match x with\n"
+                 "let f x = match x with\n"
                  "    #{:a => a} -> a\n"
                  "  | a :: _ -> a\n\n"
-                 "g () = f #{:a => 1, :b => 2}\n\n"
-                 "h () = f [1, 2]",
+                 "let g () = f #{:a => 1, :b => 2}\n\n"
+                 "let h () = f [1, 2]",
               ?assertMatch(
                  {ok, 
                   #alpaca_module{
@@ -3955,12 +3957,12 @@ adt_ordering_test_() ->
              Code =
                  "module record_and_map_order_1\n\n"
                  "type record_map_union 'a = map atom int | {x: int}\n\n"
-                 "get_x rec_or_map =\n"
+                 "let get_x rec_or_map =\n"
                  "  match rec_or_map with\n"
                  "      #{:x => xx} -> xx\n"
                  "    | {x = xx}    -> xx\n\n"
-                 "check_map () = get_x #{:x => 1}\n\n"
-                 "check_record () = get_x {x=2}",
+                 "let check_map () = get_x #{:x => 1}\n\n"
+                 "let check_record () = get_x {x=2}",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{
@@ -3975,12 +3977,12 @@ adt_ordering_test_() ->
              Code =
                  "module record_and_map_order_2\n\n"
                  "type record_map_union 'a = {x: 'a} | map atom 'a\n\n"
-                 "get_x rec_or_map =\n"
+                 "let get_x rec_or_map =\n"
                  "  match rec_or_map with\n"
                  "      #{:x => xx} -> xx\n"
                  "    | {x = xx}    -> xx\n\n"
-                 "check_map () = get_x #{:x => 1}\n\n"
-                 "check_record () = get_x {x=:b}",
+                 "let check_map () = get_x #{:x => 1}\n\n"
+                 "let check_record () = get_x {x=:b}",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{
@@ -3997,7 +3999,7 @@ unify_with_error_test_() ->
     [fun() ->
              Code = 
                  "module unify_with_error_test\n\n"
-                 "throw_on_zero x = match x with "
+                 "let throw_on_zero x = match x with "
                  "    0 -> throw :zero"
                  "  | _ -> x * 2",
              ?assertMatch(
@@ -4009,7 +4011,7 @@ unify_with_error_test_() ->
      , fun() ->
                Code = 
                    "module unify_with_error_test\n\n"
-                   "should_not_unify x = match x with "
+                   "let should_not_unify x = match x with "
                    "    0 -> throw :zero"
                    "  | 1 -> :one "
                    "  | _ -> x * 2",
@@ -4024,8 +4026,8 @@ function_argument_pattern_test_() ->
              Code =
                  "module fun_pattern\n\n"
                  "export f/1\n\n"
-                 "f 0 = :zero\n\n"
-                 "f x = :not_zero",
+                 "let f 0 = :zero\n\n"
+                 "let f x = :not_zero",
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_fun_def{
@@ -4039,8 +4041,8 @@ function_argument_pattern_test_() ->
                    "type option 'a = None | Some 'a\n\n"
                %% parens needed so the parser doesn't assume the _
                %% belongs to the type constructor:
-                   "my_map (None) _ = None\n\n"
-                   "my_map Some a f = Some (f a)",
+                   "let my_map (None) _ = None\n\n"
+                   "let my_map Some a f = Some (f a)",
                ?assertMatch(
                   {ok, #alpaca_module{
                           functions=[#alpaca_fun_def{
@@ -4057,8 +4059,8 @@ function_argument_pattern_test_() ->
               Code =
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)",
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)",
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_fun_def{
@@ -4080,10 +4082,10 @@ constrain_polymorphic_adt_funs_test_() ->
               Code =
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "foo () = my_map doubler 2",
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)\n\n"
+                  "let doubler x = x * x\n\n"
+                  "let foo () = my_map doubler 2",
               ?assertMatch(
                  {error, {cannot_unify, _, _, #adt{}, t_int}},
                  module_typ_and_parse(Code))
@@ -4092,11 +4094,11 @@ constrain_polymorphic_adt_funs_test_() ->
               Code =
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "get_x {x=x} = x\n\n"
-                  "foo () = "
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)\n\n"
+                  "let doubler x = x * x\n\n"
+                  "let get_x {x=x} = x\n\n"
+                  "let foo () = "
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
@@ -4107,11 +4109,11 @@ constrain_polymorphic_adt_funs_test_() ->
               Code =
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "get_x rec = match rec with {x=x} -> x\n\n"
-                  "foo () = "
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)\n\n"
+                  "let doubler x = x * x\n\n"
+                  "let get_x rec = match rec with {x=x} -> x\n\n"
+                  "let foo () = "
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
@@ -4127,12 +4129,12 @@ constrain_polymorphic_adt_funs_test_() ->
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
                   "type tuple_or_triple 'a 'b 'c = ('a, 'b) | ('a, 'b, 'c)\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "third (_, _) = 0\n\n"
-                  "third (_, _, t) = t\n\n"
-                  "doubler x = x * x\n\n"
-                  "foo () = "
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)\n\n"
+                  "let third (_, _) = 0\n\n"
+                  "let third (_, _, t) = t\n\n"
+                  "let doubler x = x * x\n\n"
+                  "let foo () = "
                   "  let tup = (1, 2) in "
                   "  my_map doubler (third tup)",
               ?assertMatch(
@@ -4143,12 +4145,12 @@ constrain_polymorphic_adt_funs_test_() ->
               Code =
                   "module fun_pattern_with_adt\n\n"
                   "type option 'a = None | Some 'a\n\n"
-                  "my_map _ None = None\n\n"
-                  "my_map f Some a = Some (f a)\n\n"
-                  "doubler x = x * x\n\n"
-                  "get_x {x=x} = Some x\n\n"
-                  "get_x _ = None\n\n"
-                  "foo () = "
+                  "let my_map _ None = None\n\n"
+                  "let my_map f Some a = Some (f a)\n\n"
+                  "let doubler x = x * x\n\n"
+                  "let get_x {x=x} = Some x\n\n"
+                  "let get_x _ = None\n\n"
+                  "let foo () = "
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
@@ -4181,24 +4183,24 @@ different_arity_test_() ->
     [fun() ->
              Code = 
                  "module arity_test\n\n"
-                 "add x = x + x\n\n"
-                 "add x y = x + y",
+                 "let add x = x + x\n\n"
+                 "let add x y = x + y",
              ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
      end
     , fun() ->
               Code = 
                   "module arity_test\n\n"
                   "export add/2\n\n"
-                  "add x = x + x\n\n"
-                  "add x y = x + y",
+                  "let add x = x + x\n"
+                  "let add x y = x + y",
               ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
       end
     , fun() ->
               Code = 
                   "module arity_test\n\n"
                   "export add/1\n\n"
-                  "add x = x + x\n\n"
-                  "f x y = add x y",
+                  "let add x = x + x\n"
+                  "let f x y = add x y",
               ?assertMatch(
                  {error, {not_found, _, "add", 2}}, 
                  module_typ_and_parse(Code))
@@ -4207,7 +4209,7 @@ different_arity_test_() ->
               Code = 
                   "module arity_test\n\n"
                   "export add/1\n\n"
-                  "add x = "
+                  "let add x = "
                   "let f a b = a + b in "
                   "f x",
               ?assertMatch(
@@ -4232,8 +4234,8 @@ types_in_types_test_() ->
                  "module formatter\n\n"
                  "import_type types_in_types.expr\n\n"
                  "import_type types_in_types.ast\n\n"
-                 "format ast_node = format 0 ast_node\n\n"
-                 "format d Match {e=e, clauses=cs} = :match",
+                 "let format ast_node = format 0 ast_node\n\n"
+                 "let format d Match {e=e, clauses=cs} = :match",
              {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
              {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
              
@@ -4248,8 +4250,8 @@ types_in_types_test_() ->
                   "import_type types_in_types.symbol\n\n"
                   "import_type types_in_types.expr\n\n"
                   "import_type types_in_types.ast\n\n"
-                  "format ast_node = format 0 ast_node\n\n"
-                  "format d Match {e=e, clauses=cs} = :match",
+                  "let format ast_node = format 0 ast_node\n\n"
+                  "let format d Match {e=e, clauses=cs} = :match",
               {ok, _, _, M1} = alpaca_ast_gen:parse_module(0, AstCode),
               {ok, _, _, M2} = alpaca_ast_gen:parse_module(0, FormatterCode),
               

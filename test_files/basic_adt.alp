@@ -11,7 +11,7 @@ type my_list 'x = Cons ('x, my_list 'x) | Nil
 
 type opt 'a = None | Some 'a
 
-len l = match l with
+let len l = match l with
     Nil -> 0
     -- single line comment should be ignored:
   | Cons (_, tail) -> 1 + (len tail)

@@ -1163,10 +1163,10 @@ simple_module_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2, sub/2\n\n"
-        "adder x y = x + y\n\n"
-        "add1 x = adder x 1\n\n"
-        "add x y = adder x y\n\n"
-        "sub x y = x - y",
+        "let adder x y = x + y\n\n"
+        "let add1 x = adder x 1\n\n"
+        "let add x y = adder x y\n\n"
+        "let sub x y = x - y",
     ?assertMatch(
        {ok, _, _,
         #alpaca_module{
@@ -1209,8 +1209,8 @@ simple_module_test() ->
 break_test() ->
     % We should tolerate whitespace between the two break tokens
     Code = "module test_mod\n\n
-            a = 5\n   \n"
-           "b = 6\n\n",
+            let a = 5\n   \n"
+           "let b = 6\n\n",
      ?assertMatch(
        {ok, _, _,
         #alpaca_module{

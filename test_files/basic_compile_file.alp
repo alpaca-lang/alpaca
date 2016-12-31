@@ -2,4 +2,4 @@ module basic_compile_file
 
 export double/1
 
-double n = n*2
+let double n = n*2
