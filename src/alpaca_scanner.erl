@@ -57,6 +57,7 @@ infer_breaks(Tokens) ->
             'export'       -> InferBreak();
             'export_type'  -> InferBreak();
             'import_type'  -> InferBreak();
+            'import'       -> InferBreak();
             _              -> Pass()
         end      
     end,
