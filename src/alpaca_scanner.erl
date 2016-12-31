@@ -138,5 +138,4 @@ infer_bin_test() ->
                                    {bin_close, 2}
                      ],                       
     ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).
-
 -endif.
