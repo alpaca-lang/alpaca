@@ -20,24 +20,47 @@ infer_breaks(Tokens) ->
     %% To avoid inserting breaks in let... in... we track the level of these
     %% (as we're folding right, an 'in' increases the level by one, a 'let'
     %% decreases by one if the current level > 0)
+    %% We also track whether we're in a binary as 'type' has a different
+    %% semantic there
     
-    Reducer = fun(Token, {Level, Acc}) -> 
-                    %% TODO use line number from Token
-                    InferBreak = fun() -> {0, [{break, 0} | [ Token | Acc]]} end,
-                    case {Token, Level} of
-                        {{'in', _}, _} -> {Level + 1, [Token | Acc]};
-                        {{'let', _}, 0} -> InferBreak();
-                        {{'let', _}, _} -> {Level - 1, [Token | Acc]};
-                        {{'type_declare', _}, _} -> InferBreak();
-                        {{'module', _}, _} -> InferBreak();
-                        {{'export', _}, _} -> InferBreak();
-                        {{'export_type', _}, _} -> InferBreak();
-                        {{'import_type', _}, _} -> InferBreak();
-                        %% TODO - imports and exports
-                        _ -> {Level, [Token | Acc]}
-                    end      
-              end,
-    {0, Output} = lists:foldr(Reducer, {0, []}, Tokens),
+    Reducer = fun(Token, {LetLevel, InBinary, Acc}) ->                     
+        {Symbol, Line} = case Token of
+            {S, L} when is_integer(L)-> {S, L};
+            Other -> {other, 0}
+        end,
+        InferBreak = fun() -> 
+            {0, InBinary, [{break, 0} | [ Token | Acc]]} 
+        end,
+        Pass = fun() -> 
+            {LetLevel, InBinary, [Token | Acc]} 
+        end,
+        ChangeLetLevel = fun(Diff) -> 
+            {LetLevel + Diff, InBinary, [Token | Acc]}
+        end,                   
+        BinOpen = fun(State) ->
+            {LetLevel, State, [Token | Acc]}
+        end,
+        case Symbol of
+            'in'           -> ChangeLetLevel(+1);                     
+            'let'          -> case LetLevel of                                            
+                                0 -> InferBreak();
+                                _ -> ChangeLetLevel(-1)
+                              end;
+            'type_declare' -> case InBinary of 
+                                true -> Pass();
+                                false -> InferBreak()
+                              end;
+            'bin_open'     -> BinOpen(false);
+            'bin_close'    -> BinOpen(true);
+            'test'         -> InferBreak();
+            'module'       -> InferBreak();
+            'export'       -> InferBreak();
+            'export_type'  -> InferBreak();
+            'import_type'  -> InferBreak();
+            _              -> Pass()
+        end      
+    end,
+    {0, false, Output} = lists:foldr(Reducer, {0, false, []}, Tokens),
     %% Remove initial 'break' if one was inferred
     case Output of
         [{break, 0} | Rest] -> Rest;
