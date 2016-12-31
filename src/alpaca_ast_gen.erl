@@ -741,13 +741,13 @@ defn_test_() ->
                        versions=[#alpaca_fun_version{
                                     args=[], 
                                     body={int, 1, 5}}]}},
-                   parse(alpaca_scanner:scan("x=5"))),
+                   parse(alpaca_scanner:scan("let x=5"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"}, 
                      {alpaca_apply,undefined,1,
                        {symbol,1,"sideEffectingFun"},
                        [{int,1,5}]}}},
-        parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
+        parse(alpaca_scanner:scan("let x=sideEffectingFun 5"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"},                  
                          {alpaca_record,2,1,false,
@@ -757,7 +757,7 @@ defn_test_() ->
                                   {alpaca_apply,undefined,1,
                                       {symbol,1,"sideEffectingFun"},
                                       [{int,1,5}]}}]}}},
-        parse(alpaca_scanner:scan("x={one = 10, two = (sideEffectingFun 5)}"))),        
+        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),        
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"}, 
                      {alpaca_cons,undefined,0,
@@ -767,7 +767,7 @@ defn_test_() ->
                                      {symbol,1,"sideEffectingFun"},
                                      [{int,1,5}]},
                                  {nil,0}}}}},
-        parse(alpaca_scanner:scan("x=[1, (sideEffectingFun 5)]"))),        
+        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
      ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "double"},
@@ -778,7 +778,7 @@ defn_test_() ->
                                             expr={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {symbol, 1, "x"}]}}]}},
-        parse(alpaca_scanner:scan("double x = x + x"))),
+        parse(alpaca_scanner:scan("let double x = x + x"))),
      ?_assertMatch(
         {ok, #alpaca_fun_def{name={symbol, 1, "add"},
                            versions=[#alpaca_fun_version{
@@ -789,7 +789,7 @@ defn_test_() ->
                                                 expr={bif, '+', 1, erlang, '+'},
                                                 args=[{symbol, 1, "x"},
                                                       {symbol, 1, "y"}]}}]}},
-        parse(alpaca_scanner:scan("add x y = x + y"))),
+        parse(alpaca_scanner:scan("let add x y = x + y"))),
         ?_assertMatch(
             {ok, #alpaca_fun_def{name={symbol, 1, "(<*>)"},
                             versions=[#alpaca_fun_version{
@@ -800,7 +800,7 @@ defn_test_() ->
                                                     expr={bif, '+', 1, erlang, '+'},
                                                     args=[{symbol, 1, "x"},
                                                         {symbol, 1, "y"}]}}]}},
-        parse(alpaca_scanner:scan("(<*>) x y = x + y")))
+        parse(alpaca_scanner:scan("let (<*>) x y = x + y")))
     ].
 
 float_math_test_() ->
@@ -856,7 +856,7 @@ let_binding_test_() ->
                                          expr={symbol, 3, "double"},
                                          args=[{int, 3, 2}]}}}]}},
         parse(alpaca_scanner:scan(
-                "doubler x =\n"
+                "let doubler x =\n"
                 "  let double x = x + x in\n"
                 "  double 2"))),
      ?_assertMatch(
@@ -895,7 +895,7 @@ let_binding_test_() ->
                                                           expr={symbol,1,"yer"},
                                                           args=[{symbol,1,"y"}]}]}}}}]}},
         parse(alpaca_scanner:scan(
-                "my_fun x y ="
+                "let my_fun x y ="
                 "  let xer a = a + a in"
                 "  let yer b = b + b in"
                 "  (xer x) + (yer y)")))
@@ -958,7 +958,7 @@ module_with_let_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2\n\n"
-        "add x y =\n"
+        "let add x y =\n"
         "  let adder a b = a + b in\n"
         "  adder x y",
     ?assertMatch(

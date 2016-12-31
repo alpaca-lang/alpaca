@@ -516,18 +516,18 @@ parse_and_gen(Code) ->
 simple_compile_test() ->
     Code =
         "module test_mod\n\n"
-        "export add/2, sub/2\n\n"
-        "add x y = x + y\n\n"
-        "sub x y = x - y\n\n",
+        "export add/2, sub/2\n"
+        "let add x y = x + y\n"
+        "let sub x y = x - y\n",
     {ok, _, _Bin} = parse_and_gen(Code).
 
 module_with_internal_apply_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2\n\n"
-        "adder x y = x + y\n\n"
-        "add x y = adder x y\n\n"
-        "eq x y = x == y",
+        "let adder x y = x + y\n\n"
+        "let add x y = adder x y\n\n"
+        "let eq x y = x == y",
     {ok, _, Bin} = parse_and_gen(Code).
 
 infix_fun_test() ->
@@ -536,9 +536,9 @@ infix_fun_test() ->
     Code =
         "module infix_fun\n\n"
         "export adder/1 \n\n"
-        "(|>) v f = f v\n\n"
-        "add_ten x = x + 10\n\n"
-        "adder val = val |> add_ten",
+        "let (|>) v f = f v\n\n"
+        "let add_ten x = x + 10\n\n"
+        "let adder val = val |> add_ten",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(20, Name:adder(10)),
@@ -550,7 +550,7 @@ fun_and_var_binding_test() ->
     Code =
         "module fun_and_var_binding\n\n"
         "export test_func/1\n\n"
-        "test_func x =\n"
+        "let test_func x =\n"
         "  let y = x + 2 in\n"
         "  let double z = z + z in\n"
         "  double y",
@@ -565,8 +565,8 @@ value_test() ->
     Code =
         "module value_function\n\n"
         "export test_func/1\n\n"
-        "test_int = 42\n\n"
-        "test_func () =\n"
+        "let test_int = 42\n\n"
+        "let test_func () =\n"
         "  test_int\n\n",
 
     {ok, _, Bin} = parse_and_gen(Code),
@@ -580,7 +580,7 @@ unit_function_test() ->
     Code =
         "module unit_function\n\n"
         "export test_func/1\n\n"
-        "test_func x =\n"
+        "let test_func x =\n"
         "  let y () = 5 in\n"
         "  let z = 3 in\n"
         "  x + ((y ()) + z)",
@@ -593,7 +593,7 @@ parser_nested_letrec_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2\n\n"
-        "add x y =\n"
+        "let add x y =\n"
         "  let adder1 a b = a + b in\n"
         "  let adder2 c d = adder1 c d in\n"
         "  adder2 x y",
@@ -606,16 +606,16 @@ module_with_match_test() ->
     Code =
         "module compile_module_with_match\n\n"
         "export check/1, first/1, compare/2\n\n"
-        "check x = match x with\n"
+        "let check x = match x with\n"
         "  0 -> :zero\n"
         "| 1 -> :one\n"
         "| _ -> :more_than_one\n\n"
-        "first t =\n"
+        "let first t =\n"
         "  match t with\n"
         "    (f, _) -> f\n"
         "  | _ -> :not_a_2_tuple\n\n"
     %% This is the failing section in particular:
-        "compare x y = match x with\n"
+        "let compare x y = match x with\n"
         "  a, a == y -> :matched\n"
         "| _ -> :not_matched",
     {ok, _, Bin} = parse_and_gen(Code),
@@ -633,11 +633,11 @@ cons_test() ->
     Code =
         "module compiler_cons_test\n\n"
         "export make_list/2, my_map/2\n\n"
-        "make_list h t =\n"
+        "let make_list h t =\n"
         "  match t with\n"
         "    a :: b -> h :: t\n"
         "  | term -> h :: term :: []\n\n"
-        "my_map f x =\n"
+        "let my_map f x =\n"
         "  match x with\n"
         "    [] -> []\n"
         "  | h :: t -> (f h) :: (my_map f t)",
@@ -653,11 +653,11 @@ call_test() ->
     Code1 =
         "module call_test_a\n\n"
         "export a/1\n\n"
-        "a x = call_test_b.add x 1",
+        "let a x = call_test_b.add x 1",
     Code2 =
         "module call_test_b\n\n"
         "export add/2\n\n"
-        "add x y = x + y",
+        "let add x y = x + y",
 
     {ok, _, Bin1} = parse_and_gen(Code1),
     {ok, _, Bin2} = parse_and_gen(Code2),
@@ -675,7 +675,7 @@ ffi_test() ->
     Code =
         "module ffi_test\n\n"
         "export a/1\n\n"
-        "a x = beam :erlang :list_to_integer [x] with\n"
+        "let a x = beam :erlang :list_to_integer [x] with\n"
         "  1 -> :one\n"
         "| _ -> :not_one\n",
     {ok, _, Bin} = parse_and_gen(Code),
@@ -693,7 +693,7 @@ type_guard_test() ->
     Code =
         "module type_guard_test\n\n"
         "export check/1\n\n"
-        "check x = \n"
+        "let check x = \n"
         "beam :erlang :* [x, x] with\n"
         "   i, is_integer i -> i\n"
         " | f -> 0",
@@ -711,7 +711,7 @@ multi_type_guard_test() ->
     Code =
         "module multi_type_guard_test\n\n"
         "export check/1\n\n"
-        "check x = \n"
+        "let check x = \n"
         "beam :erlang :* [x, x] with\n"
         "   i, is_integer i, i == 4 -> :got_four\n"
         " | i, is_integer i, i > 5, i < 20 -> :middle\n"
