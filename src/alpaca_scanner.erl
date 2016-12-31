@@ -144,5 +144,4 @@ unexpected_token_test_() ->
      ?_assertMatch(
         {error, {1,alpaca_scan,{user, "Unexpected token: '"}}, 1},
         scan("module bin ' hello"))].
-
 -endif.
