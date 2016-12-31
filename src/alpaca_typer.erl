@@ -2348,23 +2348,23 @@ top_typ_with_types(Code, ADTs) ->
 %% referenced at the top.
 typ_of_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
-                   top_typ_of("double x = x + x"))
+                   top_typ_of("let double x = x + x"))
     , ?_assertMatch({{t_arrow, [{t_arrow, [A], B}, A], B}, _},
-                    top_typ_of("apply f x = f x"))
+                    top_typ_of("let apply f x = f x"))
     , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
-                    top_typ_of("doubler x = let double y = y + y in double x"))
+                    top_typ_of("let doubler x = let double y = y + y in double x"))
     ].
 
 infix_arrow_types_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
-                   top_typ_of("(<*>) x = x + x"))
+                   top_typ_of("let (<*>) x = x + x"))
     , ?_assertMatch({{t_arrow, [A, {t_arrow, [A], B}], B}, _},
-                    top_typ_of("(|>) x f = f x"))  
+                    top_typ_of("let (|>) x f = f x"))  
     ].    
 
 simple_polymorphic_let_test() ->
     Code =
-        "double_app my_int ="
+        "let double_app my_int ="
         "let two_times f x = f (f x) in "
         "let int_double i = i + i in "
         "two_times int_double my_int",
@@ -2372,7 +2372,7 @@ simple_polymorphic_let_test() ->
 
 polymorphic_let_test() ->
     Code =
-        "double_application my_int my_float = "
+        "let double_application my_int my_float = "
         "let two_times f x = f (f x) in "
         "let int_double a = a + a in "
         "let float_double b = b +. b in "
@@ -2404,15 +2404,15 @@ clause_test_() ->
 
 match_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
-                   top_typ_of("f x = match x with\n  i -> i + 2")),
+                   top_typ_of("let f x = match x with\n  i -> i + 2")),
      ?_assertMatch({error, {cannot_unify, _, _, _, _}},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "  i -> i + 1\n"
                      "| :atom -> 2")),
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
-                     "f x = match x + 1 with\n"
+                     "let f x = match x + 1 with\n"
                      "  1 -> :x_was_zero\n"
                      "| 2 -> :x_was_one\n"
                      "| _ -> :x_was_more_than_one"))
@@ -2423,19 +2423,19 @@ match_test_() ->
 pattern_match_error_line_test_() ->
     [?_assertMatch({error, {cannot_unify, _, 3, t_float, t_int}},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "    i, is_integer i -> :int\n"
                      "  | f, is_float f -> :float")),
      ?_assertMatch({error, {cannot_unify, _, 4, t_float, t_int}},
                    top_typ_of(
-                     "f () = receive with\n"
+                     "let f () = receive with\n"
                      "    0 -> :zero\n"
                      "  | 1 -> :one\n"
                      "  | 2.0 -> :two\n"
                      "  | 3 -> :three\n")),
      ?_assertMatch({error, {cannot_unify, _, 3, t_string, t_atom}},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "    0 -> :zero\n"
                      "  | i -> \"not zero\""))
     ].
@@ -2445,13 +2445,13 @@ tuple_test_() ->
                      [{t_tuple, [t_int, t_float]}],
                      {t_tuple, [t_float, t_int]}}, _},
                    top_typ_of(
-                     "f tuple = match tuple with\n"
+                     "let f tuple = match tuple with\n"
                      " (i, f) -> (f +. 1.0, i + 1)")),
      ?_assertMatch({{t_arrow, [t_int], {t_tuple, [t_int, t_atom]}}, _},
-                   top_typ_of("f i = (i + 2, :plus_two)")),
+                   top_typ_of("let f i = (i + 2, :plus_two)")),
      ?_assertMatch({error, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      "  i -> i + 1\n"
                      "| (_, y) -> y + 1\n")),
      ?_assertMatch({{t_arrow, [{t_tuple,
@@ -2461,7 +2461,7 @@ tuple_test_() ->
                                   [t_int, t_int]}]}],
                      {t_tuple, [t_int, t_int]}}, _},
                    top_typ_of(
-                     "f x = match x with\n"
+                     "let f x = match x with\n"
                      " (_, _, (1, x)) -> (x + 2, 1)\n"
                      "|(_, _, (_, x)) -> (x + 2, 50)\n"))
     ].
@@ -2475,10 +2475,10 @@ list_test_() ->
      ?_assertMatch({{t_arrow,
                      [{unbound, A, _}, {t_list, {unbound, A, _}}],
                      {t_list, {unbound, A, _}}}, _},
-                   top_typ_of("f x y = x :: y")),
+                   top_typ_of("let f x y = x :: y")),
      ?_assertMatch({{t_arrow, [{t_list, t_int}], t_int}, _},
                    top_typ_of(
-                     "f l = match l with\n"
+                     "let f l = match l with\n"
                      " h :: t -> h + 1")),
      %% Ensure that a '_' in a list nested in a tuple is renamed properly
      %% so that one does NOT get unified with the other when they're
@@ -2487,12 +2487,12 @@ list_test_() ->
                      [{t_tuple, [{t_list, t_int}, {unbound, _, _}, t_float]}],
                      {t_tuple, [t_int, t_float]}}, _},
                    top_typ_of(
-                     "f list_in_tuple =\n"
+                     "let f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
      ?_assertMatch({error, {cannot_unify, undefined, 3, t_float, t_int}},
                    top_typ_of(
-                     "f should_fail x =\n"
+                     "let f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
                      "match l with\n"
                      " a :: b :: _ -> a +. b"))
