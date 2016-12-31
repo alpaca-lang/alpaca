@@ -25,11 +25,11 @@ infer_breaks(Tokens) ->
     
     Reducer = fun(Token, {LetLevel, InBinary, Acc}) ->                     
         {Symbol, Line} = case Token of
-            {S, L} when is_integer(L)-> {S, L};
+            {S, L} when is_integer(L) -> {S, L};
             Other -> {other, 0}
         end,
         InferBreak = fun() -> 
-            {0, InBinary, [{break, 0} | [ Token | Acc]]} 
+            {0, InBinary, [{break, Line} | [ Token | Acc]]} 
         end,
         Pass = fun() -> 
             {LetLevel, InBinary, [Token | Acc]} 
@@ -63,7 +63,7 @@ infer_breaks(Tokens) ->
     {0, false, Output} = lists:foldr(Reducer, {0, false, []}, Tokens),
     %% Remove initial 'break' if one was inferred
     case Output of
-        [{break, 0} | Rest] -> Rest;
+        [{break, _} | Rest] -> Rest;
         _ -> Output
     end. 
 
@@ -112,5 +112,15 @@ let_test() ->
                       {assign, 1},
                       {int, 1, 5}],
     ?assertEqual({ok, ExpectedTokens, 1}, scan(Code)).
+
+infer_test() ->
+    Code = "module hello\nlet a = 0\nlet b = 1",
+    ExpectedTokens = [{'module', 1}, {symbol, 1, "hello"}, 
+                                      {break, 2}, 
+                       {'let', 2}, {symbol, 2, "a"}, {assign, 2}, {int, 2, 0}, 
+                                                                  {break, 3},
+                       {'let', 3}, {symbol, 3, "b"}, {assign, 3}, {int, 3, 1}
+                      ],                       
+    ?assertEqual({ok, ExpectedTokens, 3}, scan(Code)).
 
 -endif.
