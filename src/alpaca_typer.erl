@@ -2563,6 +2563,7 @@ module_with_forward_reference_test() ->
         "export add/2\n\n"
         "let add x y = adder x y\n\n"
         "let adder x y = x + y",
+
     [M] = alpaca_ast_gen:make_modules([Code]),
 
     Env = new_env(),
@@ -2587,6 +2588,7 @@ simple_inter_module_test() ->
         "let adder x y = x + y",
 
     [M1, M2] = alpaca_ast_gen:make_modules([Mod1, Mod2]),
+
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
     ?assertMatch(
@@ -2608,6 +2610,7 @@ bidirectional_module_fail_test() ->
         "export adder/2, failing_fun/1\n\n"
         "let adder x y = x + y\n\n"
         "let failing_fun x = inter_module_one.add x x",
+
     [M1, M2] = alpaca_ast_gen:make_modules([Mod1, Mod2]),
 
     E = new_env(),
@@ -3179,7 +3182,7 @@ module_with_types_test() ->
 
 recursive_polymorphic_adt_test() ->
     Code = polymorphic_tree_code() ++
-          "\n\nlet succeed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",
+        "\n\nlet succeed () = height (Node (Leaf, 1, (Node (Leaf, 1, Leaf))))",   
 
     [M] = alpaca_ast_gen:make_modules([Code]),
     Res = type_modules([M]),
@@ -3260,6 +3263,7 @@ type_var_protection_test() ->
         "  | Cons (f, xx) -> :more_than_one_float\n\n"
 
         "let c () = (Cons (1.0, Nil), Cons(1, Nil))",
+
     [M] = alpaca_ast_gen:make_modules([Code]),
 
     Env = new_env(),
@@ -3302,6 +3306,7 @@ type_var_protection_fail_unify_test() ->
         "  Cons (1, x)",
 
     [M] = alpaca_ast_gen:make_modules([Code]),
+
     Res = type_modules([M]),
     ?assertMatch(
        {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
@@ -4243,6 +4248,7 @@ types_in_types_test_() ->
                  "import_type types_in_types.ast\n\n"
                  "let format ast_node = format 0 ast_node\n\n"
                  "let format d Match {e=e, clauses=cs} = :match",
+
              [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
              
              ?assertMatch(
