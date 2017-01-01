@@ -483,7 +483,6 @@
 %% original names.
 -record(alpaca_module, {
           name=no_module :: atom(),
-          rename_map=maps:new() :: map(),
           function_exports=[] :: list({string(), integer()}|string()),
           function_imports=[] :: list({string(), {atom(), integer()}|string()}),
           types=[] :: list(alpaca_type()),
