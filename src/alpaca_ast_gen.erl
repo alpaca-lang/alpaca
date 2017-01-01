@@ -80,8 +80,8 @@ parse_module(Tokens, Mod) ->
 rename_and_resolve(Modules) ->
     Expanded = expand_imports(expand_exports(Modules)),
     F = fun(Mod, {NV, Memo}) ->
-                {ok, NV2, Map, Mod2} = rebind_and_validate_module(NV, Mod),
-                {NV2, [Mod2#alpaca_module{rename_map=Map}|Memo]}
+                {ok, NV2, Mod2} = rebind_and_validate_module(NV, Mod, Expanded),
+                {NV2, [Mod2|Memo]}
         end,
     {_, Ms} = lists:foldl(F, {0, []}, Expanded),
     lists:reverse(Ms).
@@ -167,36 +167,66 @@ drop_dupes_preserve_order([H|T], [H|_]=Memo) ->
 drop_dupes_preserve_order([H|T], Memo) ->
     drop_dupes_preserve_order(T, [H|Memo]).
 
-rebind_and_validate_module(_, {error, _} = Err) ->
+rebind_and_validate_module(_, {error, _} = Err, _) ->
     Err;
-rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod) ->
-    validate_user_types(rebind_and_validate_functions(NextVarNum, Mod)).
+rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
+    validate_user_types(rebind_and_validate_functions(NextVarNum, Mod, Modules)).
 
-rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod) ->
+%% Used to track a variety of data that both rename_bindings and make_bindings
+%% require:
+-record(env, {
+          %% Used for making replacement names:
+          next_var=0 :: integer(),
+          %% Tracks new variable name -> old variable name:
+          rename_map=maps:new() :: map(),
+          %% Tracks bindings in scope so that we can find out if a function
+          %% being called is defined locally, in the module, or from an
+          %% import:
+          current_bindings=[] :: list({string(), arity()}),
+          %% The module we're currently working on:
+          current_module=#alpaca_module{} :: alpaca_module(),
+          %% The other modules that imports could be pulled from:
+          modules=[] :: list(alpaca_module())
+         }).
+
+%% All available modules required so that we can rewrite applications of
+%% functions not in Mod to inter-module calls.
+rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
     #alpaca_module{name=MN, functions=Funs}=Mod,
+    Bindings = [{N, A} || #alpaca_fun_def{name={_, _, N}, arity=A} <- Funs],
+    Env = #env{next_var=NextVarNum,
+               rename_map=maps:new(),
+               current_bindings=Bindings,
+               current_module=Mod,
+               modules=Modules},
 
     F = fun(_, {error, _}=Err) ->
                 Err;
-           (F, {NV, M, Memo}) ->
-                {NV2, M2, F2} = rename_bindings(NV, MN, F),
+           (F, {E, Memo}) ->
+                {#env{next_var=NV2, rename_map=M}, M2, F2} = rename_bindings(E, F),
                     
                 %% We invert the returned map so that it is from
                 %% synthetic variable name to source code variable
                 %% name for later lookup:
                 Inverted = [{V, K}||{K, V} <- maps:to_list(M2)],
-                { NV2, maps:merge(M, maps:from_list(Inverted)), [F2|Memo]}
+                M3 = maps:merge(M2, maps:from_list(Inverted)),
+                {Env#env{next_var=NV2, rename_map=M3}, [F2|Memo]}
         end,
-    case lists:foldl(F, {NextVarNum, maps:new(), []}, Funs) of
+    case lists:foldl(F, {Env, []}, Funs) of
         {error, _}=Err ->
             Err;
-        {NV2, M, Funs2} ->
-            %% TODO:  other parts of the compiler might care about that map
-            {ok, NV2, M, Mod#alpaca_module{functions=lists:reverse(Funs2)}}
+        {#env{next_var=NV2, rename_map=M}, Funs2} ->
+            %% TODO:  other parts of the compiler might care about the rename
+            %%        map but we do throw away some details deliberately
+            %%        when rewriting patterns and different function versions.
+            %%        Probably worth expanding the symbol AST node to track
+            %%        an original name.
+            {ok, NV2, Mod#alpaca_module{functions=lists:reverse(Funs2)}}
     end.
 
 validate_user_types({error, _}=Err) ->
     Err;
-validate_user_types({ok, _, _, #alpaca_module{types=Ts}}=Res) ->
+validate_user_types({ok, _, #alpaca_module{types=Ts}}=Res) ->
     %% all type names unique
 
     NameCheck = unique_type_names(Ts),
@@ -304,23 +334,26 @@ next_batch([Token|Tail], Memo) ->
 %%% integers to create these names.
 
 -spec rename_bindings(
-        NextVar::integer(),
-        MN::atom(),
+        Env::#env{},
         TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()} |
                                      {error, term()}.
-rename_bindings(NextVar, MN, #alpaca_fun_def{}=TopLevel) ->
+rename_bindings(Environment, #alpaca_fun_def{}=TopLevel) ->
     #alpaca_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
     SeedMap = #{Name => Name},
 
-    F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Var, M, Versions}) ->
-                case make_bindings(Var, MN, SeedMap, As) of
-                    {NV, M2, Args} ->
-                        case rename_bindings(NV, MN, M2, Body) of
-                            {NV2, M3, E} ->
+    F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Env, Map, Versions}) ->
+                case make_bindings(Env, Map, As) of
+                    {Env2, M2, Args} ->
+                        case rename_bindings(Env2, M2, Body) of
+                            {Env3, M3, E} ->
                                 FV2 = FV#alpaca_fun_version{
                                         args=Args,
                                         body=E},
-                                {NV2, M3, [FV2|Versions]};
+                                %% As with patterns and clauses we deliberately
+                                %% throw away the rename map here so that the
+                                %% same symbols can be reused by distinctly
+                                %% different function definitions.
+                                {Env3, Map, [FV2|Versions]};
                             {error, _} = Err -> 
                                 throw(Err)
                         end;
@@ -328,364 +361,375 @@ rename_bindings(NextVar, MN, #alpaca_fun_def{}=TopLevel) ->
                 end
         end,
 
-    {NV, M2, Vs2} = lists:foldl(F, {NextVar, maps:new(), []}, Vs),
-    {NV, M2, TopLevel#alpaca_fun_def{versions=Vs2}}.
+    {Env, M2, Vs2} = lists:foldl(F, {Environment, maps:new(), []}, Vs),
+    {Env, M2, TopLevel#alpaca_fun_def{versions=Vs2}}.
 
-rebind_args(NextVar, _MN, Map, Args) ->
+rebind_args(Env, Map, Args) ->
     F = fun({error, _} = E, _) -> E;
-           ({symbol, L, N}, {NV, AccMap, Syms}) ->
+           ({symbol, L, N}, {#env{next_var=NV}=E, AccMap, Syms}) ->
                 case maps:get(N, AccMap, undefined) of
                     undefined ->
                         Synth = next_var(NV),
-                        { NV+1
+                        { E#env{next_var=NV+1}
                         , maps:put(N, Synth, AccMap)
                         , [{symbol, L, Synth}|Syms]
                         };
                     _ ->
                         throw({duplicate_definition, N, L})
                 end;
-           ({unit, _}=U, {NV, AccMap, Syms}) ->
-                {NV, AccMap, [U|Syms]};
-           (Arg, {NV, AccMap, Syms}) ->
-                {NV, AccMap, [Arg|Syms]}
+           ({unit, _}=U, {E, AccMap, Syms}) ->
+                {E, AccMap, [U|Syms]};
+           (Arg, {E, AccMap, Syms}) ->
+                {E, AccMap, [Arg|Syms]}
         end,
-    case lists:foldl(F, {NextVar, Map, []}, Args) of
-        {NV, M, Args2} -> {NV, M, lists:reverse(Args2)};
+    case lists:foldl(F, {Env, Map, []}, Args) of
+        {Env2, M, Args2} -> {Env2, M, lists:reverse(Args2)};
         {error, _}=Err -> Err
     end.
 
-rename_bindings(NextVar, MN, Map, #fun_binding{def=Def, expr=E}) ->
-    case rename_bindings(NextVar, MN, Map, Def) of
+rename_bindings(Env, Map, #fun_binding{def=Def, expr=E}) ->
+    case rename_bindings(Env, Map, Def) of
         {error, _} = Err ->
             Err;
-        {NV, M2, Def2} -> case rename_bindings(NV, MN, M2, E) of
-                              {error, _} = Err -> Err;
-                              {NV2, M3, E2} -> {NV2,
-                                                M3,
-                                                #fun_binding{def=Def2, expr=E2}}
+        {Env2, M2, Def2} -> case rename_bindings(Env2, M2, E) of
+                              {error, _} = Err ->
+                                    Err;
+                              {Env3, M3, E2} ->
+                                    {Env3, M3, #fun_binding{def=Def2, expr=E2}}
                           end
     end;
-rename_bindings(NextVar, MN, M, #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
-    #alpaca_fun_def{versions=Vs}=Def,
-    {NewName, M2} = case maps:get(Name, M, undefined) of
-                        undefined ->
-                            Synth = next_var(NextVar),
-                            {Synth, maps:put(Name, Synth, M)};
-                        _ ->
-                            throw({duplicate_definition, Name, L})
-                    end,
 
-    F = fun(#alpaca_fun_version{}=FV, {Map, NV, NewVersions}) ->
+rename_bindings(Environment, M, #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
+    #alpaca_fun_def{versions=Vs}=Def,
+    {NewName, En2, M2} = case maps:get(Name, M, undefined) of
+                              undefined ->
+                                  #env{next_var=NV} = Environment,
+                                  Synth = next_var(NV),
+                                  E2 = Environment#env{next_var=NV+1},
+                                  {Synth, E2, maps:put(Name, Synth, M)};
+                              _ ->
+                                  throw({duplicate_definition, Name, L})
+                          end,
+
+    F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
                 #alpaca_fun_version{args=Args, body=Body} = FV,
-                case rebind_args(NV+1, MN, Map, Args) of
+                case rebind_args(Env, Map, Args) of
                     {error, _}=Err ->
                         throw(Err);
-                    {NV3, M3, Args2} ->
-                        case rename_bindings(NV3, MN, M3, Body) of
+                    {Env2, M3, Args2} ->
+                        case rename_bindings(Env2, M3, Body) of
                             {error, _}=Err -> 
                                 throw(Err);
-                            {NV4, M4, Body2} ->
+                            {Env3, M4, Body2} ->
                                 FV2 = FV#alpaca_fun_version{
                                         args=Args2,
                                         body=Body2},
-                                {NV4, M4, [FV2|NewVersions]}
+                                %% As with patterns and clauses we deliberately
+                                %% throw away the rename map here so that the
+                                %% same symbols can be reused by distinctly
+                                %% different function definitions.
+                                {Env3, Map, [FV2|NewVersions]}
                         end
                 end
            end,
-    {NextVar2, Map2, Vs2} = lists:foldl(F, {M2, NextVar, []}, Vs),
+    {Env3, Map2, Vs2} = lists:foldl(F, {En2, M2, []}, Vs),
     NewDef = Def#alpaca_fun_def{name={symbol, L, NewName}, versions=lists:reverse(Vs2)},
-    {NextVar2, Map2, NewDef};
+    {Env3, Map2, NewDef};
     
-rename_bindings(NextVar, MN, Map, #var_binding{}=VB) ->
-    #var_binding{name={symbol, L, N},
-                 to_bind=TB,
-                 expr=E} = VB,
+rename_bindings(#env{next_var=NextVar}=Env, Map, #var_binding{}=VB) ->
+    #var_binding{name={symbol, L, N}, to_bind=TB, expr=E} = VB,
     case maps:get(N, Map, undefined) of
         undefined ->
             Synth = next_var(NextVar),
             M2 = maps:put(N, Synth, Map),
-            case rename_bindings(NextVar+1, MN, M2, TB) of
+            case rename_bindings(Env#env{next_var=NextVar+1}, M2, TB) of
                 {error, _} = Err ->
                     Err;
-                {NV, M3, TB2} ->
-                    case rename_bindings(NV, MN, M3, E) of
+                {Env2, M3, TB2} ->
+                    case rename_bindings(Env2, M3, E) of
                         {error, _} = Err -> Err;
-                        {NV2, M4, E2} -> {NV2,
-                                          M4,
-                                          #var_binding{
-                                             name={symbol, L, Synth},
-                                             to_bind=TB2,
-                                             expr=E2}}
+                        {Env3, M4, E2} ->
+                            VB2 = #var_binding{
+                                     name={symbol, L, Synth},
+                                     to_bind=TB2,
+                                     expr=E2},
+                            {Env3, M4, VB2}
                     end
             end;
         _ ->
             throw({duplicate_definition, N, L})
     end;
 
-rename_bindings(NextVar, MN, Map, #alpaca_apply{expr=N, args=Args}=App) ->
+rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
     FName = case N of
                 {symbol, _, _} = S ->
-                    {_, _, X} = rename_bindings(NextVar, MN, Map, S),
+                    {_, _, X} = rename_bindings(Env, Map, S),
                     X;
                 _ -> N
             end,
-    {_, _, Name} = rename_bindings(NextVar, MN, Map, FName),
-    case rename_binding_list(NextVar, MN, Map, Args) of
+    {_, _, Name} = rename_bindings(Env, Map, FName),
+    case rename_binding_list(Env, Map, Args) of
         {error, _} = Err -> Err;
-        {NV2, M2, Args2} ->
-            {NV2, M2, App#alpaca_apply{expr=Name, args=Args2}}
+        {Env2, M2, Args2} ->
+            {Env2, M2, App#alpaca_apply{expr=Name, args=Args2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #alpaca_spawn{
-                                     function=F,
-                                     args=Args}=Spawn) ->
-    {_, _, FName} = rename_bindings(NextVar, MN, Map, F),
-    FArgs = [X||{_, _, X} <- [rename_bindings(NextVar, MN, Map, A)||A <- Args]],
-    {NextVar, Map, Spawn#alpaca_spawn{
+rename_bindings(Env, Map, #alpaca_spawn{function=F, args=Args}=Spawn) ->
+    {_, _, FName} = rename_bindings(Env, Map, F),
+    FArgs = [X||{_, _, X} <- [rename_bindings(Env, Map, A)||A <- Args]],
+    #env{current_module=#alpaca_module{name=MN}} = Env,
+    {Env, Map, Spawn#alpaca_spawn{
                      function=FName,
                      from_module=MN,
                      args=FArgs}};
 
-rename_bindings(NextVar, MN, Map, #alpaca_send{message=M, pid=P}=Send) ->
-    {_, _, M2} = rename_bindings(NextVar, MN, Map, M),
-    {_, _, P2} = rename_bindings(NextVar, MN, Map, P),
-    {NextVar, Map, Send#alpaca_send{message=M2, pid=P2}};
+rename_bindings(Env, Map, #alpaca_send{message=M, pid=P}=Send) ->
+    {_, _, M2} = rename_bindings(Env, Map, M),
+    {_, _, P2} = rename_bindings(Env, Map, P),
+    {Env, Map, Send#alpaca_send{message=M2, pid=P2}};
 
-rename_bindings(NextVar, _MN, Map, #alpaca_type_apply{arg=none}=A) ->
-    {NextVar, Map, A};
-rename_bindings(NextVar, MN, Map, #alpaca_type_apply{arg=Arg}=A) ->
-    case rename_bindings(NextVar, MN, Map, Arg) of
+rename_bindings(Env, Map, #alpaca_type_apply{arg=none}=A) ->
+    {Env, Map, A};
+rename_bindings(Env, Map, #alpaca_type_apply{arg=Arg}=A) ->
+    case rename_bindings(Env, Map, Arg) of
         {error, _}=Err -> Err;
-        {NV, M, Arg2} -> {NV, M, A#alpaca_type_apply{arg=Arg2}}
+        {Env2, M, Arg2} -> {Env2, M, A#alpaca_type_apply{arg=Arg2}}
     end;
-rename_bindings(NextVar, MN, Map, #alpaca_type_check{expr=E}=TC) ->
-    case rename_bindings(NextVar, MN, Map, E) of
+rename_bindings(Env, Map, #alpaca_type_check{expr=E}=TC) ->
+    case rename_bindings(Env, Map, E) of
         {error, _}=Err -> Err;
-        {NV, M, E2} -> {NV, M, TC#alpaca_type_check{expr=E2}}
+        {Env2, M, E2} -> {Env2, M, TC#alpaca_type_check{expr=E2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #alpaca_cons{head=H, tail=T}=Cons) ->
-    case rename_bindings(NextVar, MN, Map, H) of
+rename_bindings(Env, Map, #alpaca_cons{head=H, tail=T}=Cons) ->
+    case rename_bindings(Env, Map, H) of
         {error, _} = Err -> Err;
-        {NV, M, H2} -> case rename_bindings(NV, MN, M, T) of
-                           {error, _} = Err -> Err;
-                           {NV2, M2, T2} -> {NV2, M2, Cons#alpaca_cons{
-                                                        head=H2,
-                                                        tail=T2}}
-                       end
+        {Env2, M, H2} -> case rename_bindings(Env2, M, T) of
+                             {error, _} = Err -> Err;
+                             {Env3, M2, T2} -> {Env3, M2, Cons#alpaca_cons{
+                                                            head=H2,
+                                                            tail=T2}}
+                         end
     end;
-rename_bindings(NextVar, MN, Map, #alpaca_binary{segments=Segs}=B) ->
+rename_bindings(Env, Map, #alpaca_binary{segments=Segs}=B) ->
     %% fold to account for errors.
     F = fun(_, {error, _}=Err) -> Err;
-           (#alpaca_bits{value=V}=Bits, {NV, M, Acc}) ->
-                case rename_bindings(NV, MN, M, V) of
-                    {NV2, M2, V2} -> {NV2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
+           (#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
+                case rename_bindings(E, M, V) of
+                    {E2, M2, V2} -> {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
                     {error, _}=Err -> Err
                 end
         end,
-    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+    case lists:foldl(F, {Env, Map, []}, Segs) of
         {error, _}=Err ->
             Err;
-        {NV2, M2, Segs2} ->
-            {NV2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
+        {Env2, M2, Segs2} ->
+            {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
     end;
-rename_bindings(NextVar, MN, Map, #alpaca_map{pairs=Pairs}=ASTMap) ->
+rename_bindings(Env, Map, #alpaca_map{pairs=Pairs}=ASTMap) ->
     Folder = fun(_, {error, _}=Err) -> Err;
-                (P, {NV, M, Ps}) ->
-                     case rename_bindings(NV, MN, M, P) of
+                (P, {E, M, Ps}) ->
+                     case rename_bindings(E, M, P) of
                          {error, _}=Err -> Err;
-                         {NV2, M2, P2} -> {NV2, M2, [P2|Ps]}
+                         {E2, M2, P2} -> {E2, M2, [P2|Ps]}
                      end
              end,
-    case lists:foldl(Folder, {NextVar, Map, []}, Pairs) of
-        {error, _}=Err -> Err;
-        {NV, M, Pairs2} -> {NV, M, ASTMap#alpaca_map{pairs=lists:reverse(Pairs2)}}
-    end;
-rename_bindings(NextVar, MN, Map, #alpaca_map_add{to_add=A, existing=B}=ASTMap) ->
-    case rename_bindings(NextVar, MN, Map, A) of
+    case lists:foldl(Folder, {Env, Map, []}, Pairs) of
         {error, _}=Err ->
             Err;
-        {NV, M, A2} ->
-            case rename_bindings(NV, MN, M, B) of
-                {error, _}=Err -> Err;
-                {NV2, M2, B2} ->
-                    {NV2, M2, ASTMap#alpaca_map_add{to_add=A2, existing=B2}}
-            end
+        {Env2, M, Pairs2} ->
+            {Env2, M, ASTMap#alpaca_map{pairs=lists:reverse(Pairs2)}}
     end;
-rename_bindings(NextVar, MN, Map, #alpaca_map_pair{key=K, val=V}=P) ->
-    case rename_bindings(NextVar, MN, Map, K) of
+rename_bindings(Env, Map, #alpaca_map_add{to_add=A, existing=B}=ASTMap) ->
+    case rename_bindings(Env, Map, A) of
         {error, _}=Err ->
             Err;
-        {NV, M, K2} ->
-            case rename_bindings(NV, MN, M, V) of
-                {error, _}=Err -> Err;
-                {NV2, M2, V2} ->
-                    {NV2, M2, P#alpaca_map_pair{key=K2, val=V2}}
+        {Env2, M, A2} ->
+            case rename_bindings(Env2, M, B) of
+                {error, _}=Err ->
+                    Err;
+                {Env3, M2, B2} ->
+                    {Env3, M2, ASTMap#alpaca_map_add{to_add=A2, existing=B2}}
             end
     end;
-rename_bindings(NextVar, MN, Map, #alpaca_tuple{values=Vs}=T) ->
-    case rename_binding_list(NextVar, MN, Map, Vs) of
+rename_bindings(Env, Map, #alpaca_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(Env, Map, K) of
+        {error, _}=Err ->
+            Err;
+        {Env2, M, K2} ->
+            case rename_bindings(Env2, M, V) of
+                {error, _}=Err ->
+                    Err;
+                {Env3, M2, V2} ->
+                    {Env3, M2, P#alpaca_map_pair{key=K2, val=V2}}
+            end
+    end;
+rename_bindings(Env, Map, #alpaca_tuple{values=Vs}=T) ->
+    case rename_binding_list(Env, Map, Vs) of
         {error, _} = Err -> Err;
-        {NV, M, Vals2} -> {NV, M, T#alpaca_tuple{values=Vals2}}
+        {Env2, _, Vals2} -> {Env2, Map, T#alpaca_tuple{values=Vals2}}
     end;
 
-rename_bindings(NextVar, MN, Map, #alpaca_record{members=Members}=R) ->
-    F = fun(#alpaca_record_member{val=V}=RM, {NewMembers, NV, M}) ->
-                case rename_bindings(NV, MN, M, V) of
-                    {error, _}=E -> erlang:error(E);
-                    {NV2, M2, V2} ->
-                        {[RM#alpaca_record_member{val=V2}|NewMembers], NV2, M2}
+rename_bindings(Env, Map, #alpaca_record{members=Members}=R) ->
+    F = fun(#alpaca_record_member{val=V}=RM, {NewMembers, E, M}) ->
+                case rename_bindings(E, M, V) of
+                    {error, _}=E ->
+                        erlang:error(E);
+                    {E2, M2, V2} ->
+                        {[RM#alpaca_record_member{val=V2}|NewMembers], E2, M2}
                 end
         end,
-    {NewMembers, NextVar2, Map2} = lists:foldl(F, {[], NextVar, Map}, Members),
-    {NextVar2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
+    {NewMembers, Env2, Map2} = lists:foldl(F, {[], Env, Map}, Members),
+    {Env2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
 
-rename_bindings(NextVar, _MN, Map, {symbol, L, N}=S) ->
+rename_bindings(Env, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
-        undefined -> {NextVar, Map, S};
-        Synthetic -> {NextVar, Map, {symbol, L, Synthetic}}
+        undefined -> {Env, Map, S};
+        Synthetic -> {Env, Map, {symbol, L, Synthetic}}
     end;
-rename_bindings(NV, MN, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
-    case rename_bindings(NV, MN, M, Args) of
+rename_bindings(Env, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
+    case rename_bindings(Env, M, Args) of
         {error, _} = Err ->
             Err;
-        {NV2, M2, Args2} ->
-            case rename_clause_list(NV2, MN, M2, Cs) of
+        {Env2, M2, Args2} ->
+            case rename_clause_list(Env2, M2, Cs) of
                 {error, _} = Err ->
                     Err;
-                {NV3, M3, Cs2} ->
-                    {NV3, M3, FFI#alpaca_ffi{args=Args2, clauses=Cs2}}
+                {Env3, M3, Cs2} ->
+                    {Env3, M3, FFI#alpaca_ffi{args=Args2, clauses=Cs2}}
             end
     end;
-rename_bindings(NV, MN, M, #alpaca_match{}=Match) ->
+rename_bindings(Env, M, #alpaca_match{}=Match) ->
     #alpaca_match{match_expr=ME, clauses=Cs} = Match,
-    case rename_bindings(NV, MN, M, ME) of
+    case rename_bindings(Env, M, ME) of
         {error, _} = Err -> Err;
-        {NV2, M2, ME2} ->
-            case rename_clause_list(NV2, MN, M2, Cs) of
+        {Env2, M2, ME2} ->
+            case rename_clause_list(Env2, M2, Cs) of
                 {error, _} = Err ->
                     Err;
-                {NV3, M3, Cs2} ->
-                    {NV3, M3, Match#alpaca_match{match_expr=ME2, clauses=Cs2}}
+                {Env3, M3, Cs2} ->
+                    {Env3, M3, Match#alpaca_match{match_expr=ME2, clauses=Cs2}}
             end
     end;
 
-rename_bindings(NV, MN, M, #alpaca_receive{clauses=Cs}=Recv) ->
-    case rename_clause_list(NV, MN, M, Cs) of
+rename_bindings(Env, M, #alpaca_receive{clauses=Cs}=Recv) ->
+    case rename_clause_list(Env, M, Cs) of
         {error, _} = Err -> Err;
-        {NV2, M2, Cs2}   -> {NV2, M2, Recv#alpaca_receive{clauses=Cs2}}
+        {Env2, M2, Cs2}   -> {Env2, M2, Recv#alpaca_receive{clauses=Cs2}}
     end;
 
-rename_bindings(NV, MN, M, #alpaca_clause{pattern=P, guards=Gs, result=R}=Clause) ->
+rename_bindings(Env, M, #alpaca_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
-    case make_bindings(NV, MN, M, P) of
+    case make_bindings(Env, M, P) of
         {error, _} = Err -> Err;
-        {NV2, M2, P2} ->
-            case rename_bindings(NV2, MN, M2, R) of
+        {Env2, M2, P2} ->
+            case rename_bindings(Env2, M2, R) of
                 {error, _} = Err -> Err;
-                {NV3, M3, R2} ->
-                    case rename_binding_list(NV3, MN, M3, Gs) of
+                {Env3, M3, R2} ->
+                    case rename_binding_list(Env3, M3, Gs) of
                         {error, _}=Err -> Err;
-                        {NV4, _M4, Gs2} ->
+                        {Env4, _M4, Gs2} ->
 
                             %% we actually throw away the modified map here
                             %% because other patterns should be able to
                             %% reuse variable names:
-                            {NV4, M, Clause#alpaca_clause{
+                            {Env4, M, Clause#alpaca_clause{
                                        pattern=P2,
                                        guards=Gs2,
                                        result=R2}}
                     end
             end
     end;
-rename_bindings(NextVar, _MN, Map, Expr) ->
-    {NextVar, Map, Expr}.
+rename_bindings(Env, Map, Expr) ->
+    {Env, Map, Expr}.
 
-rename_binding_list(NextVar, MN, Map, Bindings) ->
+rename_binding_list(Env, Map, Bindings) ->
     F = fun(_, {error, _} = Err) -> Err;
-           (A, {NV, M, Memo}) ->
-                case rename_bindings(NV, MN, M, A) of
+           (A, {E, M, Memo}) ->
+                case rename_bindings(E, M, A) of
                     {error, _} = Err -> Err;
-                    {NV2, M2, A2} -> {NV2, M2, [A2|Memo]}
+                    {E2, M2, A2} -> {E2, M2, [A2|Memo]}
                 end
         end,
-    case lists:foldl(F, {NextVar, Map, []}, Bindings) of
+    case lists:foldl(F, {Env, Map, []}, Bindings) of
         {error, _} = Err -> Err;
-        {NV, M, Bindings2} -> {NV, M, lists:reverse(Bindings2)}
+        {Env2, M, Bindings2} -> {Env2, M, lists:reverse(Bindings2)}
     end.
 
 %% For renaming bindings in a list of clauses.  Broken out from pattern
 %% matching because it will be reused for FFI and receive.
-rename_clause_list(NV, MN, M, Cs) ->
+rename_clause_list(Env, M, Cs) ->
     F = fun(_, {error, _}=Err) -> Err;
-           (C, {X, Y, Memo}) ->
-                case rename_bindings(X, MN, Y, C) of
+           (C, {E, Map, Memo}) ->
+                case rename_bindings(E, Map, C) of
                     {error, _} = Err -> Err;
-                    {A, B, C2} -> {A, B, [C2|Memo]}
+                    {E2, Map2, C2} -> {E2, Map2, [C2|Memo]}
                 end
         end,
-    case lists:foldl(F, {NV, M, []}, Cs) of
+    case lists:foldl(F, {Env, M, []}, Cs) of
         {error, _} = Err -> Err;
-        {NV2, M2, Cs2} -> {NV2, M2, lists:reverse(Cs2)}
+        {Env2, M2, Cs2} -> {Env2, M2, lists:reverse(Cs2)}
     end.
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
-make_bindings(NV, MN, M, [_|_]=Xs) ->
-    {NV2, M2, Xs2} = lists:foldl(
-                       fun(X, {NextVar, Map, Memo}) ->
-                               case make_bindings(NextVar, MN, Map, X) of
-                                   {error, _}=Err -> throw(Err);
-                                   {NV2, M2, A2} -> {NV2, M2, [A2|Memo]}
-                               end
-                       end,
-                       {NV, M, []},
-                       Xs),
-    {NV2, M2, lists:reverse(Xs2)};
+make_bindings(Env, M, [_|_]=Xs) ->
+    {Env2, M2, Xs2} = lists:foldl(
+                        fun(X, {E, Map, Memo}) ->
+                                case make_bindings(E, Map, X) of
+                                    {error, _}=Err -> throw(Err);
+                                    {E2, M2, A2} -> {E2, M2, [A2|Memo]}
+                                end
+                        end,
+                        {Env, M, []},
+                        Xs),
+    {Env2, M2, lists:reverse(Xs2)};
 
-make_bindings(NV, MN, M, #alpaca_tuple{values=Vs}=Tup) ->
+make_bindings(Env, M, #alpaca_tuple{values=Vs}=Tup) ->
     F = fun(_, {error, _}=E) -> E;
-           (V, {NextVar, Map, Memo}) ->
-                case make_bindings(NextVar, MN, Map, V) of
+           (V, {E, Map, Memo}) ->
+                case make_bindings(E, Map, V) of
                     {error, _} = Err -> Err;
-                    {NV2, M2, V2} -> {NV2, M2, [V2|Memo]}
+                    {E2, M2, V2} -> {E2, M2, [V2|Memo]}
                 end
         end,
-    case lists:foldl(F, {NV, M, []}, Vs) of
-        {error, _} = Err -> Err;
-        {NV2, M2, Vs2}   -> {NV2, M2, Tup#alpaca_tuple{values=lists:reverse(Vs2)}}
+    case lists:foldl(F, {Env, M, []}, Vs) of
+        {error, _} = Err ->
+            Err;
+        {Env2, M2, Vs2} ->
+            {Env2, M2, Tup#alpaca_tuple{values=lists:reverse(Vs2)}}
     end;
-make_bindings(NV, MN, M, #alpaca_cons{head=H, tail=T}=Cons) ->
-    case make_bindings(NV, MN, M, H) of
+make_bindings(Env, M, #alpaca_cons{head=H, tail=T}=Cons) ->
+    case make_bindings(Env, M, H) of
         {error, _} = Err -> Err;
-        {NV2, M2, H2} -> case make_bindings(NV2, MN, M2, T) of
-                             {error, _} = Err ->
-                                 Err;
-                             {NV3, M3, T2} ->
-                                 {NV3, M3, Cons#alpaca_cons{head=H2, tail=T2}}
-                         end
+        {Env2, M2, H2} -> case make_bindings(Env2, M2, T) of
+                              {error, _} = Err ->
+                                  Err;
+                              {Env3, M3, T2} ->
+                                  {Env3, M3, Cons#alpaca_cons{head=H2, tail=T2}}
+                          end
     end;
 %% TODO:  this is identical to rename_bindings but for the internal call
 %% to make_bindings vs rename_bindings.  How much else in here is like this?
 %% Probably loads of abstracting/de-duping potential.
-make_bindings(NextVar, MN, Map, #alpaca_binary{segments=Segs}=B) ->
+make_bindings(Env, Map, #alpaca_binary{segments=Segs}=B) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
-           (#alpaca_bits{value=V}=Bits, {NV, M, Acc}) ->
-                case make_bindings(NV, MN, M, V) of
-                    {NV2, M2, V2} ->
-                        {NV2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
+           (#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
+                case make_bindings(E, M, V) of
+                    {E2, M2, V2} ->
+                        {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
                     {error, _}=Err ->
                         Err
                 end
         end,
-    case lists:foldl(F, {NextVar, Map, []}, Segs) of
+    case lists:foldl(F, {Env, Map, []}, Segs) of
         {error, _}=Err ->
             Err;
-        {NV2, M2, Segs2} ->
-            {NV2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
+        {Env2, M2, Segs2} ->
+            {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
     end;
 
 %%% Map patterns need to rename variables used for keys and create new bindings
@@ -696,67 +740,70 @@ make_bindings(NextVar, MN, Map, #alpaca_binary{segments=Segs}=B) ->
 %%%       #{my_key => v} -> v
 %%%
 %%% Map patterns require the key to be something exact already.
-make_bindings(NextVar, MN, BindingMap, #alpaca_map{pairs=Ps}=Map) ->
+make_bindings(Env, BindingMap, #alpaca_map{pairs=Ps}=Map) ->
     Folder = fun(_, {error, _}=Err) -> Err;
-                (P, {NV, M, Acc}) ->
-                     case make_bindings(NV, MN, M, P) of
+                (P, {E, M, Acc}) ->
+                     case make_bindings(E, M, P) of
                          {error, _}=Err -> Err;
-                         {NV2, M2, P2} -> {NV2, M2, [P2|Acc]}
+                         {E2, M2, P2}   -> {E2, M2, [P2|Acc]}
                      end
              end,
-    case lists:foldl(Folder, {NextVar, BindingMap, []}, Ps) of
+    case lists:foldl(Folder, {Env, BindingMap, []}, Ps) of
         {error, _}=Err -> Err;
-        {NV, M, Pairs} ->
+        {Env2, M, Pairs} ->
             Map2 = Map#alpaca_map{is_pattern=true, pairs=lists:reverse(Pairs)},
-            {NV, M, Map2}
+            {Env2, M, Map2}
     end;
-make_bindings(NV, MN, M, #alpaca_map_pair{key=K, val=V}=P) ->
-    case rename_bindings(NV, MN, M, K) of
+make_bindings(Env, M, #alpaca_map_pair{key=K, val=V}=P) ->
+    case rename_bindings(Env, M, K) of
         {error, _}=Err -> Err;
-        {NV2, M2, K2} ->
-            case make_bindings(NV2, MN, M2, V) of
-                {error, _}=Err -> Err;
-                {NV3, M3, V2} ->
-                    {NV3, M3, P#alpaca_map_pair{is_pattern=true, key=K2, val=V2}}
+        {Env2, M2, K2} ->
+            case make_bindings(Env2, M2, V) of
+                {error, _}=Err ->
+                    Err;
+                {Env3, M3, V2} ->
+                    {Env3, M3, P#alpaca_map_pair{is_pattern=true, key=K2, val=V2}}
             end
     end;
 
 %% Records can be compiled as maps so we need the is_pattern parameter
 %% on their AST nodes set correctly here too.
-make_bindings(NV, MN, M, #alpaca_record{members=Members}=R) ->
-    F = fun(#alpaca_record_member{val=V}=RM, {NewVs, NextVar, Map}) ->
-                case make_bindings(NextVar, MN, Map, V) of
-                    {error, _}=Err -> 
+make_bindings(Env, M, #alpaca_record{members=Members}=R) ->
+    F = fun(#alpaca_record_member{val=V}=RM, {NewVs, E, Map}) ->
+                case make_bindings(E, Map, V) of
+                    {error, _}=Err ->
                         erlang:error(Err);
-                    {NextVar2, Map2, V2} -> 
+                    {E2, Map2, V2} ->
                         NewR = RM#alpaca_record_member{val=V2},
-                        {[NewR|NewVs], NextVar2, Map2}
+                        {[NewR|NewVs], E2, Map2}
                 end
         end,
-    {Members2, NV2, M2} = lists:foldl(F, {[], NV, M}, Members),
+    {Members2, Env2, M2} = lists:foldl(F, {[], Env, M}, Members),
     NewR = R#alpaca_record{
              members=lists:reverse(Members2),
              is_pattern=true},
-    {NV2, M2, NewR};
+    {Env2, M2, NewR};
 
-make_bindings(NV, MN, M, #alpaca_type_apply{arg=none}=TA) ->
-    {NV, M, TA};
-make_bindings(NV, MN, M, #alpaca_type_apply{arg=Arg}=TA) ->
-    case make_bindings(NV, MN, M, Arg) of
-        {NV2, M2, Arg2} -> {NV2, M2, TA#alpaca_type_apply{arg=Arg2}};
+make_bindings(Env, M, #alpaca_type_apply{arg=none}=TA) ->
+    {Env, M, TA};
+make_bindings(Env, M, #alpaca_type_apply{arg=Arg}=TA) ->
+    case make_bindings(Env, M, Arg) of
+        {Env2, M2, Arg2} -> {Env2, M2, TA#alpaca_type_apply{arg=Arg2}};
         {error, _}=Err  -> Err
     end;
 
-make_bindings(NV, _MN, M, {symbol, L, Name}) ->
+make_bindings(Env, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of
         undefined ->
+            #env{next_var=NV} = Env,
             Synth = next_var(NV),
-            {NV+1, maps:put(Name, Synth, M), {symbol, L, Synth}};
+            Env2 = Env#env{next_var=NV+1},
+            {Env2, maps:put(Name, Synth, M), {symbol, L, Synth}};
         _ ->
             throw({duplicate_definition, Name, L})
     end;
-make_bindings(NV, _MN, M, Expression) ->
-    {NV, M, Expression}.
+make_bindings(Env, M, Expression) ->
+    {Env, M, Expression}.
 
 -define(base_var_name, "svar_").
 next_var(X) ->
@@ -1377,10 +1424,10 @@ rebinding_test_() ->
                                                           expr={bif, '+', 1, 'erlang', '+'},
                                                           args=[{symbol, 1, "svar_0"},
                                                                 {symbol, 1, "svar_1"}]}}}]}},
-                   rename_bindings(0, undefined, A)),
+                   rename_bindings(#env{}, A)),
      ?_assertException(throw, 
                        {duplicate_definition, "x", 2},
-                       rename_bindings(0, undefined, B)),
+                       rename_bindings(#env{}, B)),
      ?_assertMatch(
         {_, _, #alpaca_fun_def{
                   name={symbol, 1, "f"},
@@ -1398,10 +1445,10 @@ rebinding_test_() ->
                                                               values=[{symbol, 3, "svar_2"},
                                                                       {symbol, 3, "svar_3"}]},
                                                    result={symbol, 3, "svar_3"}}]}}]}},
-        rename_bindings(0, undefined, C)),
+        rename_bindings(#env{}, C)),
      ?_assertException(throw,
                        {duplicate_definition, "x", 2},
-                       rename_bindings(0, undefined, D)),
+                       rename_bindings(#env{}, D)),
      ?_assertMatch(
         {_, _,
          #alpaca_fun_def{
@@ -1422,10 +1469,10 @@ rebinding_test_() ->
                                                         head={symbol, 3, "svar_2"},
                                                         tail={symbol, 3, "svar_3"}},
                                              result={symbol, 3, "svar_2"}}]}}]}},
-        rename_bindings(0, undefined, E)),
+        rename_bindings(#env{}, E)),
      ?_assertException(throw, 
                        {duplicate_definition, "y", 2},
-                       rename_bindings(0, undefined, F))
+                       rename_bindings(#env{}, F))
     ].
 
 type_expr_in_type_declaration_test() ->
