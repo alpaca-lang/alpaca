@@ -83,7 +83,7 @@ g_type() ->
 g_function() ->
     ?LET({F, Body},
          {g_function_name(), g_function_body()},
-         g_sprinkle_whitespace([F, "()", "=", Body, $\n])).
+         g_sprinkle_whitespace(["let", F, "()", "=", Body, $\n])).
 
 g_function_name() ->
     ?LET(N, pos_integer(), ?LET(Fun, g_sym(N), Fun)).
