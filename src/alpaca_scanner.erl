@@ -9,7 +9,9 @@
 
 scan(Code) ->    
     %% Scan and infer break tokens if not provided
-    case alpaca_scan:string(Code) of
+    {ok, Re} = re:compile("\n([ \t]+)\n", [unicode]),
+    Sanitized = re:replace(Code, Re, "\n\n", [{return,list},global]),
+    case alpaca_scan:string(Sanitized) of
         {ok, Tokens, Num} -> {ok, infer_breaks(Tokens), Num};    
         Error -> Error
     end.
