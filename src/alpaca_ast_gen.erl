@@ -1562,9 +1562,9 @@ expand_exports_test_() ->
               Code =
                   "module test_export_all_funs\n\n"
                   "export foo, bar/1\n\n"
-                  "foo x = x\n\n"
-                  "foo x y = x + y\n\n"
-                  "bar x = x",
+                  "let foo x = x\n\n"
+                  "let foo x y = x + y\n\n"
+                  "let bar x = x",
 
               [Mod] = make_modules([Code]),
               [#alpaca_module{function_exports=FEs}] = expand_exports([Mod], []),
@@ -1577,8 +1577,8 @@ expand_imports_test_() ->
              Code1 =
                  "module m1\n\n"
                  "export foo\n\n"
-                 "foo x = x\n\n"
-                 "foo x y = x + y",
+                 "let foo x = x\n\n"
+                 "let foo x y = x + y",
 
              Code2 =
                  "module m2\n\n"
@@ -1614,11 +1614,11 @@ import_rewriting_test_() ->
              Code1 =
                  "module a\n\n"
                  "export add/2\n\n"
-                 "add x y = x + y",
+                 "let add x y = x + y",
              Code2 =
                  "module b\n\n"
                  "import a.add\n\n"
-                 "f () = add 2 3",
+                 "let f () = add 2 3",
              ?assertMatch(
                 [#alpaca_module{name=a},
                  #alpaca_module{
@@ -1638,12 +1638,12 @@ import_rewriting_test_() ->
               Code1 =
                  "module a\n\n"
                   "export (|>)\n\n"
-                  "(|>) x y = y x",
+                  "let (|>) x y = y x",
               Code2 =
                   "module b\n\n"
                   "import a.(|>)\n\n"
-                  "add_ten x = x + 10\n\n"
-                  "f () = 2 |> add_ten",
+                  "let add_ten x = x + 10\n\n"
+                  "let f () = 2 |> add_ten",
               ?assertMatch(
                  [#alpaca_module{name=a},
                   #alpaca_module{
