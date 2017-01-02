@@ -4321,6 +4321,7 @@ types_in_types_test_() ->
                   "let format d Match {e=e, clauses=cs} = :match",
 
               [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
+
               ?assertMatch(
                  {ok, [#alpaca_module{}, #alpaca_module{}]}, 
                  type_modules([M1, M2]))
@@ -4391,7 +4392,6 @@ no_process_leak_test() ->
     Code =
         "module no_leaks\n"
         "let add a b = a + b",
-
     [M] = alpaca_ast_gen:make_modules([Code]),
     ProcessesBefore = length(erlang:processes()),
     ?assertMatch({ok, _}, type_modules([M])),
