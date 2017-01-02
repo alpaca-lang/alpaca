@@ -4,10 +4,10 @@ export (|>)
 
 export foo, sub/2
 
-(|>) x y = y x
+let (|>) x y = y x
 
-foo x = x + 10
+let foo x = x + 10
 
-foo x y = x + y
+let foo x y = x + y
 
-sub x y = x - y
+let sub x y = x - y
