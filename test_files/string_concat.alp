@@ -2,6 +2,6 @@ module string_concat
 
 export hello/1
 
-hello x = beam :string :concat [c"Hello, ", x] with
+let hello x = beam :string :concat [c"Hello, ", x] with
       s, is_chars s -> s
       

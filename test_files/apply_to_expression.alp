@@ -2,14 +2,14 @@ module apply_to_expression
 
 export foo/1, uses_fun/1
 
-foo () =
+let foo () =
   let f x = x + x in
   let g () = f in
   (g ()) 2
 
-returns_fun () =
+let returns_fun () =
   let f x = x + x in
   f
 
-uses_fun x =
+let uses_fun x =
   (returns_fun ()) x

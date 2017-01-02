@@ -2,16 +2,16 @@ module multiple_underscore_test
 
 export list_check/1, map_check/1, tuple_check/1
 
-list_check () =
+let list_check () =
   match [1, 2] with
     _ :: _ -> :list
 
-map_check m =
+let map_check m =
   match m with
       #{:x => _, :y => _, :z => _} -> "all three"
     | #{:x => _, :y => _} -> "just two"
 
-tuple_check t =
+let tuple_check t =
   match t with
     (_, _, _) -> "three"
     

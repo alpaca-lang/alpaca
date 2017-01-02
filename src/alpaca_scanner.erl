@@ -7,11 +7,68 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-scan(Code) ->
-    % Sanitize break tokens with a regular expression
+scan(Code) ->    
+    %% Scan and infer break tokens if not provided
     {ok, Re} = re:compile("\n([ \t]+)\n", [unicode]),
     Sanitized = re:replace(Code, Re, "\n\n", [{return,list},global]),
-    alpaca_scan:string(Sanitized).
+    case alpaca_scan:string(Sanitized) of
+        {ok, Tokens, Num} -> {ok, infer_breaks(Tokens), Num};    
+        Error -> Error
+    end.
+
+infer_breaks(Tokens) ->
+    %% Reduce tokens from the right, inserting a break (i.e. ';;') before
+    %% top level constructs including let, type, exports, imports and module.
+    %% To avoid inserting breaks in let... in... we track the level of these
+    %% (as we're folding right, an 'in' increases the level by one, a 'let'
+    %% decreases by one if the current level > 0)
+    %% We also track whether we're in a binary as 'type' has a different
+    %% semantic there
+    
+    Reducer = fun(Token, {LetLevel, InBinary, Acc}) ->                     
+        {Symbol, Line} = case Token of
+            {S, L} when is_integer(L) -> {S, L};
+            Other -> {other, 0}
+        end,
+        InferBreak = fun() -> 
+            {0, InBinary, [{break, Line} | [ Token | Acc]]} 
+        end,
+        Pass = fun() -> 
+            {LetLevel, InBinary, [Token | Acc]} 
+        end,
+        ChangeLetLevel = fun(Diff) -> 
+            {LetLevel + Diff, InBinary, [Token | Acc]}
+        end,                   
+        BinOpen = fun(State) ->
+            {LetLevel, State, [Token | Acc]}
+        end,
+        case Symbol of
+            'in'           -> ChangeLetLevel(+1);                     
+            'let'          -> case LetLevel of                                            
+                                0 -> InferBreak();
+                                _ -> ChangeLetLevel(-1)
+                              end;
+            'type_declare' -> case InBinary of 
+                                true -> Pass();
+                                false -> InferBreak()
+                              end;
+            'bin_open'     -> BinOpen(false);
+            'bin_close'    -> BinOpen(true);
+            'test'         -> InferBreak();
+            'module'       -> InferBreak();
+            'export'       -> InferBreak();
+            'export_type'  -> InferBreak();
+            'import_type'  -> InferBreak();
+            'import'       -> InferBreak();
+            _              -> Pass()
+        end      
+    end,
+    {0, false, Output} = lists:foldr(Reducer, {0, false, []}, Tokens),
+    %% Remove initial 'break' if one was inferred
+    case Output of
+        [{break, _} | Rest] -> Rest;
+        _ -> Output
+    end. 
 
 -ifdef(TEST).
 
@@ -58,5 +115,27 @@ let_test() ->
                       {assign, 1},
                       {int, 1, 5}],
     ?assertEqual({ok, ExpectedTokens, 1}, scan(Code)).
+
+infer_test() ->
+    Code = "module hello\nlet a = 0\nlet b = 1",
+    ExpectedTokens = [{'module', 1}, {symbol, 1, "hello"}, 
+                                      {break, 2}, 
+                       {'let', 2}, {symbol, 2, "a"}, {assign, 2}, {int, 2, 0}, 
+                                                                  {break, 3},
+                       {'let', 3}, {symbol, 3, "b"}, {assign, 3}, {int, 3, 1}
+                      ],                       
+    ?assertEqual({ok, ExpectedTokens, 3}, scan(Code)).
+
+infer_bin_test() ->
+    Code = "module bin_test\nlet a = << 10 : type = int >>",
+    ExpectedTokens = [{'module', 1}, {symbol, 1, "bin_test"},
+                                      {break, 2},
+                       {'let', 2}, {symbol, 2, "a"}, {assign, 2}, 
+                                   {bin_open, 2}, {int, 2, 10},
+                                   {':', 2}, {type_declare, 2},
+                                   {assign, 2}, {base_type, 2, "int"},
+                                   {bin_close, 2}
+                     ],                       
+    ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).
 
 -endif.

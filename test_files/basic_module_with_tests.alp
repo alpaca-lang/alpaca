@@ -2,19 +2,19 @@ module basic_module_with_tests
 
 export add/2, sub/2
 
-add x y = x + y
+let add x y = x + y
 
-sub x y = x - y
+let sub x y = x - y
 
 test "add 2 and 2" = test_equal (add 2 2) 4
 
 test "subtract 2 from 4" = test_equal (sub 4 2) 3
 
-format_msg base x y =
+let format_msg base x y =
   let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
   beam :lists :flatten [m] with msg, is_chars msg -> msg
 
-test_equal x y =
+let test_equal x y =
   match (x == y) with
       true -> :passed
     | false ->

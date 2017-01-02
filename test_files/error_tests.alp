@@ -2,13 +2,13 @@ module error_tests
 
 export raise_throw/1, raise_error/1, raise_exit/1, throw_or_int/1
 
-raise_throw () = throw "this should be a throw"
+let raise_throw () = throw "this should be a throw"
 
-raise_exit () = exit "exit here"
+let raise_exit () = exit "exit here"
 
-raise_error () = error "and an error"
+let raise_error () = error "and an error"
 
-throw_or_int x = match x with
+let throw_or_int x = match x with
     0 -> throw "oh no zero!"
   | _ -> x * 2
   

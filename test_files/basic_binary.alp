@@ -2,19 +2,19 @@ module basic_binary
 
 export count_one_twos/1, first_three_bits/1, utf8_bins/1, drop_hello/1
 
-count_one_twos bin =
+let count_one_twos bin =
   match bin with
       <<1: size=8, 2: size=8, rest: type=binary>> -> 1 + (count_one_twos rest)
     | _ -> 0
 
-first_three_bits bin =
+let first_three_bits bin =
   match bin with
       <<x: size=1 unit=3 type=int, y: type=binary size=1 unit=5>> -> x
     | _ -> 0
 
-utf8_bins () =
+let utf8_bins () =
   <<"안녕": type=utf8>>
 
-drop_hello bin =
+let drop_hello bin =
   match bin with
     <<"hello": type=utf8, rest: type=utf8>> -> rest

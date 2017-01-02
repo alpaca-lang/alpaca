@@ -2,16 +2,16 @@ module polymorphic_record_test
 
 export with_y/1, with_y_and_throwaway_x/1
 
-f r =
+let f r =
   match r with
     {x=xx} -> (xx + 1, r)
 
-with_y () =
+let with_y () =
   let res = f {x=1, foo="bar"} in
   match res with
     (_, {foo=ff}) -> ff
 
-with_y_and_throwaway_x() =
+let with_y_and_throwaway_x() =
   let res = f {x=1, foo="baz"} in
   match res with
     (_, {x=_, foo=ff}) -> ff

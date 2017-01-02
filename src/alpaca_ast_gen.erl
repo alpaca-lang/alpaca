@@ -741,13 +741,13 @@ defn_test_() ->
                        versions=[#alpaca_fun_version{
                                     args=[], 
                                     body={int, 1, 5}}]}},
-                   parse(alpaca_scanner:scan("x=5"))),
+                   parse(alpaca_scanner:scan("let x=5"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"}, 
                      {alpaca_apply,undefined,1,
                        {symbol,1,"sideEffectingFun"},
                        [{int,1,5}]}}},
-        parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
+        parse(alpaca_scanner:scan("let x=sideEffectingFun 5"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"},                  
                          {alpaca_record,2,1,false,
@@ -757,7 +757,7 @@ defn_test_() ->
                                   {alpaca_apply,undefined,1,
                                       {symbol,1,"sideEffectingFun"},
                                       [{int,1,5}]}}]}}},
-        parse(alpaca_scanner:scan("x={one = 10, two = (sideEffectingFun 5)}"))),        
+        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),        
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"}, 
                      {alpaca_cons,undefined,0,
@@ -767,7 +767,7 @@ defn_test_() ->
                                      {symbol,1,"sideEffectingFun"},
                                      [{int,1,5}]},
                                  {nil,0}}}}},
-        parse(alpaca_scanner:scan("x=[1, (sideEffectingFun 5)]"))),        
+        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
      ?_assertMatch(
         {ok, 
          #alpaca_fun_def{name={symbol, 1, "double"},
@@ -778,7 +778,7 @@ defn_test_() ->
                                             expr={bif, '+', 1, erlang, '+'},
                                             args=[{symbol, 1, "x"},
                                                   {symbol, 1, "x"}]}}]}},
-        parse(alpaca_scanner:scan("double x = x + x"))),
+        parse(alpaca_scanner:scan("let double x = x + x"))),
      ?_assertMatch(
         {ok, #alpaca_fun_def{name={symbol, 1, "add"},
                            versions=[#alpaca_fun_version{
@@ -789,7 +789,7 @@ defn_test_() ->
                                                 expr={bif, '+', 1, erlang, '+'},
                                                 args=[{symbol, 1, "x"},
                                                       {symbol, 1, "y"}]}}]}},
-        parse(alpaca_scanner:scan("add x y = x + y"))),
+        parse(alpaca_scanner:scan("let add x y = x + y"))),
         ?_assertMatch(
             {ok, #alpaca_fun_def{name={symbol, 1, "(<*>)"},
                             versions=[#alpaca_fun_version{
@@ -800,7 +800,7 @@ defn_test_() ->
                                                     expr={bif, '+', 1, erlang, '+'},
                                                     args=[{symbol, 1, "x"},
                                                         {symbol, 1, "y"}]}}]}},
-        parse(alpaca_scanner:scan("(<*>) x y = x + y")))
+        parse(alpaca_scanner:scan("let (<*>) x y = x + y")))
     ].
 
 float_math_test_() ->
@@ -856,7 +856,7 @@ let_binding_test_() ->
                                          expr={symbol, 3, "double"},
                                          args=[{int, 3, 2}]}}}]}},
         parse(alpaca_scanner:scan(
-                "doubler x =\n"
+                "let doubler x =\n"
                 "  let double x = x + x in\n"
                 "  double 2"))),
      ?_assertMatch(
@@ -895,7 +895,7 @@ let_binding_test_() ->
                                                           expr={symbol,1,"yer"},
                                                           args=[{symbol,1,"y"}]}]}}}}]}},
         parse(alpaca_scanner:scan(
-                "my_fun x y ="
+                "let my_fun x y ="
                 "  let xer a = a + a in"
                 "  let yer b = b + b in"
                 "  (xer x) + (yer y)")))
@@ -958,7 +958,7 @@ module_with_let_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2\n\n"
-        "add x y =\n"
+        "let add x y =\n"
         "  let adder a b = a + b in\n"
         "  adder x y",
     ?assertMatch(
@@ -1163,10 +1163,10 @@ simple_module_test() ->
     Code =
         "module test_mod\n\n"
         "export add/2, sub/2\n\n"
-        "adder x y = x + y\n\n"
-        "add1 x = adder x 1\n\n"
-        "add x y = adder x y\n\n"
-        "sub x y = x - y",
+        "let adder x y = x + y\n\n"
+        "let add1 x = adder x 1\n\n"
+        "let add x y = adder x y\n\n"
+        "let sub x y = x - y",
     ?assertMatch(
        {ok, _, _,
         #alpaca_module{
@@ -1209,8 +1209,8 @@ simple_module_test() ->
 break_test() ->
     % We should tolerate whitespace between the two break tokens
     Code = "module test_mod\n\n
-            a = 5\n   \n"
-           "b = 6\n\n",
+            let a = 5\n   \n"
+           "let b = 6\n\n",
      ?assertMatch(
        {ok, _, _,
         #alpaca_module{
@@ -1232,22 +1232,22 @@ break_test() ->
 
 rebinding_test_() ->
     %% Simple rebinding:
-    {ok, A} = test_parse("f x = let y = 2 in x + y"),
+    {ok, A} = test_parse("let f x = let y = 2 in x + y"),
     %% Check for duplicate definition error:
-    {ok, B} = test_parse("f x = \nlet x = 1 in x + x"),
+    {ok, B} = test_parse("let f x = \nlet x = 1 in x + x"),
     %% Check for good pattern match variable names:
-    {ok, C} = test_parse("f x = match x with\n"
+    {ok, C} = test_parse("let f x = match x with\n"
                          "  (a, 0) -> a\n"
                          "| (a, b) -> b"),
     %% Check for duplication in pattern match variable names:
-    {ok, D} = test_parse("f x = match x with\n"
+    {ok, D} = test_parse("let f x = match x with\n"
                          " x -> 0"),
     %% Check for good pattern match variable names in lists:
-    {ok, E} = test_parse("f x = match x with\n"
+    {ok, E} = test_parse("let f x = match x with\n"
                          "  [_, b, 0] -> b\n"
                          "| h :: t -> h"),
     %% Check for dupe variable names in lists:
-    {ok, F} = test_parse("f x y = match x with\n"
+    {ok, F} = test_parse("let f x y = match x with\n"
                          " h :: y -> h"),
 
     [?_assertMatch({_, _, #alpaca_fun_def{
