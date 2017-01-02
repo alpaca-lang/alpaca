@@ -362,4 +362,13 @@ own_formatter_test() ->
     code:delete(M1),
     code:delete(M2).
 
+export_import_test() ->
+    Files = ["test_files/export_all_arities.alp", "test_files/import_test.alp"],
+    [M1, M2] = compile_and_load(Files, []),
+    ?assertEqual(12, M1:test_pipe({})),
+    ?assertEqual(12, M1:test_pipe_far_call({})),
+    ?assertEqual(5, M1:test_specified_arity({})),
+    code:delete(M1),
+    code:delete(M2).
+
 -endif.

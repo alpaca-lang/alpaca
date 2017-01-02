@@ -37,6 +37,8 @@ term terms
 unit tuple tuple_list
 defn definfix binding
 module_def 
+
+import_export_fun
 export_def export_list fun_and_arity
 import_def import_fun_items import_fun_item
 
@@ -221,10 +223,15 @@ const -> string : '$1'.
 const -> '_' : '$1'.
 const -> unit : '$1'.
 
+module_fun -> symbol '.' symbol '/' int :
+  {symbol, L, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {int, _, Arity} = '$5',
+  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun, arity=Arity}.
 module_fun -> symbol '.' symbol :
   {symbol, L, Mod} = '$1',
   {symbol, _, Fun} = '$3',
-  {module_fun, L, Mod, Fun}.
+  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun}.
 
 %% ----- Lists  ------------------------
 literal_cons_items -> term : ['$1'].
@@ -423,11 +430,11 @@ import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 
 %% fun_list_items get turned into the correct tuple format above when they
 %% become a fun_subset (see a bit further below).
-fun_list_items -> symbol : 
+fun_list_items -> import_export_fun :
   {symbol, _, F} = '$1',
   [F].
 fun_list_items -> fun_and_arity : ['$1'].
-fun_list_items -> symbol ',' fun_list_items :
+fun_list_items -> import_export_fun ',' fun_list_items :
   {symbol, _, F} = '$1',
   [F | '$3'].
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
@@ -445,12 +452,12 @@ fun_subset -> symbol '.' '[' fun_list_items ']' :
 %% Individually imported items now:
 
 %% module.foo means import all arities for foo:
-import_fun_item -> symbol '.' symbol : 
+import_fun_item -> symbol '.' import_export_fun :
   {symbol, _, Mod} = '$1',
   {symbol, _, Fun} = '$3',
   {Fun, list_to_atom(Mod)}.
 %% module.foo/1 means only import foo/1:
-import_fun_item -> symbol '.' symbol '/' int: 
+import_fun_item -> symbol '.' import_export_fun '/' int:
   {symbol, _, Mod} = '$1',
   {symbol, _, Fun} = '$3',
   {int, _, Arity} = '$5',  
@@ -460,12 +467,17 @@ import_fun_item -> fun_subset : '$1'.
 import_fun_items -> import_fun_item : ['$1'].
 import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
 
-fun_and_arity -> symbol '/' int :
-{symbol, _, Name} = '$1',
-{int, _, Arity} = '$3',
-{Name, Arity}.
+import_export_fun -> symbol : '$1'.
+import_export_fun -> '(' infixable ')' :
+  {infixable, L, C} = '$2',
+  {symbol, L, "(" ++ C ++ ")"}.
+
+fun_and_arity -> import_export_fun '/' int :
+  {symbol, _, Name} = '$1',
+  {int, _, Arity} = '$3',
+  {Name, Arity}.
 export_list -> fun_and_arity : ['$1'].
-export_list -> symbol :
+export_list -> import_export_fun :
   {_, _, Name} = '$1',
   [Name].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
@@ -482,8 +494,8 @@ case '$1' of
         T;
     [{symbol, L, _} = S | T] ->
         #alpaca_apply{line=L, expr=S, args=T};
-    [{module_fun, L, Mod, Fun} | T] ->
-        Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
+    [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
+        Name = {Mod, {symbol, L, Fun}, length(T)},
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
