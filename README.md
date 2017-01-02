@@ -7,7 +7,7 @@ Alpaca is a statically typed, strict/eagerly evaluated, functional programming l
 # TLDR; How Do I Use It?
 Make sure the following are installed:
 
-- Erlang OTP 18.2 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development at present uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
+- Erlang OTP 19.1 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development at present uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
 
 Make a new project with `rebar3 new app your_app_name` and in the
@@ -129,7 +129,7 @@ tests in `alpaca_typer.erl`.
 ## Prerequisites
 You will generally want the following two things installed:
 
-- Erlang/OTP 18.2 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development so far uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
+- Erlang/OTP 19.1 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development so far uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
 
 ## Writing Alpaca with Rebar3
@@ -473,7 +473,7 @@ the code, including but not limited to:
   expression rather than in the clauses.  I'm considering tracking the
   history of changes over the course of unifications in a reference
   cell in order to provide a typing trace to the user.
-- generalization of type variables is incompletely applied. 
+- generalization of type variables is incompletely applied.
 
 # Parsing Approach
 Parsing/validating occurs in several passes:
