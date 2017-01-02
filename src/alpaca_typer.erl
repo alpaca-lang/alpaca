@@ -1360,6 +1360,41 @@ typ_of(Env, Lvl, {symbol, _, N}) ->
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
+typ_of(Env, Lvl, #alpaca_far_ref{module=Mod, name=N, line=L, arity=A}) ->
+    EnteredModules = [Mod | Env#env.entered_modules],
+    {ok, Module, _} = extract_module_bindings(Env, Mod, N),
+
+    %% Type the called function in its own module:
+    Env2 = Env#env{current_module=Module,
+                   entered_modules=EnteredModules},
+    {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
+    [Typ] = [Typ ||
+                #alpaca_fun_def{name={symbol, _, X}, arity=Arity, type=Typ} <- Funs,
+                N =:= X,
+                A =:= Arity
+            ],
+
+    Err = fun() ->
+                  [CurrMod|_] = Env#env.entered_modules,
+                  throw({error, {bidirectional_module_ref, Mod, CurrMod}})
+          end,
+
+    case [M || M <- Env#env.entered_modules, M == Mod] of
+        []    -> Typ;
+        [Mod] -> case Env#env.current_module of
+                     #alpaca_module{name=Mod} -> Typ;
+                     _ -> Err()
+                 end;
+        _     -> Err()
+    end,
+
+    #env{next_var=NV}=Env,
+    %% deep copy to cell the various types, needed
+    %% because typing a module unwraps all the
+    %% reference cells before returning the module:
+    {DT, _} = deep_copy_type(Typ, maps:new()),
+    {DT, NV};
+
 typ_of(#env{next_var=VN}, _Lvl, {unit, _}) ->
     {new_cell(t_unit), VN};
 
@@ -1513,7 +1548,7 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                 %% does the module exist and does it export the function?
                 case extract_fun(Env, Mod, X, Arity) of
                     {error, _} = E -> E;
-                    {ok, Module, Fun} ->
+                    {ok, Module, _Fun} ->
                         EnteredModules = [Mod | Env#env.entered_modules],
                         Env2 = Env#env{current_module=Module,
                                        entered_modules=EnteredModules},
@@ -2080,6 +2115,27 @@ extract_fun(Env, ModuleName, FunName, Arity) ->
                 []  -> {error, {not_exported, FunName, Arity}}
             end
     end.
+
+%% Arity-neutral version of extract_fun so that we can get all top-level
+%% bindings for a name from a given module.
+extract_module_bindings(Env, ModuleName, BindingName) ->
+    case [M || M <- Env#env.modules, M#alpaca_module.name =:= ModuleName] of
+        [] ->
+            {error, {no_module, ModuleName}};
+        [Module] ->
+            Exports = Module#alpaca_module.function_exports,
+            case [F || {N, A} = F <- Exports, N =:= BindingName] of
+                []  ->
+                    throw({error, {not_exported, ModuleName, BindingName}});
+                Funs ->
+                    F = fun({_, A}) ->
+                                {ok, _, Fun} = get_fun(Module, BindingName, A),
+                                Fun
+                        end,
+                    {ok, Module, lists:map(F, Funs)}
+            end
+    end.
+
 
 -spec get_fun(
         Module::alpaca_module(),

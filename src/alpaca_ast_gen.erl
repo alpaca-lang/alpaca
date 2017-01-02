@@ -130,8 +130,10 @@ expand_imports([M|Tail], ExportMap, Memo) ->
            ({Fun, Mod}) when is_atom(Mod) ->
                 Default = {error, {no_module, Mod}},
                 case maps:get(Mod, ExportMap, Default) of
-                    {error, _}=Err -> throw(Err);
-                    Funs           -> [{Fun, {Mod, A}} || {_, A} <- Funs]
+                    {error, _}=Err ->
+                        throw(Err);
+                    Funs ->
+                        [{Fun, {Mod, A}} || {FN, A} <- Funs, FN =:= Fun]
                 end
         end,
     Imports = lists:flatten(lists:map(F, M#alpaca_module.function_imports)),
@@ -463,10 +465,41 @@ rename_bindings(#env{next_var=NextVar}=Env, Map, #var_binding{}=VB) ->
     end;
 
 rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
+    %% Functions to extract the locally defined top-level functions and
+    %% the ones available via imports.  When renaming a function name
+    %% comes back unchanged, it's one of the following:
+    %%   - a module-local function, no need to rewrite the apply
+    %%   - a reference to an imported function, rewrite as an inter-module call
+    %%   - a reference to an undefined function.  Leave the error to the typer.
+    ModFuns = fun () ->
+                      Mod = Env#env.current_module,
+                      #alpaca_module{functions=Fs} = Mod,
+                      [{{X, A}, local} || #alpaca_fun_def{name={_, _, X}, arity=A} <- Fs]
+              end,
+    ImpFuns = fun () ->
+                      Mod = Env#env.current_module,
+                      #alpaca_module{function_imports=Imps} = Mod,
+                      [{{X, A}, Mod} || {X, {Mod, A}} <- Imps]
+              end,
+
     FName = case N of
-                {symbol, _, _} = S ->
-                    {_, _, X} = rename_bindings(Env, Map, S),
-                    X;
+                {symbol, _, FN} = S ->
+                    case rename_bindings(Env, Map, S) of
+                        %% Not renamed so either calling a top level function
+                        %% in the current module or it's a refernce to something
+                        %% that might be imported:
+                        {_, _, N} ->
+                            {symbol, _, FN} = N,
+                            Arity = length(Args),
+                            AllFuns = ModFuns() ++ ImpFuns(),
+                            case proplists:get_value({FN, Arity}, AllFuns, undef) of
+                                local -> N;
+                                undef -> N;
+                                Mod -> {Mod, N, Arity}
+                            end;
+                        %% Renamed, proceed:
+                        {_, _, X} -> X
+                    end;
                 _ -> N
             end,
     {_, _, Name} = rename_bindings(Env, Map, FName),
@@ -586,9 +619,44 @@ rename_bindings(Env, Map, #alpaca_record{members=Members}=R) ->
 
 rename_bindings(Env, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
-        undefined -> {Env, Map, S};
+        undefined ->
+            %% if there's a top-level binding we use that, otherwise
+            %% try to resolve the symbol from imports:
+            Mod = Env#env.current_module,
+            Funs = Mod#alpaca_module.functions,
+            case [FN || #alpaca_fun_def{name=FN} <- Funs, FN =:= N] of
+                [_|_] -> {Env, Map, S};
+                [] ->
+                    Imports = Mod#alpaca_module.function_imports,
+                    case [{M, A} || {FN, {M, A}} <- Imports, FN =:= N] of
+                        [{Module, Arity}|_] ->
+                            io:format("Rewriting ~s to ~w~n", [N, Arity]),
+                            FR = #alpaca_far_ref{
+                                    module=Module,
+                                    name=N,
+                                    line=L,
+                                    arity=Arity},
+                            {Env, Map, FR};
+                        [] ->
+                            {Env, Map, S}
+                    end
+            end;
         Synthetic -> {Env, Map, {symbol, L, Synthetic}}
     end;
+rename_bindings(Env, Map, #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
+    %% Find the first exported occurrence of M:N
+    Modules = [Mod || #alpaca_module{name=MN}=Mod <- Env#env.modules, M =:= MN],
+    case Modules of
+        [Mod] ->
+            As = [A || {F, A} <- Mod#alpaca_module.function_exports, F =:= N],
+            case As of
+                [A|_] -> {Env, Map, FR#alpaca_far_ref{arity=A}};
+                _     -> throw({error, {not_exported, M, N}})
+            end;
+        _ ->
+            throw({error, {no_module, M}})
+    end;
+
 rename_bindings(Env, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
     case rename_bindings(Env, M, Args) of
         {error, _} = Err ->
@@ -1566,6 +1634,59 @@ expand_imports_test_() ->
               Mod = parse_module(Code),
               ?assertThrow({error, {no_module, n}},
                            expand_imports(expand_exports([Mod])))
+      end
+    ].
+
+import_rewriting_test_() ->
+    [fun() ->
+             Code1 =
+                 "module a\n\n"
+                 "export add/2\n\n"
+                 "add x y = x + y",
+             Code2 =
+                 "module b\n\n"
+                 "import a.add\n\n"
+                 "f () = add 2 3",
+             ?assertMatch(
+                [#alpaca_module{name=a},
+                 #alpaca_module{
+                    name=b,
+                    functions=[#alpaca_fun_def{
+                                  versions=[#alpaca_fun_version{
+                                               body=#alpaca_apply{
+                                                       expr=#alpaca_far_ref{
+                                                               module=a,
+                                                               name="add",
+                                                               arity=2}
+                                                      }}]
+                                 }]}],
+                make_modules([Code1, Code2]))
+     end
+    , fun() ->
+              Code1 =
+                 "module a\n\n"
+                  "export (|>)\n\n"
+                  "(|>) x y = y x",
+              Code2 =
+                  "module b\n\n"
+                  "import a.(|>)\n\n"
+                  "add_ten x = x + 10\n\n"
+                  "f () = 2 |> add_ten",
+              ?assertMatch(
+                 [#alpaca_module{name=a},
+                  #alpaca_module{
+                     name=b,
+                     functions=[_,
+                                #alpaca_fun_def{
+                                   versions=[#alpaca_fun_version{
+                                                body=#alpaca_apply{
+                                                        expr=#alpaca_far_ref{
+                                                                module=a,
+                                                                name="(|>)",
+                                                                arity=2}
+                                                       }}]
+                                  }]}],
+                 make_modules([Code1, Code2]))
       end
     ].
 -endif.
