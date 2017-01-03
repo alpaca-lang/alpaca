@@ -44,6 +44,7 @@
 <li><a href="#sec-5">5. User Defined Types:  ADTs</a></li>
 <li><a href="#sec-6">6. Tests</a></li>
 <li><a href="#sec-7">7. Processes</a></li>
+<li><a href="#sec-8">8. Exporting and Importing Functions</a></li>
 </ul>
 </div>
 </div>
@@ -100,7 +101,7 @@ Here's a simple example of a module:
     {- Our double function defines an "add" function inside of itself.
        Comments for now are C-style.
      -}
-    double x =
+    let double x =
       let add a b = a + b in
       add x x
     
@@ -110,7 +111,7 @@ Here's a simple example of a module:
     type even_or_odd = Even int | Odd int
     
     -- A function from integers to our ADT:
-    even_or_odd x =
+    let even_or_odd x =
       let rem = x % 2 in
       match rem with
           0 -> Even x
@@ -175,11 +176,11 @@ These types are all "parametrically polymorphic", or "generics" for those of us 
 
 Tuples, like functions, have a specific arity (number of contained elements).  In Alpaca the typing of tuples covers both their arity **and** the type of each element.  Let's introduce pattern matching here to illustrate their structure:
 
-    third my_tuple =
+    let third my_tuple =
       match my_tuple with
         (_, _, x) -> x
     
-    third_string my_tuple =
+    let third_string my_tuple =
       match my_tuple with
         (_, _, x), is_string x -> x
     
@@ -198,9 +199,9 @@ Tuples, like functions, have a specific arity (number of contained elements).  I
     third (1, 2, 3, 4)
     
     {- This function will also fail to compile because tuples of arity 2
-     * those of arity 3 are fundamentally different types:
+       and those of arity 3 are fundamentally different types:
      -}
-    second_or_third my_tuple =
+    let second_or_third my_tuple =
       match my_tuple with
           (_, _, x) -> x
         | (_, x) -> x
@@ -221,12 +222,12 @@ We can build lists up with the cons operator `::` or as literals:
 
 Let's revisit pattern matching here as well with both forms:
 
-    length my_list =
+    let length my_list =
       match my_list with
           [] -> 0
         | _ :: t -> 1 + (length t)
         
-    is_length_3 my_list =
+    let is_length_3 my_list =
       match my_list with
           [_, _, _] -> true
         | _ -> false
@@ -257,7 +258,7 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
        information about the hello field.  The return type of calling the
        function below with that record will be (int, {x: int, hello: string}).
     -}
-    x_in_a_tuple my_rec = 
+    let x_in_a_tuple my_rec = 
       match my_rec with
         {x=xx} -> (xx, my_rec)
 
@@ -288,7 +289,7 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
     
     The return of `identity(new HasXY(1, "world"))` "loses" the information that the passed-in argument has a `hello` member of type `String`.  
     
-        identity my_rec =
+        let identity my_rec =
           match my_rec with
             {x=_} -> my_rec
     
@@ -314,7 +315,7 @@ Process identifiers (references to processes to which we can send messages) are 
 
 Inside of a function we can define both immutable variables and new functions:
 
-    f x =
+    let f x =
       let double y = y + y in      -- this is a single argument function
       let doubled_x = double x in  -- a variable named "double_x"
       doubled_x + x                -- the expression returned as a result
@@ -327,13 +328,13 @@ As Alpaca is an expression-oriented language, there are no return statements.  J
        than a float (e.g. an integer or string), the compiler would fail with
        a type error.
     -}
-    double x = x *. 2.0
+    let double x = x *. 2.0
 
 Explicit type specifications for variables and functions is a planned feature for version 0.3.0.
 
 While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
 
-    print_hello () =
+    let print_hello () =
       beam :io :format ["Hello~n", []] with _ -> ()
 
 ## The Foreign Function Interface<a id="sec-4-1" name="sec-4-1"></a>
@@ -378,14 +379,14 @@ Some other simple type checking functions are also usable in pattern match guard
 
 A word of caution:  strings are encoded as binaries, and chars as lists so if we call the following example `f/1` with a string, we will **always** get a binary back (assuming there's an ADT covering both):
 
-    f x =
+    let f x =
       match x with
           b, is_binary b -> b
         | s, is_string s -> s
 
 And here we will always get a list instead of a character list (same ADT restriction):
 
-    g x =
+    let g x =
       match x with
           l, is_list l -> l
         | c, is_chars c -> c
@@ -411,7 +412,7 @@ We can also use "type constructors" and type variables to be a bit more expressi
        instead give it a `map atom (list string)` and an atom for the key, 
        the return type will be `opt (list string)`.
     -}
-    map_get key the_map =
+    let map_get key the_map =
       match the_map with
           #{key => value} -> Some value
         | _ -> None
@@ -424,7 +425,7 @@ We can use the basic Alpaca types as well, here's a type that describes parsed J
 
 If the above type is in scope (in the module, or imported), the following function's type will be inferred as one from `json` to `atom`:
 
-    f x =
+    let f x =
       match x with
           i, is_integer i -> :integer
         | f, is_float f -> :float
@@ -437,7 +438,7 @@ If the inferencer has more than one ADT unifying integers and floats in scope, i
               | list json
               | list (string, json)
     
-    f x =
+    let f x =
       match x with
           i, is_integer i -> :integer
         | f, is_float f -> :float
@@ -455,7 +456,7 @@ Tests:
 
 Here's a simple example:
 
-    add x y = x + y
+    let add x y = x + y
     
     test "add 2 2 should result in 4" =
       add 2 2
@@ -466,7 +467,7 @@ While the above test is type checked and will happily be compiled, we lack asser
     
     export add/2
     
-    add x y = x + y
+    let add x y = x + y
     
     test "add 2 2 should result in 4" = test_equal (add 2 2) 4
     
@@ -474,7 +475,7 @@ While the above test is type checked and will happily be compiled, we lack asser
        not equal.  The two terms will need to be the same type for any
        call to this to succeed:
      -}
-    test_equal x y =
+    let test_equal x y =
       match (x == y) with
           true -> :passed
         | false ->
@@ -482,7 +483,7 @@ While the above test is type checked and will happily be compiled, we lack asser
             beam :erlang :error [msg] with _ -> :failed
     
     -- formats a failure message:
-    format_msg base x y =
+    let format_msg base x y =
       let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
       beam :lists :flatten [m] with msg, is_chars msg -> msg
 
@@ -498,15 +499,15 @@ Process support in Alpaca is still pretty basic but the following are all suppor
 
 A basic example will probably help:
 
-    a_counting_function x =
+    let a_counting_function x =
       receive with
           "add" -> a_counting_function x + 1
         | "sub" -> a_counting_function x - 1 
     
     {- If a_counting_function/1 is exported from the module, the following
-     * will spawn a `pid string`, that is, a "process that can receive 
-     * strings".  Note that this is not a valid top-level entry for a module,
-     * we just want a few simple examples.
+       will spawn a `pid string`, that is, a "process that can receive 
+       strings".  Note that this is not a valid top-level entry for a module,
+       we just want a few simple examples.
      -}
     let my_pid = spawn a_counting_function 0
     
@@ -518,7 +519,7 @@ A basic example will probably help:
 
 The type inferencer looks at the entire call graph of the function being spawned to determine type of messages that the process is capable of receiving.  Any expression that contains a call to `receive` becomes a "receiver" that carries the type of messages handled so if we have something like `let x = receive with i, is_integer i -> i`, that entire expression is a receiver.  If a function contains it like this:
 
-    f x = 
+    let f x = 
       let x = receive with i, is_integer i -> i in
       i
 
@@ -526,12 +527,12 @@ then the entire function is considered a receiver too.
 
 Mutually recursive functions can be spawned as well provided that **if** they're both receivers, the message receive types match:
 
-    a () =
+    let a () =
       receive with
           :b -> b ()
         | _ -> a ()
     
-    b () =
+    let b () =
       receive with
           "a" -> a ()
         | _ -> b ()
@@ -540,3 +541,38 @@ Mutually recursive functions can be spawned as well provided that **if** they're
     type a_and_b = string | atom
 
 As an aside, both the functions `a/1` and `b/1` above have the return type `rec`, meaning "infinitely recursive" since neither ever return a value.  This is a legitimate type in Alpaca.
+
+# Exporting and Importing Functions<a id="sec-8" name="sec-8"></a>
+
+There are a few handy shortcuts for exporting and importing functions to be aware of.  If you have different versions of a function (same name, different number of arguments) and you want to export them all, you can leave out the arity when exporting, e.g.
+
+    module example
+    
+    -- this will export foo/1 and foo/2 for you:
+    export foo
+    
+    let foo x = x
+    
+    let foo x y = x + y
+
+You can also import functions with or without arity, e.g. `import example.foo/1` for only the first `foo` in the example above or `import example.foo` for both versions.  Subsets of a module's functions can be imported in a list format as well, for example if we have a simple math helper module:
+
+    -- some simple math functions:
+    module math
+    
+    export add, sub, mult
+    
+    let add x y = x + y
+    let sub x y = x - y
+    let mult x y = x * y
+
+We can then import two of the functions with a list:
+
+    -- imports and uses two of the math functions
+    module example
+    
+    import math.[add, sub]
+    
+    let f () = add 2 (sub 5 3)
+
+When giving lists of functions to import you can include arity if you only want a specific version of a function.
