@@ -161,7 +161,7 @@ _    : {token, {'_', TokenLine}}.
 {-([^-]|(-+[^-}]))*-+} :
   validate_comment(TokenLine, string:sub_string(TokenChars, 3, length(TokenChars)-2)).
 
-
+. : {error, "Unexpected token: " ++ TokenChars}.
 
 Erlang code.
 
