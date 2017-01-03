@@ -35,7 +35,7 @@ g_module_with_type_declaration() ->
 can_compile(Code) ->
     ?WHENFAIL(ct:pal("failed to compile:~n~p~n", [Code]),
               ?TIMEOUT(timer:seconds(5),
-                       case alpaca:compile({text, [Code]}) of
+                       case alpaca:compile({text, Code}) of
                            {ok, _, _} -> true;
                            {ok, _, _, _} -> true;
                            {error, _} -> false

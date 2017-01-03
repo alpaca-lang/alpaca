@@ -7,14 +7,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-scan(Code) ->    
-    %% Scan and infer break tokens if not provided
-    {ok, Re} = re:compile("\n([ \t]+)\n", [unicode]),
-    Sanitized = re:replace(Code, Re, "\n\n", [{return,list},global]),
-    case alpaca_scan:string(Sanitized) of
+scan(Code) when is_list(Code) -> 
+    case alpaca_scan:string(Code) of
         {ok, Tokens, Num} -> {ok, infer_breaks(Tokens), Num};    
         Error -> Error
-    end.
+    end;
+scan(Code) when is_binary(Code) ->
+    scan(binary:bin_to_list(Code)).
 
 infer_breaks(Tokens) ->
     %% Reduce tokens from the right, inserting a break (i.e. ';;') before
