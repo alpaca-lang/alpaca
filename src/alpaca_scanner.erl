@@ -137,4 +137,12 @@ infer_bin_test() ->
                                    {bin_close, 2}
                      ],                       
     ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).
+
+unexpected_token_test_() ->
+    [?_assertMatch(
+        {error, {1,alpaca_scan,{user, "Unexpected token: ;"}}, 1},
+        scan("module bin ; hello")),
+     ?_assertMatch(
+        {error, {1,alpaca_scan,{user, "Unexpected token: '"}}, 1},
+        scan("module bin ' hello"))].
 -endif.

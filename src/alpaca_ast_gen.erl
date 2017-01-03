@@ -38,6 +38,8 @@ parse({ok, Tokens, _}) ->
 parse(Tokens) when is_list(Tokens) ->
     alpaca_parser:parse(Tokens).
 
+parse_module(Text) when is_binary(Text) ->
+    parse_module(binary:bin_to_list(Text));
 parse_module(Text) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
     {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}),
