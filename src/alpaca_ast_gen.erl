@@ -22,7 +22,8 @@ parse_module(NextVarNum, Text) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
     rebind_and_validate_module(NextVarNum,
                                parse_module(Tokens, #alpaca_module{}));
-
+parse_module(NextVarNum, Text) when is_binary(Text) ->
+    parse_module(NextVarNum, binary:bin_to_list(Text));
 parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
