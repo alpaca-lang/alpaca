@@ -58,9 +58,9 @@ Here's an example module:
     module simple_example
 
     -- a basic top-level function:
-    add2 x = x + 2
+    let add2 x = x + 2
 
-    something_with_let_bindings x =
+    let something_with_let_bindings x =
       -- a function:
       let adder a b = a + b in
       -- a variable (immutable):
@@ -74,13 +74,13 @@ Here's an example module:
        messages, that increments its state by received integers
        and can be queried for its state.
     -}
-    will_be_a_process x = receive with
+    let will_be_a_process x = receive with
         i -> will_be_a_process (x + i)
       | Fetch sender ->
         let sent = send x sender in
         will_be_a_process x
 
-    start_a_process init = spawn will_be_a_process init
+    let start_a_process init = spawn will_be_a_process init
 
 # Licensing
 Alpaca is released under the terms of the Apache License, Version 2.0
@@ -161,7 +161,7 @@ For a simple module, open `src/example.alp` and add the following:
 
     export add/2
 
-    add x y = x + y
+    let add x y = x + y
 
 The above is just what it looks like:  a module named `example` with a
 function that adds two integers.  You can call the function directly
@@ -263,7 +263,7 @@ See `src/builtin_types.hrl` for the included functions.
 ## Pattern Matching
 Pretty simple and straightforward for now:
 
-    length l = match l with
+    let length l = match l with
         [] -> 0
       | h :: t -> 1 + (length t)
 
@@ -312,7 +312,7 @@ a simple get-by-key function as follows:
 
     type my_opt 'a = Some 'a | None
 
-    get_by_key m k =
+    let get_by_key m k =
       match m with
           #{k => v} -> Some v
         | _ -> None
@@ -339,7 +339,7 @@ An example:
     type maybe_success 'error 'ok = Error 'error | Success 'ok
 
     -- Apply a function to a successful result or preserve an error.
-    map e f = match e with
+    let try_map e f = match e with
         Error _ -> e
       | Success ok -> Success (f ok)
 
@@ -349,7 +349,7 @@ there aren't even proper assertions available.  If the compiler is
 invoked with options `[test]`, the following will synthesize and
 export a function called `add_2_and_2_test`:
 
-    add x y = x + y
+    let add x y = x + y
 
     test "add 2 and 2" =
       let res = add 2 2 in
@@ -370,13 +370,13 @@ checked.  Type errors in a test will always cause a compilation error.
 ## Processes
 An example:
 
-    f x = receive with
+    let f x = receive with
       (y, sender) ->
         let z = x + y in
         let sent = send z sender in
       f z
 
-    start_f init = spawn f init
+    let start_f init = spawn f init
 
 All of the above is type checked, including the spawn and message sends.
 Any expression that contains a `receive` block becomes a "receiver"
@@ -403,10 +403,10 @@ support spawning functions in other modules fairly soon.
 
 Note that the following will yield a type error:
 
-    a x = receive with
+    let a x = receive with
       i -> b x + i
 
-    b x = receive with
+    let b x = receive with
       f -> a x +. i
 
 This is because `b` is a `t_float` receiver while `a` is a `t_int`
@@ -516,9 +516,9 @@ arrow type and type schema instantiation are concerned.
 
     export add/2
 
-    add x y = adder x y
+    let add x y = adder x y
 
-    adder x y = x + y
+    let adder x y = x + y
 
 The forward reference in `add/2` is permitted but currently leads to some wasted
 work.  When typing `add/2` the typer encounters a reference to `adder/2` that is
