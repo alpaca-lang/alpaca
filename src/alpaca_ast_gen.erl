@@ -42,10 +42,8 @@ parse_module(Text) when is_binary(Text) ->
     parse_module(binary:bin_to_list(Text));
 parse_module(Text) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    rebind_and_validate_module(NextVarNum,
-                               parse_module(Tokens, #alpaca_module{}));
-parse_module(Text) when is_binary(Text) ->
-    parse_module(NextVarNum, binary:bin_to_list(Text)).
+    {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}),
+    M.
 
 parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
@@ -1004,9 +1002,6 @@ defn_test_() ->
                                      [{int,1,5}]},
                                  {nil,0}}}}},
         parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
-     ?_assertMatch(
-        {ok, {error, non_literal_value, {symbol, 1, "x"}}},
-        parse(alpaca_scanner:scan("x=sideEffectingFun 5"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {symbol, 1, "x"},                  
                          {alpaca_record,2,1,false,
