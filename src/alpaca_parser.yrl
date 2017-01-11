@@ -16,7 +16,7 @@ Nonterminals
 
 comment
 op infix
-const
+const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
 type_expressions type_tuple type_tuple_list
 type_apply
@@ -36,7 +36,15 @@ record_type_member record_type_members record_type
 term terms
 unit tuple tuple_list
 defn definfix binding
-module_def export_def export_list fun_and_arity
+module_def 
+
+import_export_fun
+
+export_def export_list fun_and_arity
+import_def import_fun_items import_fun_item
+
+fun_list_items fun_subset
+
 match_clause match_clauses match_with match_pattern
 
 send_to
@@ -53,15 +61,17 @@ Terminals
 
 comment_line comment_lines
 
-module export
-type_declare type_constructor type_var base_type base_list base_map base_pid
-test
-':'
+module export import
 import_type export_type
+
+type_declare type_constructor type_var base_type base_list base_map base_pid
+
+test
+
 boolean int float atom string chars '_'
-symbol infixable module_fun
+symbol infixable '.'
 assign int_math float_math minus plus
-'[' ']' cons_infix
+'[' ']' cons_infix ':'
 bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
 open_brace close_brace
 map_open map_arrow
@@ -100,9 +110,9 @@ comment -> comment_lines :
                 line=L,
                 text=Chars}.
 
-type_import -> import_type module_fun:
-  {module_fun, _, MF} = '$2',
-  [Mod, Type] = string:tokens(MF, "."),
+type_import -> import_type symbol '.' symbol:
+  {symbol, _, Mod} = '$2',
+  {symbol, _, Type} = '$4',
   #alpaca_type_import{module=list_to_atom(Mod), type=Type}.
 
 types_to_export -> symbol : ['$1'].
@@ -213,6 +223,16 @@ const -> chars : '$1'.
 const -> string : '$1'.
 const -> '_' : '$1'.
 const -> unit : '$1'.
+
+module_fun -> symbol '.' symbol '/' int :
+  {symbol, L, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {int, _, Arity} = '$5',
+  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun, arity=Arity}.
+module_fun -> symbol '.' symbol :
+  {symbol, L, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun}.
 
 %% ----- Lists  ------------------------
 literal_cons_items -> term : ['$1'].
@@ -397,13 +417,79 @@ module_def -> module symbol :
 {module, list_to_atom(Name)}.
 
 export_def -> export export_list : {export, '$2'}.
+%% Imported functions come out of the parser in the following tuple format:
+%%   {FunctionName, {ModuleName, Arity}}
+%% where names are strings (lists) and Arity is integer().
+%% 
+%% Name comes first because we will resolve missing local functions in the order
+%% that they were imported.  We can import individual functions from another 
+%% module with `import foo.bar` for all arities of `bar` or `import foo.bar/1`
+%% for only `bar1`.  Subsets of functions from the same module can be imported
+%% in a list, e.g. `import foo.[bar, baz/2]` to import all arities of `bar` and
+%% in the case of `baz`, only it's version that takes two arguments.
+import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 
+%% fun_list_items get turned into the correct tuple format above when they
+%% become a fun_subset (see a bit further below).
+fun_list_items -> import_export_fun :
+  {symbol, _, F} = '$1',
+  [F].
+fun_list_items -> fun_and_arity : ['$1'].
+fun_list_items -> import_export_fun ',' fun_list_items :
+  {symbol, _, F} = '$1',
+  [F | '$3'].
+fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
+
+%% Here we associate the module name with each of the functions being imported.
+%% We do this so we can deal with a flat proplist later on when resolving 
+%% functions that aren't defined in the module importing these functions.
+fun_subset -> symbol '.' '[' fun_list_items ']' : 
+  {symbol, _, Mod} = '$1',
+  F = fun({Name, Arity}) -> {Name, {list_to_atom(Mod), Arity}};
+         (Name)          -> {Name, list_to_atom(Mod)}
+  end,
+  lists:map(F, '$4').
+
+%% Individually imported items now:
+
+%% module.foo means import all arities for foo:
+import_fun_item -> symbol '.' import_export_fun :
+  {symbol, _, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {Fun, list_to_atom(Mod)}.
+%% module.foo/1 means only import foo/1:
+import_fun_item -> symbol '.' import_export_fun '/' int:
+  {symbol, _, Mod} = '$1',
+  {symbol, _, Fun} = '$3',
+  {int, _, Arity} = '$5',  
+  {Fun, {list_to_atom(Mod), Arity}}.
+import_fun_item -> fun_subset : '$1'.
+
+import_fun_items -> import_fun_item : ['$1'].
+import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
+
+import_export_fun -> symbol : '$1'.
+import_export_fun -> '(' infixable ')' :
+  {infixable, L, C} = '$2',
+  {symbol, L, "(" ++ C ++ ")"}.
+
+fun_and_arity -> import_export_fun '/' int :
+  {symbol, _, Name} = '$1',
+  {int, _, Arity} = '$3',
+  {Name, Arity}.
 fun_and_arity -> symbol '/' int :
 {symbol, _, Name} = '$1',
 {int, _, Arity} = '$3',
 {Name, Arity}.
+
 export_list -> fun_and_arity : ['$1'].
+export_list -> import_export_fun :
+  {_, _, Name} = '$1',
+  [Name].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
+export_list -> symbol ',' export_list :
+  {_, _, Name} = '$1',
+  [Name | '$3'].
 
 %% TODO:  we should be able to apply the tail to the result of
 %%        an expression that yields a function.  This check
@@ -414,11 +500,8 @@ case '$1' of
         T;
     [{symbol, L, _} = S | T] ->
         #alpaca_apply{line=L, expr=S, args=T};
-    [{module_fun, L, MF} | T] ->
-        % this should be safe given the definition of a module-function
-        % reference in alpaca_scan.xrl:
-        [Mod, Fun] = string:tokens(MF, "."),
-        Name = {list_to_atom(Mod), {symbol, L, Fun}, length(T)},
+    [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
+        Name = {Mod, {symbol, L, Fun}, length(T)},
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
@@ -436,12 +519,17 @@ expr -> comment : '$1'.
 expr -> simple_expr : '$1'.
 expr -> type : '$1'.
 expr -> test_case : '$1'.
-expr -> module_def : '$1'.
-expr -> export_def : '$1'.
-expr -> type_import : '$1'.
-expr -> type_export : '$1'.
 expr -> defn : '$1'.
 expr -> definfix : '$1'.
+
+%% I'm not sure these should be actually classifed as "expressions", something
+%% to revisit:
+expr -> module_def : '$1'.
+expr -> export_def : '$1'.
+expr -> import_def : '$1'.
+expr -> type_import : '$1'.
+expr -> type_export : '$1'.
+
 
 Erlang code.
 -include("alpaca_ast.hrl").
@@ -558,7 +646,7 @@ all_literals([M|Rest]) ->
         true -> all_literals(Rest);
         false -> false
     end.
-    
+
 %% Convert a nullary def into a variable binding:
 make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
     #var_binding{name=N, to_bind=B, expr=Expr};

@@ -17,7 +17,7 @@
 
 %%% ## Type-Tracking Data Types
 %%%
-%%% These are all of the specs the typer uses to track ALPACA types.
+%%% These are all of the specs the typer uses to track Alpaca types.
 
 -type typ_name() :: atom().
 
@@ -92,6 +92,15 @@
 
 
 -type alpaca_symbol() :: {symbol, integer(), string()}.
+%% Reference to a symbol in a different module.  Arity can be 'none'
+%% if the user wishes to default to the first exported version of the
+%% reference.
+-record(alpaca_far_ref, {
+          line=0 :: integer(),
+          module=undefined :: atom(),
+          name="" :: string(),
+          arity=none :: none | integer()}).
+-type alpaca_far_ref() :: #alpaca_far_ref{}.
 
 -type alpaca_unit() :: {unit, integer()}.
 -type alpaca_int() :: {int, integer(), integer()}.
@@ -470,9 +479,13 @@
                             names=[] :: list(string())}).
 -type alpaca_type_export() :: #alpaca_type_export{}.
 
+%% rename_map is a map from generated function and variable names to their
+%% original names.
 -record(alpaca_module, {
           name=no_module :: atom(),
-          function_exports=[] :: list({string(), integer()}),
+          rename_map=maps:new() :: map(),
+          function_exports=[] :: list({string(), integer()}|string()),
+          function_imports=[] :: list({string(), {atom(), integer()}|string()}),
           types=[] :: list(alpaca_type()),
           type_imports=[] :: list(alpaca_type_import()),
           type_exports=[] :: list(string()),

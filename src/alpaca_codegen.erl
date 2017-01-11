@@ -201,7 +201,13 @@ gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
         undefined ->
             {Env, cerl:c_var(list_to_atom(V))}
     end;
-
+gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
+    MakeFun = #alpaca_apply{
+                 expr={'erlang', {symbol, 0, "make_fun"}, 3},
+                 args=[{atom, 0, "alpaca_" ++ atom_to_list(M)},
+                       {atom, 0, N},
+                       {int, 0, A}]},
+    gen_expr(Env, MakeFun);
 gen_expr(Env, {raise_error, _, Kind, Expr}) ->
     {Env2, ExprAST} = gen_expr(Env, Expr),
     {Env2, cerl:c_call(cerl:c_atom(erlang), cerl:c_atom(Kind), [ExprAST])};
@@ -509,7 +515,7 @@ annotate_map_type(#alpaca_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
 -ifdef(TEST).
 
 parse_and_gen(Code) ->
-    {ok, _, _, Mod} = alpaca_ast_gen:parse_module(0, Code),
+    [Mod] = alpaca_ast_gen:make_modules([Code]),
     {ok, Forms} = alpaca_codegen:gen(Mod, []),
     compile:forms(Forms, [report, verbose, from_core]).
 

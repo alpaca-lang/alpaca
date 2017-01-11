@@ -41,7 +41,6 @@ can_compile(Code) ->
                            {error, _} -> false
                        end)).
 
-
 %%% Module generators
 
 %% @doc Generate module declaration.
@@ -57,7 +56,6 @@ g_module_name() ->
          ?LET(Module,
               ?SUCHTHAT(Name, g_sym(N), not lists:member(Name, keywords())),
               Module)).
-
 
 %%% Type generators
 
@@ -179,7 +177,6 @@ to_binary({constructor, Constructor}) ->
 to_binary(Binary) when is_binary(Binary) ->
     Binary.
 
-
 %%% Function generators
 
 g_function() ->
@@ -192,7 +189,6 @@ g_function_name() ->
 
 g_function_body() ->
     g_basic_value().
-
 
 %%% Value generators
 
@@ -247,7 +243,6 @@ g_block_comment() ->
                    nomatch == re:run(unicode:characters_to_binary(Str), "({-|-})",
                                      [{capture, none}])),
          [<<"{-">>, unicode:characters_to_binary(Comment), <<"-}">>]).
-
 
 %%% Whitespace generators
 

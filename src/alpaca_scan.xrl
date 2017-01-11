@@ -38,6 +38,7 @@ Rules.
 %% Separators
 ,     : {token, {',', TokenLine}}.
 /     : {token, {'/', TokenLine}}.
+\.    : {token, {'.', TokenLine}}.
 
 \(    : {token, {'(', TokenLine}}.
 \)    : {token, {')', TokenLine}}.
@@ -60,6 +61,7 @@ with        : {token, {with, TokenLine}}.
 beam        : {token, {beam, TokenLine}}.
 module      : {token, {module, TokenLine}}.
 export      : {token, {export, TokenLine}}.
+import      : {token, {import, TokenLine}}.
 type        : {token, {type_declare, TokenLine}}.
 export_type : {token, {export_type, TokenLine}}.
 import_type : {token, {import_type, TokenLine}}.
@@ -110,9 +112,6 @@ utf8 : {token, {bin_text_encoding, TokenChars}}.
 %% Atom
 {ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
 
-%% Module-function reference
-{SYM}\.{SYM} : {token, {module_fun, TokenLine, TokenChars}}.
-
 %% String
 "(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
@@ -160,8 +159,8 @@ _    : {token, {'_', TokenLine}}.
   {token, {comment_line, TokenLine, Text}}.
 {-([^-]|(-+[^-}]))*-+} :
   validate_comment(TokenLine, string:sub_string(TokenChars, 3, length(TokenChars)-2)).
-
 . : {error, "Unexpected token: " ++ TokenChars}.
+
 
 Erlang code.
 

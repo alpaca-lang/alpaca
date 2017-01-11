@@ -1,0 +1,13 @@
+module export_all_arities
+
+export (|>)
+
+export foo, sub/2
+
+let (|>) x y = y x
+
+let foo x = x + 10
+
+let foo x y = x + y
+
+let sub x y = x - y

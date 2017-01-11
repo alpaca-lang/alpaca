@@ -1,0 +1,16 @@
+module import_test
+
+export test_pipe/1, test_pipe_far_call/1, test_specified_arity/1
+
+import export_all_arities.[(|>), foo, sub/2]
+
+let add_ten x = x + 10
+
+let test_pipe () = 2 |> foo
+
+let test_pipe_far_call () = 2 |> export_all_arities.foo
+
+let test_specified_arity () =
+  let f = export_all_arities.foo/2 in
+  f 2 3
+

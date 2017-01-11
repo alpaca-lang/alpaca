@@ -31,6 +31,7 @@ infer_breaks(Tokens) ->
         end,
         InferBreak = fun() -> 
             {0, InBinary, [{break, Line} | [ Token | Acc]]} 
+
         end,
         Pass = fun() -> 
             {LetLevel, InBinary, [Token | Acc]} 
@@ -144,5 +145,4 @@ unexpected_token_test_() ->
      ?_assertMatch(
         {error, {1,alpaca_scan,{user, "Unexpected token: '"}}, 1},
         scan("module bin ' hello"))].
-
 -endif.
