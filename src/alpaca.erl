@@ -68,11 +68,21 @@ compile({text, Code}, Opts) ->
 compile({files, Filenames}, Opts) ->
     Code = load_files(Filenames),
     {ok, Mods} = type_modules(alpaca_ast_gen:make_modules(Code)),
+    ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(Mods),
+    maybe_print_exhaustivess_warnings(ExhaustivenessWarnings, Opts),
     Compiled = lists:foldl(
                  fun(M, Acc) ->
                          [compile_module(M, Opts)|Acc]
                  end, [], Mods),
     Compiled.
+
+maybe_print_exhaustivess_warnings(Warnings, Opts) ->
+  case proplists:get_value(warn_exhaustiveness, Opts) of
+    true  ->
+      lists:foreach(fun alpaca_exhaustiveness:print_warning/1, Warnings);
+    _ ->
+      ok
+  end.
 
 load_files(Filenames) ->
     lists:foldl(
