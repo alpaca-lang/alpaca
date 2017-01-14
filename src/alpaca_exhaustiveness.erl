@@ -180,11 +180,13 @@ lookup_type([_|Rest], Name) ->
 
 lookup_type_from_imports(Name, #alpaca_module{type_imports=Imports},
                          AllMods) ->
-    #alpaca_type_import{module=ModName} =
-        lists:keyfind(Name, #alpaca_type_import.type, Imports),
-
-    Mod = lists:keyfind(ModName, #alpaca_module.name, AllMods),
-    lookup_type(Mod#alpaca_module.types, Name).
+    case lists:keyfind(Name, #alpaca_type_import.type, Imports) of
+        #alpaca_type_import{module=ModName} ->
+            Mod = lists:keyfind(ModName, #alpaca_module.name, AllMods),
+            lookup_type(Mod#alpaca_module.types, Name);
+        false -> % abstract/hidden type in another module.
+            {ok, {unbound, '_', 1}}
+    end.
 
 record_field_assignments([], _Mod, _AllMods, _SeenADTs, _Vars) ->
     [#{}];
@@ -513,6 +515,18 @@ imported_type_test() ->
         {partial_function, {consumer, "missing", 1},
          [{missing_pattern, [{t_adt_cons, "Green", none}]}
          ]}], run_checks([Mod1, Mod2])).
+
+foreign_type_test() ->
+    Mod1 =
+        "module provider\n\n"
+        "export is_color_of_grass/1\n\n"
+        "type color = Red | Green | Blue\n\n"
+        "let is_color_of_grass Green = true\n"
+        "let is_color_of_grass _ = false\n\n",
+    Mod2 =
+        "module consumer\n\n"
+        "let complete color = provider.is_color_of_grass color\n\n",
+    ?assertMatch([], run_checks([Mod1, Mod2])).
 
 receiver_test() ->
     Code =
