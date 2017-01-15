@@ -69,7 +69,7 @@ is_valid_type(Type, KnownTypes) ->
     Constructors = lists:flatten(extract_constructors(Type) ++
                                  [extract_constructors(T) || T <- KnownTypes]),
     %% unique constructors
-    Constructors -- lists:usort(Constructors) == [].
+    is_unique(Constructors).
 
 g_type_name(KnownTypes) ->
     ?LET(TypeName,
@@ -130,7 +130,8 @@ g_type_def(Name, Params, KnownTypes, Size) ->
            ?LAZY(g_type_map(g_type_def(Name, Params, KnownTypes, Size div 2),
                             g_type_def(Name, Params, KnownTypes, Size div 2))),
            ?LAZY(g_type_pid(g_type_def(Name, Params, KnownTypes, Size div 2))),
-           ?LAZY(g_type_tuple(Name, Params, KnownTypes, Size div 2))
+           ?LAZY(g_type_tuple(Name, Params, KnownTypes, Size div 2)),
+           ?LAZY(g_type_record(Name, Params, KnownTypes, Size div 2))
           ]).
 
 g_base_type() ->
@@ -145,12 +146,23 @@ g_type_map(KeyType, ValueType) ->
 g_type_pid(Of) ->
     {pid, Of}.
 
-g_type_tuple(Name, Params, KnownTypes, N) when N =< 1->
+g_type_tuple(Name, Params, KnownTypes, N) when N =< 1 ->
     g_type_def(Name, Params, KnownTypes, 0);
 g_type_tuple(Name, Params, KnownTypes, Size) ->
     ?LET(OfTypes,
          vector(Size, g_type_def(Name, Params, KnownTypes, Size div 2)),
          {tuple, OfTypes}).
+
+g_type_record(Name, Params, KnownTypes, N) when N =< 0 ->
+    g_type_def(Name, Params, KnownTypes, 0);
+g_type_record(Name, Params, KnownTypes, Size) ->
+   ?LET({Keys, OfTypes},
+        {?SUCHTHAT(Symbols, vector(Size, g_record_key()), is_unique(Symbols)),
+         vector(Size, g_type_def(Name, Params, KnownTypes, Size div 2))},
+        {record, Keys, OfTypes}).
+
+g_record_key() ->
+    ?LET(N, integer(1, 255), g_sym(N)).
 
 to_binary([], Acc) ->
     g_sprinkle(lists:flatten(lists:reverse(Acc)));
@@ -172,6 +184,8 @@ to_binary({pid, Of}) ->
     [<<"pid">>, to_binary(Of)];
 to_binary({tuple, OfTypes}) ->
     [$(, lists:join($,, [to_binary(Type) || Type <- OfTypes]), $)];
+to_binary({record, Keys, OfTypes}) ->
+    [${, lists:join($,, [[K, $:, to_binary(T)] || {K, T} <- lists:zip(Keys, OfTypes)]), $}];
 to_binary({constructor, Constructor}) ->
     Constructor;
 to_binary(Binary) when is_binary(Binary) ->
@@ -180,9 +194,9 @@ to_binary(Binary) when is_binary(Binary) ->
 %%% Function generators
 
 g_function() ->
-    ?LET({F, Body},
+    ?LET({Name, Body},
          {g_function_name(), g_function_body()},
-         g_sprinkle_whitespace(["let", F, "()", "=", Body, $\n])).
+         {function, Name, Body}).
 
 g_function_name() ->
     ?LET(Fun, g_sym(), Fun).
@@ -195,7 +209,8 @@ g_function_body() ->
 %% Basic values
 
 g_basic_value() ->
-    oneof(base_types()).
+    oneof([g_boolean(), g_number(), g_atom(), g_string(), g_char_list(),
+           g_binary()]).
 
 g_boolean() ->
     oneof(["true", "false"]).
@@ -352,3 +367,6 @@ base_types() ->
      <<"bool">>,
      <<"binary">>
     ].
+
+is_unique(List) ->
+    List -- lists:usort(List) == [].
