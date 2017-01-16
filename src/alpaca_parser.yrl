@@ -19,6 +19,7 @@ op infix
 const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
 sub_type_expr type_expressions type_tuple comma_separated_type_list type_list
+module_qualified_type module_qualified_type_name
 type_apply
 type_import type_export types_to_export
 
@@ -133,7 +134,11 @@ poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
   Members = '$2',
   Vars = [V || {type_var, _, _}=V <- Members],
-  #alpaca_type{name={type_name, L, N}, members=Members, vars=Vars}.
+  #alpaca_type{
+     line = L,
+     name = {type_name, L, N}, 
+     members = Members, 
+     vars = Vars}.
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, _L, N} = '$1',
@@ -145,7 +150,28 @@ record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'
 record_type -> open_brace record_type_members close_brace : 
   #t_record{members='$2'}.
 
+module_qualified_type_name -> symbol '.' symbol:
+  {symbol, L, Mod} = '$1',
+  {symbol, _, Name} = '$3',
+  {module_qualified_type_name, L, Mod, Name}.
+
+module_qualified_type -> module_qualified_type_name :
+  {module_qualified_type_name, L, Mod, Name} = '$1',
+  #alpaca_type{
+     line = L,
+     module = list_to_atom(Mod),
+     name = {type_name, L, Name}}.
+
+module_qualified_type -> module_qualified_type_name type_expressions:
+  {module_qualified_type_name, L, Mod, Name} = '$1',
+  #alpaca_type{
+     line = L,
+     module = list_to_atom(Mod),
+     name = {type_name, L, Name},
+     vars = [V || {type_var, _, _}=V <- '$2']}.
+
 type_expr -> poly_type : '$1'.
+type_expr -> module_qualified_type : '$1'.
 type_expr -> sub_type_expr : '$1'.
 
 sub_type_expr -> type_var : '$1'.
@@ -190,8 +216,12 @@ type_tuple -> '(' comma_separated_type_list ')':
 %%%     type U x = B | C x
 %%%     type V x y = D x | E (x, (int, x))
 %%%
-type_member -> type_constructor : #alpaca_constructor{name='$1', arg=none}.
-type_member -> type_constructor type_expr : #alpaca_constructor{name='$1', arg='$2'}.
+type_member -> type_constructor : 
+  {type_constructor, L, N} = '$1',
+  #alpaca_constructor{name=#type_constructor{line=L, name=N}, arg=none}.
+type_member -> type_constructor type_expr :
+  {type_constructor, L, N} = '$1',
+  #alpaca_constructor{name=#type_constructor{line=L, name=N}, arg='$2'}.
 type_member -> type_expr : '$1'.
 
 type_members -> type_member : ['$1'].
@@ -201,17 +231,28 @@ type -> type_declare poly_type_decl assign type_members :
   '$2'#alpaca_type{members='$4'}.
 type -> type_declare symbol assign type_members :
   {symbol, L, N} = '$2',
-  #alpaca_type{name={type_name, L, N}, vars=[], members='$4'}.
+  #alpaca_type{
+     line=L,
+     name={type_name, L, N},
+     vars=[],
+     members='$4'}.
 
 poly_type_decl -> symbol type_vars :
   {symbol, L, N} = '$1',
-  #alpaca_type{name={type_name, L, N}, vars='$2'}.
+  #alpaca_type{
+     line=L,
+     name={type_name, L, N},
+     vars='$2'}.
 
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
 
-type_apply -> type_constructor term : #alpaca_type_apply{name='$1', arg='$2'}.
-type_apply -> type_constructor : #alpaca_type_apply{name='$1'}.
+type_apply -> type_constructor term :
+  {type_constructor, L, N} = '$1',
+  #alpaca_type_apply{name=#type_constructor{line=L, name=N}, arg='$2'}.
+type_apply -> type_constructor :
+  {type_constructor, L, N} = '$1',
+  #alpaca_type_apply{name=#type_constructor{line=L, name=N}}.
 
 test_case -> test string assign simple_expr :
   #alpaca_test{line=term_line('$1'), name='$2', expression='$4'}.
@@ -698,7 +739,8 @@ term_line(Term) ->
         #alpaca_map{line=L} -> L;
         #alpaca_record{members=[#alpaca_record_member{line=L}|_]} -> L;
         #alpaca_tuple{values=[H|_]} -> term_line(H);
-        #alpaca_type_apply{name=N} -> term_line(N)
+        #alpaca_type_apply{name=N} -> term_line(N);
+        #type_constructor{line=L} -> L
     end.
 
 add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->

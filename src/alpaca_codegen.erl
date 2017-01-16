@@ -431,9 +431,9 @@ gen_expr(Env, #alpaca_tuple{values=Vs}) ->
                                       {E2, [V2|VV]}
                               end, {Env, []}, Vs),
     {Env2, cerl:c_tuple(lists:reverse(Vs2))};
-gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=none}) ->
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=none}) ->
     {Env, cerl:c_atom(N)};
-gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=A}) ->
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=A}) ->
     {Env2, AExp} = gen_expr(Env, A),
     {Env2, cerl:c_tuple([cerl:c_atom(N), AExp])};
 %% Expressions, Clauses
