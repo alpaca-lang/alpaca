@@ -265,7 +265,7 @@ unique_type_constructors({error, _}=Err, _) ->
     Err;
 unique_type_constructors(_, Types) ->
     %% Get the sorted names of only the constructors:
-    F = fun (#alpaca_constructor{name={_, _, N}}, Acc) -> [N|Acc];
+    F = fun (#alpaca_constructor{name=#type_constructor{name=N}}, Acc) -> [N|Acc];
             (_, Acc) -> Acc
         end,
     ToFlatten = [lists:foldl(F, [], Ms) || #alpaca_type{members=Ms} <- Types],
@@ -892,7 +892,7 @@ user_types_test_() ->
                                    vars=[],
                                    members=[t_int,
                                             #alpaca_constructor{
-                                               name={type_constructor, 1, "A"},
+                                               name=#type_constructor{line=1, name="A"},
                                                arg=t_int}]}},
                    test_parse("type t = int | A int")),
      ?_assertMatch(
@@ -900,10 +900,10 @@ user_types_test_() ->
                 name={type_name, 1, "my_list"},
                 vars=[{type_var, 1, "x"}],
                 members=[#alpaca_constructor{
-                            name={type_constructor, 1, "Nil"},
+                            name=#type_constructor{line=1, name="Nil"},
                             arg=none},
                          #alpaca_constructor{
-                            name={type_constructor, 1, "Cons"},
+                            name=#type_constructor{line=1, name="Cons"},
                             arg=#alpaca_type_tuple{
                                    members=[{type_var, 1, "x"},
                                             #alpaca_type{
@@ -924,11 +924,11 @@ user_types_test_() ->
                            name={type_name, 1, "either"},
                            vars=[{type_var, 1, "a"}, {type_var, 1, "b"}],
                            members=[#alpaca_constructor{
-                                       name={type_constructor, 1, "Left"},
+                                       name=#type_constructor{line=1, name="Left"},
                                        arg={type_var, 1, "a"}
                                       },
                                     #alpaca_constructor{
-                                       name={type_constructor, 1, "Right"},
+                                       name=#type_constructor{line=1, name="Right"},
                                        arg={type_var, 1, "b"}
                                       }]
                           }},
