@@ -219,7 +219,7 @@ new_env(Mods) ->
 -spec constructors(list(alpaca_type())) -> list({string(), alpaca_constructor()}).
 constructors(Types) ->
     MemberFolder =
-        fun(#alpaca_constructor{name={type_constructor, _, N}}=C, {Type, Acc}) ->
+        fun(#alpaca_constructor{name=#type_constructor{name=N}}=C, {Type, Acc}) ->
                 WithType = C#alpaca_constructor{type=Type},
                 {Type, [{N, WithType}|Acc]};
            (_, Acc) ->
@@ -956,7 +956,7 @@ inst_type_members(ADT,
             NewMember = #adt{name=N, vars=lists:zip(Names, Members)},
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
-inst_type_members(ADT, [#alpaca_constructor{name={_, _, N}}|T], Env, Memo) ->
+inst_type_members(ADT, [#alpaca_constructor{name=#type_constructor{name=N}}|T], Env, Memo) ->
     inst_type_members(ADT, T, Env, [{t_adt_cons, N}|Memo]);
 %% Everything else gets discared.  Type constructors are not types in their
 %% own right and thus not eligible for unification so we just discard them here:
@@ -988,7 +988,7 @@ inst_type_members(ADT, [_|T], Env, Memo) ->
                              {error, {bad_constructor, integer(), string()}} |
                              {error, {unknown_type, string()}} |
                              {error, {bad_constructor_arg,term()}}.
-inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
+inst_type_arrow(EnvIn, #type_constructor{line=Line, name=Name}) ->
     %% 20160603:  I have an awful lot of case ... of all over this
     %% codebase, trying a lineup of functions specific to this
     %% task here instead.  Sort of want Scala's `Try`.
@@ -1032,7 +1032,7 @@ inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types) ->
                 end
         end,
     new_cell(R#t_record{members=lists:map(F, Ms)});
-inst_constructor_arg(#alpaca_constructor{name={type_constructor, _, N}},
+inst_constructor_arg(#alpaca_constructor{name=#type_constructor{name=N}},
                      _Vs, _Types) ->
     {t_adt_cons, N};
 inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types) ->
@@ -1530,7 +1530,7 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
             case typ_of(Env2, Lvl, A) of
                 {error, _}=Err -> Err;
                 {ATyp, NVNum} ->
-                    {type_constructor, L, _} = N,
+                    #type_constructor{line=L} = N,
                     case unify(ATyp, CTyp, update_counter(NVNum, Env2), L) of
                         ok             -> {RTyp, NVNum};
                         {error, _}=Err -> Err
@@ -3010,7 +3010,7 @@ type_constructor_test_() ->
                                  vars=[{type_var, 1, "x"}],
                                  members=[t_int,
                                           #alpaca_constructor{
-                                             name={type_constructor, 1, "A"},
+                                             name=#type_constructor{line=1, name="A"},
                                              arg={type_var, 1, "x"}}]}])),
      ?_assertMatch(
         {{t_arrow,
@@ -3024,10 +3024,10 @@ type_constructor_test_() ->
           [#alpaca_type{name={type_name, 1, "even_odd"},
                       vars=[],
                       members=[#alpaca_constructor{
-                                  name={type_constructor, 1, "Even"},
+                                  name=#type_constructor{line=1, name="Even"},
                                   arg=t_int},
                                #alpaca_constructor{
-                                  name={type_constructor, 1, "Odd"},
+                                  name=#type_constructor{line=1, name="Odd"},
                                   arg=t_int}]}])),
      ?_assertMatch(
         {{t_arrow,
@@ -3060,14 +3060,14 @@ type_constructor_test_() ->
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
               members=[#alpaca_constructor{
-                          name={type_constructor, 1, "Cons"},
+                          name=#type_constructor{line=1, name="Cons"},
                           arg=#alpaca_type_tuple{
                                  members=[{type_var, 1, "x"},
                                           #alpaca_type{
                                              name={type_name, 1, "my_list"},
                                              vars=[{type_var, 1, "x"}]}]}},
                        #alpaca_constructor{
-                          name={type_constructor, 1, "Nil"},
+                          name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
      ?_assertMatch(
         {error, {cannot_unify, _, _, t_float, t_int}},
@@ -3077,14 +3077,14 @@ type_constructor_test_() ->
               name={type_name, 1, "my_list"},
               vars=[{type_var, 1, "x"}],
               members=[#alpaca_constructor{
-                          name={type_constructor, 1, "Cons"},
+                          name=#type_constructor{line=1, name="Cons"},
                           arg=#alpaca_type_tuple{
                                  members=[{type_var, 1, "x"},
                                           #alpaca_type{
                                              name={type_name, 1, "my_list"},
                                              vars=[{type_var, 1, "x"}]}]}},
                        #alpaca_constructor{
-                          name={type_constructor, 1, "Nil"},
+                          name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
      ?_assertMatch(
         {{t_arrow,
@@ -3097,7 +3097,7 @@ type_constructor_test_() ->
               name={type_name, 1, "t"},
               vars=[],
               members=[#alpaca_constructor{
-                          name={type_constructor, 1, "Constructor"},
+                          name=#type_constructor{line=1, name="Constructor"},
                           arg={alpaca_list, t_int}}]}])),
      ?_assertMatch(
         {{t_arrow,
@@ -3110,7 +3110,7 @@ type_constructor_test_() ->
               name={type_name, 1, "t"},
               vars=[],
               members=[#alpaca_constructor{
-                          name={type_constructor, 1, "Constructor"},
+                          name=#type_constructor{line=1, name="Constructor"},
                           arg={alpaca_map, t_int, t_string}}]}])),
      ?_assertMatch(
         {{t_arrow,
@@ -3123,7 +3123,7 @@ type_constructor_test_() ->
               name={type_name, 1, "t"},
               vars=[],
               members=[#alpaca_constructor{
-                          name={type_constructor, 1, "Constructor"},
+                          name=#type_constructor{line=1, name="Constructor"},
                           arg=#alpaca_type{name={type_name, 1, "union"}}}]},
            #alpaca_type{
               name={type_name, 1, "union"},
@@ -4489,6 +4489,28 @@ expression_typing_test_() ->
                      "(g ()) 2"
                     ))
 
+    ].
+
+module_qualified_types_test_() ->
+    [fun() ->
+             Code1 = "module m type a = int",
+             Code2 = "module n type b = m.a",
+             [M1, M2] = alpaca_ast_gen:make_modules([Code1, Code2]),
+             ?assertMatch(
+                {ok, [#alpaca_module{}, #alpaca_module{}]},
+                type_modules([M1, M2]))
+     end
+     , fun() ->
+               Code1 = "module m export_type a type a 'a = A 'a",
+               Code2 = 
+                   "module n "
+                   "type b 'x = m.a 'x "
+                   "let f m.A a = a + 1",
+               [M1, M2] = alpaca_ast_gen:make_modules([Code1, Code2]),
+               ?assertMatch(
+                  {ok, [#alpaca_module{}, #alpaca_module{}]},
+                  type_modules([M1, M2]))
+       end
     ].
 
 no_process_leak_test() ->
