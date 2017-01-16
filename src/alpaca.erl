@@ -77,7 +77,7 @@ compile({files, Filenames}, Opts) ->
     Compiled.
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
-  case proplists:get_value(warn_exhaustiveness, Opts) of
+  case proplists:get_value(warn_exhaustiveness, Opts, true) of
     true  ->
       lists:foreach(fun alpaca_exhaustiveness:print_warning/1, Warnings);
     _ ->

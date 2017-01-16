@@ -121,7 +121,7 @@ CodeAsAString}, [options, again])` for now.
 Supported options are:
 * `'test'` - This option will cause all tests in a module to be type checked and exported
     as functions that  [EUnit](http://erlang.org/doc/apps/eunit/chapter.html) should pick up.
-* `'warn_exhaustiveness'` - If provided, the compiler will print warnings regarding missed patterns in top level functions.
+* `{'warn_exhaustiveness', boolean()}` - If set to true (the default), the compiler will print warnings regarding missed patterns in top level functions.
 
 Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
