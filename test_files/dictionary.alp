@@ -1,0 +1,29 @@
+module dictionary
+
+type option 'a  = Some 'a | None
+
+type dictionary 'k 'v = Dictionary ('k -> option 'v)
+
+export new/1, lookup/2, insert/3, test_int_dict
+
+let new () =
+    let ret k = None in
+    Dictionary ret
+
+let lookup k (Dictionary m) = m k
+
+let insert k v (Dictionary m) =
+    let ret k2 =
+        match (k2 == k) with
+            true  -> Some v 
+        |   false -> m k
+    in Dictionary ret
+
+let test_int_dict () =
+    let empty = new () in
+    let filled = insert :a 1 empty in
+    match lookup :a filled with
+        Some 1 ->
+          let res = lookup :a empty in
+          res == None
+    |   None -> false
