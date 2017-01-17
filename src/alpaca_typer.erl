@@ -1062,6 +1062,10 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
     Vs2 = replace_vars(M1, V2, Vs),
     Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
     new_cell(#adt{name=N, vars=ADT_vars, members=Members});
+inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types) ->
+    InstantiatedArgs =  [ inst_constructor_arg(A, Vs, Types) || A <- ArgTypes ],
+    InstantiatedRet = inst_constructor_arg(RetType, Vs, Types),
+    new_cell({t_arrow, InstantiatedArgs, InstantiatedRet});
 inst_constructor_arg(Arg, _, _) ->
     throw({error, {bad_constructor_arg, Arg}}).
 
@@ -3059,6 +3063,19 @@ type_constructor_with_pid_arg_test() ->
            "let make () = Constructor (spawn a 2)",
      ?assertMatch({ok, _}, module_typ_and_parse(Code)).
 
+type_constructor_with_arrow_arg_test() ->
+    Base = "module constructor\n\n"
+           "type t = Constructor int -> bool\n\n",
+    Valid = Base ++
+            "let p x = x > 0\n\n"
+            "let make () = Constructor p",
+     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
+    
+    Invalid = Base ++
+              "let p x = x + 1\n\n"
+              "let make () = Constructor p",
+     ?assertMatch({error,{cannot_unify,constructor,_,t_int,t_bool}},
+                  module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
     Code =

@@ -371,4 +371,9 @@ export_import_test() ->
     code:delete(M1),
     code:delete(M2).
 
+function_in_adt_test() ->
+    [M] = compile_and_load(["test_files/dictionary.alp"], []),
+    ?assertEqual(true, M:test_int_dict({})),
+    code:delete(M).
+
 -endif.

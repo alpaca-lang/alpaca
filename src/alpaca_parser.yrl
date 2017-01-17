@@ -152,6 +152,13 @@ type_expr -> symbol :
   #alpaca_type{name={type_name, L, N}, vars=[]}. % not polymorphic
 type_expr -> type_tuple : '$1'.
 type_expr -> '(' type_expr ')': '$2'.
+type_expr -> type_expr '->' type_expr :
+    case '$3' of
+      {t_arrow, Args, Ret} ->
+          {t_arrow, ['$1'|Args], Ret};
+      Other ->
+          {t_arrow, ['$1'], Other}
+    end.
 type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
