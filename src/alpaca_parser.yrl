@@ -18,7 +18,7 @@ comment
 op infix
 const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
-type_expressions type_tuple type_tuple_list
+type_expressions type_tuple comma_separated_type_list type_list
 type_apply
 type_import type_export types_to_export
 
@@ -152,13 +152,8 @@ type_expr -> symbol :
   #alpaca_type{name={type_name, L, N}, vars=[]}. % not polymorphic
 type_expr -> type_tuple : '$1'.
 type_expr -> '(' type_expr ')': '$2'.
-type_expr -> type_expr '->' type_expr :
-    case '$3' of
-      {t_arrow, Args, Ret} ->
-          {t_arrow, ['$1'|Args], Ret};
-      Other ->
-          {t_arrow, ['$1'], Other}
-    end.
+type_expr -> '[' type_list ']' '->' type_expr :
+    {t_arrow, '$2', '$5'}.
 type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
@@ -168,10 +163,16 @@ type_expr -> base_map type_expr type_expr : {alpaca_map, '$2', '$3'}.
 type_expr -> base_pid type_expr :
   {alpaca_pid, '$2'}.
 
-type_tuple_list -> type_expr ',' type_expr: ['$1', '$3'].
-type_tuple_list -> type_expr ',' type_tuple_list: ['$1' | '$3'].
+type_list -> comma_separated_type_list : '$1'.
+type_list -> type_expr: ['$1'].
 
-type_tuple -> '(' type_tuple_list ')': #alpaca_type_tuple{members='$2'}.
+comma_separated_type_list -> type_expr ',' type_expr:
+    ['$1', '$3'].
+comma_separated_type_list -> type_expr ',' comma_separated_type_list:
+    ['$1' | '$3'].
+
+type_tuple -> '(' comma_separated_type_list ')':
+    #alpaca_type_tuple{members='$2'}.
 
 %%% A type_member is one of three things:
 %%%
