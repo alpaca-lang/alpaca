@@ -3065,14 +3065,14 @@ type_constructor_with_pid_arg_test() ->
 
 type_constructor_with_arrow_arg_test() ->
     Base = "module constructor\n\n"
-           "type t = Constructor int -> bool\n\n",
+           "type t = Constructor ([int,int] -> bool)\n\n",
     Valid = Base ++
-            "let p x = x > 0\n\n"
+            "let p x y = x > y\n\n"
             "let make () = Constructor p",
      ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     
     Invalid = Base ++
-              "let p x = x + 1\n\n"
+              "let p x y = x + y\n\n"
               "let make () = Constructor p",
      ?assertMatch({error,{cannot_unify,constructor,_,t_int,t_bool}},
                   module_typ_and_parse(Invalid)).
