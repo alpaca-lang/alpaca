@@ -118,9 +118,10 @@ in unit tests.  You can call `alpaca:compile({files,
 [List, Of, File, Names, As, Strings]}, [list, of, options])` or `alpaca:compile({text,
 CodeAsAString}, [options, again])` for now.
 
-`'test'` is the only currently recognized option that can be  passed
-to compile/2.  This option will cause all tests in a module to be type
-checked and exported as functions that  [EUnit](http://erlang.org/doc/apps/eunit/chapter.html) should pick up.
+Supported options are:
+* `'test'` - This option will cause all tests in a module to be type checked and exported
+    as functions that  [EUnit](http://erlang.org/doc/apps/eunit/chapter.html) should pick up.
+* `{'warn_exhaustiveness', boolean()}` - If set to true (the default), the compiler will print warnings regarding missed patterns in top level functions.
 
 Errors from the compiler (e.g. type errors)
 are almost comically hostile to usability at the moment.  See the
