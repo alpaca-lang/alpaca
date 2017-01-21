@@ -1640,6 +1640,25 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     %% (e.g. a symbol or bif), attempt to find it in the module.
     %% This ForwardFun function is used specifically to find functions defined
     %% later than the application we're trying to type.
+    CurryFun = 
+        fun(OriginalErr) ->
+            %% Attempt to find a curryable version
+            FN = case Expr of
+                    {symbol, Line, FunName} -> FunName;
+                    {bif, FunName, _, _, _} -> FunName
+            end,
+            CurryFuns = get_curryable_funs(Env#env.current_module, FN, length(Args)+1),
+            case CurryFuns of
+                [] -> OriginalErr;
+                [Item] -> case typ_of(Env, Lvl, Item) of
+                                {{t_arrow, TArgs, TRet}, NextVar} ->
+                                    {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
+                                    CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
+                                    typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)
+                          end;
+                Items -> {error, {ambiguous_curry, Expr, Items, L}}
+            end
+    end,
     ForwardFun =
         fun() ->
                 FN = case Expr of
@@ -1652,9 +1671,16 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                         case typ_of(Env, Lvl, Fun) of
                             {error, _}=Err -> Err;
                             {TypF, NextVar} ->
-                                typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                %% We should have a t_arrow taking some args with a return value
+                                %% What we need is a t_arrow that takes some of those args and returns
+                                %% another t_arrow taking the remainder and returning the final arg
+                                try
+                                    typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                catch
+                                    error:{arity_error, _, _} = Err -> CurryFun(Err)
+                                end
                         end;
-                    {error, _} = E -> E
+                    {error, _} = E -> CurryFun(E)
                 end
         end,
 
@@ -1667,13 +1693,11 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             %% This does not allow for different arity functions in a sequence 
             %% of let bindings which could be a weakness.
             %%
-            %% TODO:  some arity errors should disappear with support for 
-            %% automatic currying.
             try
                 typ_apply(Env, Lvl, TypF, NextVar, Args, L)
             catch
-                error:{arity_error, _, _} -> ForwardFun()
-            end
+                error:{arity_error, _, _} -> ForwardFun()                                     
+            end        
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
@@ -2159,6 +2183,33 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
             end
     end.
 
+typ_apply_curry(Env, Lvl, TypF, NextVar, Args, Line) ->
+    %% we make a deep copy of the function we're unifying
+    %% so that the types we apply to the function don't
+    %% force every other application to unify with them
+    %% where the other callers may be expecting a
+    %% polymorphic function.  See Pierce's TAPL, chapter 22.
+
+    %{CopiedTypF, _} = deep_copy_type(TypF, maps:new()),
+    %% placeholder:
+    CopiedTypF = TypF,
+
+    case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
+        {error, _}=Err -> Err;
+        {ArgTypes, NextVar2} ->
+            TypRes = new_cell(t_rec),
+            Env2 = update_counter(NextVar2, Env),
+
+            Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
+            case unify(CopiedTypF, Arrow, Env2, Line) of
+                {error, _} = E ->
+                    E;
+                ok ->
+                    #env{next_var=VarNum} = Env2,
+                    {TypRes, VarNum}
+            end
+    end.
+
 -spec extract_fun(
         Env::env(),
         ModuleName::atom(),
@@ -2212,6 +2263,9 @@ get_fun(Module, FunName, Arity) ->
         {ok, Fun} -> {ok, Module, Fun}
     end.
 
+get_curryable_funs(Module, FN, MinArity) ->
+    filter_to_curryable_funs(Module#alpaca_module.functions, FN, MinArity).
+
 filter_to_fun([], _, _) ->
     not_found;
 filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
@@ -2219,6 +2273,15 @@ filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
+
+filter_to_curryable_funs(Funs, FN, MinArity) ->
+    Pred = fun(#alpaca_fun_def{name={Symbol, _, N}, arity=Arity}) ->
+               case {Arity >= MinArity, N =:= FN} of
+                    {true, true} -> true;
+                    _ -> false
+               end
+           end,
+    lists:filter(Pred, Funs).
 
 %%% for clauses we need to add bindings to the environment for any symbols
 %%% (variables) that occur in the pattern.  "NameNum" is used to give
@@ -4536,4 +4599,63 @@ wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft) ->
             timer:sleep(10),
             wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft-1)
     end.
+
+curry_applications_test_() ->
+    [fun() ->
+        Code =
+            "module curry\n"
+            "let add a b = a + b\n\n"
+            "let main x = add x\n",
+
+        ?assertMatch(
+            {ok, #alpaca_module{
+                    functions=[#alpaca_fun_def{
+                        type={t_arrow,
+                            [t_int, t_int], t_int}
+                            
+                        },
+                        #alpaca_fun_def{
+                        type={t_arrow,
+                            [t_int], {t_arrow, [t_int], t_int}}
+                        }
+                    ]
+                }
+            },
+        module_typ_and_parse(Code))
+    end,
+    fun() ->
+        Code =
+            "module curry\n"
+            "let main x = add x\n"
+            "let add a b = a + b\n\n",
+
+        ?assertMatch(
+            {ok, #alpaca_module{
+                    functions=[   
+                        #alpaca_fun_def{
+                            type={t_arrow,
+                                    [t_int], {t_arrow, [t_int], t_int}}
+                        },
+                        #alpaca_fun_def{
+                            type={t_arrow,
+                                    [t_int, t_int], t_int}                            
+                        }
+                    ]
+                }
+            },
+        module_typ_and_parse(Code))
+    end,
+    fun() ->
+        Code =
+            "module curry\n"
+            "let main x = add x\n"
+            "let add a b = a + b\n\n"
+            "let add a b c = a + b + c\n\n",
+
+        ?assertMatch(
+            {error, {ambiguous_curry, _, _, _}},
+            module_typ_and_parse(Code))
+    end
+    ].
+
 -endif.
