@@ -27,7 +27,7 @@ infer_breaks(Tokens) ->
     Reducer = fun(Token, {LetLevel, InBinary, Acc}) ->                     
         {Symbol, Line} = case Token of
             {S, L} when is_integer(L) -> {S, L};
-            Other -> {other, 0}
+            _Other -> {other, 0}
         end,
         InferBreak = fun() -> 
             {0, InBinary, [{break, Line} | [ Token | Acc]]} 

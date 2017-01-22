@@ -41,7 +41,7 @@
           synthetic_fun_num=0 :: integer()
          }).
 
-make_env(#alpaca_module{functions=Funs}=Mod) ->
+make_env(#alpaca_module{functions=Funs}=_Mod) ->
     TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
@@ -140,7 +140,7 @@ gen_fun_patterns(Env, #alpaca_fun_def{name={symbol, _, N}, arity=A, versions=Vs}
     %% Nest matches:
     FName = cerl:c_fname(list_to_atom(N), A),
     Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
-    [TopVar|_] = VarNames,
+    [_TopVar|_] = VarNames,
     B = cerl:c_case(
           cerl:c_values(Args),
           [gen_fun_version(Env, Version) || Version <- Vs]),
@@ -468,7 +468,7 @@ gen_bits(Env,
 
 gen_bits(Env, [Bits|Rem], Memo) ->
     #alpaca_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
-    {Env2, VExp} = gen_expr(Env, V),
+    {_Env2, VExp} = gen_expr(Env, V),
     B = cerl:c_bitstr(VExp, cerl:c_int(S), cerl:c_int(U),
                       get_bits_type(T), bits_flags(Sign, E)),
     gen_bits(Env, Rem, [B|Memo]).

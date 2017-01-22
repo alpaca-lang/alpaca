@@ -1,4 +1,4 @@
-%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 %%%
 %%% Copyright 2016 Jeremy Pierre
@@ -697,7 +697,7 @@ unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) when is_pid(ToCh
 %% ToCheck needs to be in a reference cell for unification and we're not 
 %% worried about losing the cell at this level since C1 and C2 are what
 %% will actually be manipulated.
-unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) ->
+unify_adt_and_poly(C1, C2, #adt{members=_Ms}=A, ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, new_cell(ToCheck), Env, L).
 
 %%% Given two different types, find a type in the set of currently available
@@ -797,7 +797,7 @@ unify_records(LowerBound, Target, Env, Line) ->
             unify(LowerRow, NewTarget, Env, Line)
     end.
 
-unify_record_members([], TargetRem, Env, Line) ->
+unify_record_members([], TargetRem, _Env, _Line) ->
     lists:map(fun({_, X}) -> X end, TargetRem);
 unify_record_members([LowerBound|Rem], TargetRem, Env, Line) ->
     #t_record_member{name=N, type=T} = LowerBound,
@@ -832,7 +832,7 @@ flatten_record(#t_record{members=Ms, row_var=#t_record{}=Inner}) ->
 flatten_record(#t_record{row_var=P}=R) when is_pid(P) ->
     case get_cell(P) of
         #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
-        {link, L}=Link    -> flatten_record(R#t_record{row_var=L});
+        {link, L}=_Link   -> flatten_record(R#t_record{row_var=L});
         _                 -> R
     end;
 flatten_record(#t_record{}=R) ->
@@ -907,7 +907,7 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
                       _ ->
                           {RV, Env}
                   end,
-    F = fun(#t_record_member{type=T}=M, {NewMems, E}) ->
+    F = fun(#t_record_member{type=T}=M, {NewMems, _E}) ->
                 case inst_type_members(ADT, [T], Env, []) of
                     {error, _}=Err -> 
                         erlang:error(Err);
@@ -1143,7 +1143,7 @@ inst({t_arrow, Params, ResTyp}, Lvl, Env, CachedMap) ->
     {_, NewEnv, M, PTs} = lists:foldr(Folder, {Lvl, Env, CachedMap, []}, Params),
     {RT, NewEnv2, M2} = inst(ResTyp, Lvl, NewEnv, M),
     {{t_arrow, PTs, RT}, NewEnv2, M2};
-inst({t_receiver, Recv, Body}=R, Lvl, Env, CachedMap) ->
+inst({t_receiver, Recv, Body}=_R, Lvl, Env, CachedMap) ->
     {Body2, Env2, Map2} = inst(Body, Lvl, Env, CachedMap),
     {Recv2, Env3, Map3} = inst(Recv, Lvl, Env2, Map2),
     NewR = {t_receiver, Recv2, Body2},
@@ -1364,7 +1364,7 @@ typ_of(Env, Lvl, {symbol, _, N}) ->
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
-typ_of(Env, Lvl, #alpaca_far_ref{module=Mod, name=N, line=L, arity=A}) ->
+typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
     EnteredModules = [Mod | Env#env.entered_modules],
     {ok, Module, _} = extract_module_bindings(Env, Mod, N),
 
@@ -1501,13 +1501,13 @@ typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
 
 %% Record typing:
 typ_of(Env, Lvl, #alpaca_record{members=Members}) ->
-    F = fun(#alpaca_record_member{name=N, val=V}, {Members, E}) ->
+    F = fun(#alpaca_record_member{name=N, val=V}, {ARMembers, E}) ->
                 case typ_of(E, Lvl, V) of
                     {error, _}=Err -> 
                         erlang:error(Err);
                     {VTyp, NextVar} ->
                         MTyp = #t_record_member{name=N, type=VTyp},
-                        {[MTyp|Members], update_counter(NextVar, E)}
+                        {[MTyp|ARMembers], update_counter(NextVar, E)}
                 end
         end,
     {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
@@ -1597,7 +1597,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     ForwardFun =
         fun() ->
                 FN = case Expr of
-                         {symbol, Line, FunName}    -> FunName;
+                         {symbol, _Line, FunName}    -> FunName;
                          {bif, FunName, _, _, _} -> FunName
                      end,
                 Mod = Env#env.current_module,
@@ -1747,7 +1747,7 @@ typ_of(#env{next_var=NV}=Env, Lvl, #alpaca_ffi{clauses=Cs, module={_, L, _}}) ->
     end;
 
 %% Spawning of functions in the current module:
-typ_of(Env, Lvl, #alpaca_spawn{line=L, module=undefined, function=F, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}) ->
     %% make a function application and type it:
     Apply = #alpaca_apply{line=0, expr=F, args=Args},
 
@@ -1805,10 +1805,9 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                                 %% checking we're only interested in their 
                                 %% return value
                                 case JustTypes of
-                                    [] -> [N, unwrap(T)], {[T|Types],
-                                          update_counter(NextVar, Env2)};
-                                    _ -> {[{t_arrow, JustTypes, T}|Types],
-                                         update_counter(NextVar, Env2)}
+                                    [] -> {[T|Types], update_counter(NextVar, Env2)};
+                                    _  -> {[{t_arrow, JustTypes, T}|Types],
+                                          update_counter(NextVar, Env2)}
                                 end                         
                         end
                 end
@@ -2054,7 +2053,7 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
                     {error, _}=Err -> Err;
                     {Typ, NV} ->
                         case get_cell(Typ) of
-                            {t_receiver, Recv2, RetTyp} ->
+                            {t_receiver, _, RetTyp} ->
                                 case unify(R2, Recv, Env, Line) of
                                     {error, _}=Err -> Err;
                                     ok ->
@@ -2128,7 +2127,7 @@ extract_module_bindings(Env, ModuleName, BindingName) ->
             {error, {no_module, ModuleName}};
         [Module] ->
             Exports = Module#alpaca_module.function_exports,
-            case [F || {N, A} = F <- Exports, N =:= BindingName] of
+            case [F || {N, _A} = F <- Exports, N =:= BindingName] of
                 []  ->
                     throw({error, {not_exported, ModuleName, BindingName}});
                 Funs ->
@@ -2233,7 +2232,7 @@ add_bindings(#alpaca_binary{}=Bin, Env, Lvl, NameNum) ->
     end;
 
 add_bindings(#alpaca_map{}=M, Env, Lvl, NN) ->
-    {M2, NN2} = rename_wildcards(M, NN),
+    {M2, _NN2} = rename_wildcards(M, NN),
     Folder = fun(_, {error, _}=Err) -> Err;
                 (#alpaca_map_pair{key=K, val=V}, {E, N}) ->
                      case add_bindings(K, E, Lvl, N) of
@@ -2255,8 +2254,8 @@ add_bindings(#alpaca_map{}=M, Env, Lvl, NN) ->
     end;
 
 add_bindings(#alpaca_record{}=R, Env, Lvl, NameNum) ->
-    {R2, NameNum2} = rename_wildcards(R, NameNum),
-    F = fun(#alpaca_record_member{val=V}=M, {E, N}) ->
+    {R2, _NameNum2} = rename_wildcards(R, NameNum),
+    F = fun(#alpaca_record_member{val=V}=_M, {E, N}) ->
                 case add_bindings(V, E, Lvl, N) of
                     {error, _}=Err  -> erlang:error(Err);
                     {_, _, E2, N2} -> {E2, N2}
