@@ -341,8 +341,7 @@ next_batch([Token|Tail], Memo) ->
         TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()} |
                                      {error, term()}.
 rename_bindings(Environment, #alpaca_fun_def{}=TopLevel) ->
-    #alpaca_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
-    _SeedMap = #{Name => Name},
+    #alpaca_fun_def{name={symbol, _, _}, versions=Vs}=TopLevel,
 
     F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Env, Map, Versions}) ->
                 case make_bindings(Env, Map, As) of

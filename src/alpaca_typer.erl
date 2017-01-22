@@ -1,4 +1,4 @@
-%%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 %%%
 %%% Copyright 2016 Jeremy Pierre
@@ -2053,7 +2053,7 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
                     {error, _}=Err -> Err;
                     {Typ, NV} ->
                         case get_cell(Typ) of
-                            {t_receiver, _Recv2, RetTyp} ->
+                            {t_receiver, _, RetTyp} ->
                                 case unify(R2, Recv, Env, Line) of
                                     {error, _}=Err -> Err;
                                     ok ->
