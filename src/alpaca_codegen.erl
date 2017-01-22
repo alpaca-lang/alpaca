@@ -742,4 +742,17 @@ module_info_helpers_test() ->
     ?assert(is_list(Mod:module_info())),
     true = code:delete(Mod).
 
+curry_test() ->
+    Code = 
+        "module curry\n"
+        "let f x y = x + y\n"
+        "let main () = \n"
+        "  let f_ = f 10 in\n"
+        "  f_ 6",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = curry,
+    {module, Mod} = code:load_binary(Mod, "alpaca_curry.beam", Bin),
+    ?assertEqual(Mod:main(unit), 16),
+    true = code:delete(Mod).
+
 -endif.
