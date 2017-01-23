@@ -1723,27 +1723,11 @@ typ_of(Env, Lvl, #alpaca_receive{}=Recv) ->
     type_receive(Env, Lvl, Recv);
 
 %%% Calls to Erlang code only have their return value typed.
-typ_of(#env{next_var=NV}=Env, Lvl, #alpaca_ffi{clauses=Cs, module={_, L, _}}) ->
-    ClauseFolder = fun(C, {Typs, EnvAcc}) ->
-                           {{t_clause, _, _, T}, X} = typ_of(EnvAcc, Lvl, C),
-                           {[T|Typs], update_counter(X, EnvAcc)}
-                   end,
-    {TypedCs, #env{next_var=NV2}} = lists:foldl(
-                                      ClauseFolder,
-                                      {[], update_counter(NV, Env)}, Cs),
-    UnifyFolder = fun(A, Acc) ->
-                          case unify(A, Acc, Env, L) of
-                              ok -> Acc;
-                              {error, _} = Err -> Err
-                          end
-                  end,
-    [FC|TCs] = lists:reverse(TypedCs),
-
-    case lists:foldl(UnifyFolder, FC, TCs) of
-        {error, _} = Err ->
-            Err;
-        _ ->
-            {FC, NV2}
+%%% However, we also check that the arguments refer to in-scope names.
+typ_of(Env, Lvl, #alpaca_ffi{args=Args}=FFI) ->
+    case typ_ffi_args(Env, Lvl, Args) of
+        ok -> typ_ffi_clauses(Env, Lvl, FFI);
+        {error, _}=Err -> Err
     end;
 
 %% Spawning of functions in the current module:
@@ -1851,6 +1835,37 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
             Gen = gen(Lvl, TypE),
             Env2 = update_counter(NextVar, Env),
             typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
+    end.
+
+typ_ffi_args(Env, Lvl, {nil, _}) -> ok;
+typ_ffi_args(Env, Lvl, #alpaca_cons{head=H, tail=T}) ->
+    case typ_of(Env, Lvl, H) of
+        {error, _}=Err -> Err;
+        _Ok -> typ_ffi_args(Env, Lvl, T)
+    end.
+
+typ_ffi_clauses(#env{next_var=NV}=Env, Lvl,
+                #alpaca_ffi{clauses=Cs, module={_, L, _}}) ->
+    ClauseFolder = fun(C, {Typs, EnvAcc}) ->
+                           {{t_clause, _, _, T}, X} = typ_of(EnvAcc, Lvl, C),
+                           {[T|Typs], update_counter(X, EnvAcc)}
+                   end,
+    {TypedCs, #env{next_var=NV2}} = lists:foldl(
+                                      ClauseFolder,
+                                      {[], update_counter(NV, Env)}, Cs),
+    UnifyFolder = fun(A, Acc) ->
+                          case unify(A, Acc, Env, L) of
+                              ok -> Acc;
+                              {error, _} = Err -> Err
+                          end
+                  end,
+    [FC|TCs] = lists:reverse(TypedCs),
+
+    case lists:foldl(UnifyFolder, FC, TCs) of
+        {error, _} = Err ->
+            Err;
+        _ ->
+            {FC, NV2}
     end.
 
 type_bin_segments(#env{next_var=NV}, _Lvl, []) ->
@@ -2759,8 +2774,12 @@ ffi_test_() ->
                    top_typ_of(
                      "let f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
+                     "| _ -> :not_one")),
+     ?_assertMatch({error,{bad_variable_name,"x"}},
+                   top_typ_of(
+                     "let f () = beam :a :b [x] with\n"
+                     "  1 -> :one\n"
                      "| _ -> :not_one"))
-
     ].
 
 equality_test_() ->
