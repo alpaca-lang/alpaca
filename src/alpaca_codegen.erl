@@ -113,7 +113,7 @@ gen_fun(Env, #alpaca_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
                 false ->
                     FName = cerl:c_fname(list_to_atom(N), length(Args)),
                     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
-                    {_, B} = gen_expr(Env, Body),
+                    {_, B} = gen_expr(Env, Body),                    
                     {FName, cerl:c_fun(A, B)};
                 true ->
                     %% our single version has more than symbols and unit:
@@ -199,6 +199,7 @@ gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
         0 ->
             {Env, cerl:c_apply(cerl:c_fname(list_to_atom(V), 0), [])};
         Arity when is_integer(Arity) ->
+            %% Do we have a function with the right arity?
             {Env, cerl:c_fname(list_to_atom(V), Arity)};
         undefined ->
             {Env, cerl:c_var(list_to_atom(V))}
@@ -290,17 +291,52 @@ gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=[{unit, _}]}) ->
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
-gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=Args}) ->
-    FName = case proplists:get_value(Name, Env#env.module_funs) of
-                undefined ->
-                    cerl:c_var(list_to_atom(Name));
-                Arity ->
-                    cerl:c_fname(list_to_atom(Name), Arity)
-            end,
-    Apply = cerl:c_apply(
-              FName, 
-              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
-    {Env, Apply};
+gen_expr(Env, #alpaca_apply{expr={symbol, L, Name}=FExpr, args=Args}) ->
+    DesiredArity = length(Args),
+    {FName, Curry, Arity} = case proplists:get_all_values(Name, Env#env.module_funs) of
+        [] -> {cerl:c_var(list_to_atom(Name)), false, 0};
+        AvailFuns ->
+            %% If we have an exact arity match, use that, otherwise curry
+            case lists:filter(fun(X) -> X =:= DesiredArity end, AvailFuns) of
+                [A] -> {cerl:c_fname(list_to_atom(Name), A), false, A};
+                _ ->  
+                    PossibleCurries = lists:filter(fun(X) -> X > DesiredArity end, AvailFuns),
+                    %% The typer ensures that we can curry unambiguously
+                    case PossibleCurries of
+                        [CurryArity] -> 
+                            {cerl:c_fname(list_to_atom(Name), CurryArity), true, CurryArity}
+                    end
+            end
+    end,
+    case Curry of
+        true -> %% generate an anonymous fun
+           CurryFunName = "curry_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
+           Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
+           CArgs = lists:map(
+               fun(A) -> 
+                    {symbol, L, "carg_" ++ integer_to_list(A)}
+               end, 
+               lists:seq(DesiredArity+1, Arity)),
+           CurryExpr = #alpaca_fun_def{
+                             name={symbol, L, CurryFunName},
+                             arity=DesiredArity,
+                             versions=[#alpaca_fun_version{
+                                          args=CArgs,
+                                          body=#alpaca_apply{
+                                            line=L,
+                                            expr=FExpr,
+                                            args=Args ++ CArgs}}]},
+           Binding = #fun_binding{
+                        expr={symbol, L, CurryFunName},
+                        def=CurryExpr},
+
+           gen_expr(Env2, Binding);
+
+        false -> Apply = cerl:c_apply(
+                    FName, 
+                    [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+    {               Env, Apply}
+    end;
 gen_expr(Env, #alpaca_apply{expr={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
     Apply = cerl:c_apply(
@@ -757,15 +793,16 @@ unit_as_value_test() ->
 
 curry_test() ->
     Code = 
-        "module curry\n"
+        "module autocurry\n"
+        "export main\n"
         "let f x y = x + y\n"
         "let main () = \n"
-        "  let f_ = f 10 in\n"
+        "  let f_ = f 5 in\n"
         "  f_ 6",
     {ok, _, Bin} = parse_and_gen(Code),
-    Mod = curry,
-    {module, Mod} = code:load_binary(Mod, "alpaca_curry.beam", Bin),
-    ?assertEqual(Mod:main(unit), 16),
+    Mod = alpaca_autocurry,
+    {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
+    ?assertEqual(Mod:main(unit), 11),
     true = code:delete(Mod).
 
 -endif.

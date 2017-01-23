@@ -96,6 +96,7 @@ Rootsymbol expr.
 
 Unary 500 minus.
 Unary 500 plus.
+Left 200 infixable.
 
 
 %% Comments are stripped in the AST assembly right now but I want them
@@ -384,7 +385,6 @@ tuple -> '(' tuple_list ')' :
   #alpaca_tuple{arity=length('$2'), values='$2'}.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
-infix -> term infixable term : make_infix('$2', '$1', '$3').
 
 %% ----- Errors (including throw, exit) --------------
 error -> raise_error term:
@@ -576,6 +576,7 @@ simple_expr -> receive_block : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.
 simple_expr -> spawn_pid : '$1'.
+simple_expr -> simple_expr infixable simple_expr : make_infix('$2', '$1', '$3').
 
 expr -> comment : '$1'.
 expr -> simple_expr : '$1'.

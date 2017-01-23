@@ -385,4 +385,9 @@ function_in_adt_test() ->
     ?assertEqual(true, M:test_int_dict({})),
     code:delete(M).
 
+curry_test() ->
+    [M] = compile_and_load(["test_files/curry.alp"], []),
+    ?assertEqual({16,26,[2]}, M:foo(unit)),
+    code:delete(M).
+
 -endif.
