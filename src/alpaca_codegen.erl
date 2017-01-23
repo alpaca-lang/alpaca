@@ -184,6 +184,8 @@ gen_expr(Env, {chars, _, Cs}) ->
     {Env, cerl:c_string(Cs)};
 gen_expr(Env, {string, _, S}) ->
     {Env, cerl:c_binary(literal_binary(S, utf8))};
+gen_expr(Env, {unit, _}) ->
+    {Env, cerl:c_tuple([])};
 gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
     %% We produce a unique variable name for each wildcard
     %% "throwaway" variable.  Not doing so causes errors when
@@ -740,6 +742,17 @@ module_info_helpers_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_module_info_helpers_test.beam", Bin),
     ?assertEqual(Mod, Mod:module_info(module)),
     ?assert(is_list(Mod:module_info())),
+    true = code:delete(Mod).
+
+unit_as_value_test() ->
+    Code =
+        "module unit_test\n\n"
+        "export return_unit/1\n\n"
+        "let return_unit () = ()\n\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_unit_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
+    ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
 
 -endif.
