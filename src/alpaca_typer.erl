@@ -1590,10 +1590,11 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
-    %% If the expression we're applying arguments to is a named function
-    %% (e.g. a symbol or bif), attempt to find it in the module.
-    %% This ForwardFun function is used specifically to find functions defined
-    %% later than the application we're trying to type.
+    %% When we hit arity failures, it may be because the user
+    %% is intending a curried application. This function attempts
+    %% to find a potential function that can be unambigiously
+    %% curried, and then types against that by manipulating the
+    %% argument list and return type
     CurryFun = 
         fun(OriginalErr) ->
             %% Attempt to find a curryable version
@@ -1623,6 +1624,10 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 Items -> {error, {ambiguous_curry, Expr, Items, L}}
             end
     end,
+    %% If the expression we're applying arguments to is a named function
+    %% (e.g. a symbol or bif), attempt to find it in the module.
+    %% This ForwardFun function is used specifically to find functions defined
+    %% later than the application we're trying to type.
     ForwardFun =
         fun() ->
                 FN = case Expr of
