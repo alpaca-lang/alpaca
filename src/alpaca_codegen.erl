@@ -41,7 +41,7 @@
           synthetic_fun_num=0 :: integer()
          }).
 
-make_env(#alpaca_module{functions=Funs}=Mod) ->
+make_env(#alpaca_module{functions=Funs}=_Mod) ->
     TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
@@ -140,7 +140,7 @@ gen_fun_patterns(Env, #alpaca_fun_def{name={symbol, _, N}, arity=A, versions=Vs}
     %% Nest matches:
     FName = cerl:c_fname(list_to_atom(N), A),
     Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
-    [TopVar|_] = VarNames,
+    [_TopVar|_] = VarNames,
     B = cerl:c_case(
           cerl:c_values(Args),
           [gen_fun_version(Env, Version) || Version <- Vs]),
@@ -184,6 +184,8 @@ gen_expr(Env, {chars, _, Cs}) ->
     {Env, cerl:c_string(Cs)};
 gen_expr(Env, {string, _, S}) ->
     {Env, cerl:c_binary(literal_binary(S, utf8))};
+gen_expr(Env, {unit, _}) ->
+    {Env, cerl:c_tuple([])};
 gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
     %% We produce a unique variable name for each wildcard
     %% "throwaway" variable.  Not doing so causes errors when
@@ -529,7 +531,7 @@ gen_bits(Env,
 
 gen_bits(Env, [Bits|Rem], Memo) ->
     #alpaca_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
-    {Env2, VExp} = gen_expr(Env, V),
+    {_Env2, VExp} = gen_expr(Env, V),
     B = cerl:c_bitstr(VExp, cerl:c_int(S), cerl:c_int(U),
                       get_bits_type(T), bits_flags(Sign, E)),
     gen_bits(Env, Rem, [B|Memo]).
@@ -815,6 +817,17 @@ curry_test() ->
     Mod = alpaca_autocurry,
     {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
     ?assertEqual(Mod:main(unit), 11),
+    true = code:delete(Mod).
+
+unit_as_value_test() ->
+    Code =
+        "module unit_test\n\n"
+        "export return_unit/1\n\n"
+        "let return_unit () = ()\n\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_unit_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
+    ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
 
 -endif.

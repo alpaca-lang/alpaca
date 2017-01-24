@@ -140,7 +140,7 @@ expand_imports([M|Tail], ExportMap, Memo) ->
     expand_imports(Tail, ExportMap, [M2|Memo]).
 
 %% Group all functions by name and arity:
-group_funs(Funs, ModuleName) ->
+group_funs(Funs, _ModuleName) ->
     OrderedKeys = 
         drop_dupes_preserve_order(
           lists:map(
@@ -195,7 +195,7 @@ rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
 %% All available modules required so that we can rewrite applications of
 %% functions not in Mod to inter-module calls.
 rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
-    #alpaca_module{name=MN, functions=Funs}=Mod,
+    #alpaca_module{name=_MN, functions=Funs}=Mod,
     Bindings = [{N, A} || #alpaca_fun_def{name={_, _, N}, arity=A} <- Funs],
     Env = #env{next_var=NextVarNum,
                rename_map=maps:new(),
@@ -206,7 +206,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
            (F, {E, Memo}) ->
-                {#env{next_var=NV2, rename_map=M}, M2, F2} = rename_bindings(E, F),
+                {#env{next_var=NV2, rename_map=_M}, M2, F2} = rename_bindings(E, F),
                     
                 %% We invert the returned map so that it is from
                 %% synthetic variable name to source code variable
@@ -218,7 +218,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
     case lists:foldl(F, {Env, []}, Funs) of
         {error, _}=Err ->
             Err;
-        {#env{next_var=NV2, rename_map=M}, Funs2} ->
+        {#env{next_var=NV2, rename_map=_M}, Funs2} ->
             %% TODO:  other parts of the compiler might care about the rename
             %%        map but we do throw away some details deliberately
             %%        when rewriting patterns and different function versions.
@@ -341,14 +341,13 @@ next_batch([Token|Tail], Memo) ->
         TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()} |
                                      {error, term()}.
 rename_bindings(Environment, #alpaca_fun_def{}=TopLevel) ->
-    #alpaca_fun_def{name={symbol, _, Name}, versions=Vs}=TopLevel,
-    SeedMap = #{Name => Name},
+    #alpaca_fun_def{name={symbol, _, _}, versions=Vs}=TopLevel,
 
     F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Env, Map, Versions}) ->
                 case make_bindings(Env, Map, As) of
                     {Env2, M2, Args} ->
                         case rename_bindings(Env2, M2, Body) of
-                            {Env3, M3, E} ->
+                            {Env3, _M3, E} ->
                                 FV2 = FV#alpaca_fun_version{
                                         args=Args,
                                         body=E},
@@ -423,7 +422,7 @@ rename_bindings(Environment, M, #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
                         case rename_bindings(Env2, M3, Body) of
                             {error, _}=Err -> 
                                 throw(Err);
-                            {Env3, M4, Body2} ->
+                            {Env3, _M4, Body2} ->
                                 FV2 = FV#alpaca_fun_version{
                                         args=Args2,
                                         body=Body2},
@@ -478,7 +477,7 @@ rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
     ImpFuns = fun () ->
                       Mod = Env#env.current_module,
                       #alpaca_module{function_imports=Imps} = Mod,
-                      [{{X, A}, Mod} || {X, {Mod, A}} <- Imps]
+                      [{{X, A}, Mod1} || {X, {Mod1, A}} <- Imps]
               end,
 
     FName = case N of

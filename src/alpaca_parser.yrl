@@ -136,7 +136,7 @@ poly_type -> symbol type_expressions :
   #alpaca_type{name={type_name, L, N}, members=Members, vars=Vars}.
 
 record_type_member -> symbol ':' type_expr : 
-  {symbol, L, N} = '$1',
+  {symbol, _L, N} = '$1',
   #t_record_member{name=list_to_atom(N), type='$3'}.
 
 record_type_members -> record_type_member : ['$1'].
