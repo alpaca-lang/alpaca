@@ -20,7 +20,7 @@ const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
 sub_type_expr type_expressions type_tuple comma_separated_type_list type_list
 module_qualified_type module_qualified_type_name
-type_apply
+type_apply module_qualified_type_constructor
 type_import type_export types_to_export
 
 test_case
@@ -246,6 +246,16 @@ poly_type_decl -> symbol type_vars :
 
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
+
+module_qualified_type_constructor -> symbol '.' type_constructor :
+  {symbol, _, Mod} = '$1',
+  {type_constructor, L, N} = '$3',
+  #type_constructor{line=L, module=list_to_atom(Mod), name=N}.
+
+type_apply -> module_qualified_type_constructor term :
+  #alpaca_type_apply{name='$1', arg='$2'}.
+type_apply -> module_qualified_type_constructor :
+  #alpaca_type_apply{name='$1'}.
 
 type_apply -> type_constructor term :
   {type_constructor, L, N} = '$1',

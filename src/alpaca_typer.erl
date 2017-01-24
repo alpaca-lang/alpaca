@@ -143,7 +143,7 @@ copy_cell(Cell, RefMap) ->
             {RevMembers, Map2} = lists:foldl(F, {[], RefMap}, Members),
             {RV2, Map3} = copy_cell(RV, Map2),
             {new_cell(#t_record{members=lists:reverse(RevMembers), row_var=RV2}), Map3};
-        #adt{vars=TypeVars, members=Members}=ADT ->
+        #adt{vars=TypeVars, members=Members, module=Mod}=ADT ->
             %% copy the type variables:
             Folder = fun({TN, C}, {L, RM}) ->
                              {C2, NM} = copy_cell(C, RM),
@@ -595,12 +595,16 @@ unify(T1, T2, Env, Line) ->
     end.
 
 %%% Here we're checking for membership of one party in another or for an
-%%% exact match.
+%%% exact match.  ADTs with the same name are checked as the same only if
+%%% they also come from the same module.
 -spec unify_adt(t_cell(), t_cell(), t_adt(), typ(), env(), Line::integer()) ->
                        ok |
                        {error, {cannot_unify, typ(), typ()}}.
-unify_adt(C1, C2, #adt{name=N, vars=AVars}=A,
-          #adt{name=N, vars=BVars}, Env, L) ->
+unify_adt(C1,
+          C2,
+          #adt{name=N, vars=AVars, module=M}=A,
+          #adt{name=N, vars=BVars, module=M},
+          Env, L) ->
     %% Don't unify the keys _and_ vars:
     case unify_list([V||{_, V} <- AVars], [V||{_, V} <- BVars], Env, L) of
         {error, _}=Err -> Err;
@@ -862,13 +866,13 @@ flatten_record(#t_record{}=R) ->
                        {ok, env(), typ(), list(typ())} |
                        {error, {bad_variable, integer(), alpaca_type_var()}}.
 inst_type(Typ, EnvIn) ->
-    #alpaca_type{name={type_name, _, N}, vars=Vs, members=Ms} = Typ,
+    #alpaca_type{name={type_name, _, N}, module=Mod, vars=Vs, members=Ms} = Typ,
     VarFolder = fun({type_var, _, VN}, {Vars, E}) ->
                         {TVar, E2} = new_var(0, E),
                         {[{VN, TVar}|Vars], E2}
                 end,
     {Vars, Env} = lists:foldl(VarFolder, {[], EnvIn}, Vs),
-    ParentADT = #adt{name=N, vars=lists:reverse(Vars)},
+    ParentADT = #adt{name=N, module=Mod, vars=lists:reverse(Vars)},
     inst_type_members(ParentADT, Ms, Env, []).
 
 inst_type_members(ParentADT, [], Env, FinishedMembers) ->
@@ -946,14 +950,14 @@ inst_type_members(ADT, [#alpaca_type_tuple{members=Ms}|T], Env, Memo) ->
     end;
 
 inst_type_members(ADT,
-                  [#alpaca_type{name={type_name, _, N}, vars=Vs, members=[]}|T],
+                  [#alpaca_type{name={type_name, _, N}, vars=Vs, members=[], module=Mod}|T],
                   Env,
                   Memo) ->
     case inst_type_members(ADT, Vs, Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, Members} ->
             Names = [VN || {type_var, _, VN} <- Vs],
-            NewMember = #adt{name=N, vars=lists:zip(Names, Members)},
+            NewMember = #adt{name=N, module=Mod, vars=lists:zip(Names, Members)},
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
 inst_type_members(ADT, [#alpaca_constructor{name=#type_constructor{name=N}}|T], Env, Memo) ->
@@ -988,13 +992,13 @@ inst_type_members(ADT, [_|T], Env, Memo) ->
                              {error, {bad_constructor, integer(), string()}} |
                              {error, {unknown_type, string()}} |
                              {error, {bad_constructor_arg,term()}}.
-inst_type_arrow(EnvIn, #type_constructor{line=Line, name=Name}) ->
+inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
     %% 20160603:  I have an awful lot of case ... of all over this
     %% codebase, trying a lineup of functions specific to this
     %% task here instead.  Sort of want Scala's `Try`.
     ADT_f = fun({error, _}=Err) ->
                     Err;
-               (#alpaca_constructor{type=#alpaca_type{}=T}=C) ->
+               (#alpaca_constructor{type=#alpaca_type{module=Mod}=T}=C) ->
                     {C, inst_type(T, EnvIn)}
             end,
     Cons_f = fun({error, _}=Err) ->Err;
@@ -1011,9 +1015,49 @@ inst_type_arrow(EnvIn, #type_constructor{line=Line, name=Name}) ->
                      Arrow = {type_arrow, inst_constructor_arg(Arg, Vs, Types), ADT},
                      {Env, Arrow}
              end,
-    Default = {error, {bad_constructor, Line, Name}},
-    C = proplists:get_value(Name, EnvIn#env.type_constructors, Default),
-    try Cons_f(ADT_f(C))
+
+    %% If the constructor was not qualified with a module name it's pretty
+    %% to fetch but if it was, then we need to first make sure it's in
+    %% the specified module *and* that its enclosing type is exported.
+    %%
+    %% Here's the easy local get:
+    GetTC = fun(#type_constructor{line=Line, name=Name, module=undefined}) ->
+                    Default = {error, {bad_constructor, Line, Name}},
+                    %% constructors defined in this module or imported by it:
+                    Available = EnvIn#env.type_constructors,
+                    C = proplists:get_value(Name, Available, Default);
+
+               %% and the part where we go to a different module:
+               (#type_constructor{line=Line, name=Name, module=Mod}) ->
+                    Mods = EnvIn#env.modules,
+                    M = [AM || #alpaca_module{name=N}=AM <- Mods, Mod =:= N],
+                    case M of
+                        [] ->
+                            throw({error, {bad_module, Line, Mod}});
+                        [Target] ->
+                            %% in the beginning of typing, constructors/1 links
+                            %% the actual type to the constructor contained
+                            %% within it to make it easy for inst_type to
+                            %% instantiate the type itself.  Here we grab each
+                            %% constructor whose name matches the one we're
+                            %% looking for and insert the ADT itself in a
+                            %% similar manner.
+                            Types = Target#alpaca_module.types,
+                            F = fun(#alpaca_type{members=Ms}=AT) ->
+                                        [M#alpaca_constructor{type=AT} ||
+                                            #alpaca_constructor{
+                                               name=#type_constructor{name=TCN}
+                                              }=M <- Ms, TCN =:= Name]
+                                     end,
+                            case lists:flatten(lists:map(F, Types)) of
+                                [RealC|_] ->
+                                    RealC;
+                                [] ->
+                                    throw({error, {bad_constructor, Line, Name}})
+                            end
+                    end
+            end,
+    try Cons_f(ADT_f(GetTC(TC)))
     catch
         throw:{error, _}=Error -> Error
     end.
@@ -1046,7 +1090,7 @@ inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types) ->
     new_cell({t_pid, inst_constructor_arg(MsgType, Vs, Types)});
 inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},
                      Vs, Types) ->
-    #alpaca_type{vars = V2, members=M2} = find_type(N, Types),
+    #alpaca_type{vars = V2, members=M2, module=Mod} = find_type(N, Types),
 
     %% when a polymorphic ADT occurs in another type's definition it might
     %% have concrete types assigned rather than variables and thus we want
@@ -1063,11 +1107,13 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
     ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- VarsToUse],
     Vs2 = replace_vars(M1, V2, Vs),
     Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
-    new_cell(#adt{name=N, vars=ADT_vars, members=Members});
+    new_cell(#adt{name=N, vars=ADT_vars, members=Members, module=Mod});
+
 inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types) ->
     InstantiatedArgs =  [ inst_constructor_arg(A, Vs, Types) || A <- ArgTypes ],
     InstantiatedRet = inst_constructor_arg(RetType, Vs, Types),
     new_cell({t_arrow, InstantiatedArgs, InstantiatedRet});
+
 inst_constructor_arg(Arg, _, _) ->
     throw({error, {bad_constructor_arg, Arg}}).
 
@@ -3357,9 +3403,9 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     Res = type_modules([M]),
     ?assertMatch({error,
                    {cannot_unify,tree,15,
-                       {adt,"tree",
-                           [{"a",_}],
-                           [{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
+                       #adt{name="tree",
+                            vars=[{"a",_}],
+                            members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
                        t_int}},
                  Res).
 
@@ -4508,8 +4554,38 @@ module_qualified_types_test_() ->
                    "let f m.A a = a + 1",
                [M1, M2] = alpaca_ast_gen:make_modules([Code1, Code2]),
                ?assertMatch(
-                  {ok, [#alpaca_module{}, #alpaca_module{}]},
+                  {ok,
+                   [#alpaca_module{
+                       functions=[#alpaca_fun_def{
+                                    type={t_arrow,
+                                          [#adt{
+                                              name="a",
+                                              vars=[{_, t_int}]}],
+                                          _}}]},
+                    #alpaca_module{}]},
                   type_modules([M1, M2]))
+       end
+    , fun() ->
+              Code1 = "module m export_type a type a 'a = A 'a",
+              Code2 =
+                  "module n "
+                  "type a 'a = A 'a "
+                  "let f A x = x + 1 "
+                  "let other_a x = m.A x "
+                  "let should_fail () = f (other_a 1)",
+              [M1, M2] = alpaca_ast_gen:make_modules([Code1, Code2]),
+              ?assertMatch({error,
+                            {cannot_unify, _, _,
+                             #adt{name="a", module=n},
+                             #adt{name="a", module=m}}},
+                           type_modules([M1, M2]))
+      end
+     , fun() ->
+               Code =
+                   "module m "
+                   "let f n.A x = x + 1",
+               [M] = alpaca_ast_gen:make_modules([Code]),
+               ?assertMatch({error, {bad_module, 1, n}}, type_modules([M]))
        end
     ].
 
