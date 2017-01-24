@@ -1662,7 +1662,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             catch
                 error:{arity_error, _, _} -> 
                     case Expr of
-                        {alpaca_far_ref, _, _, _, _} = E -> CurryFun(E);
+                        #alpaca_far_ref{} -> CurryFun({error, uncurryable_far_ref});
                         _ -> ForwardFun()
                     end
             end        

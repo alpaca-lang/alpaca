@@ -346,7 +346,7 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
     case Expr of
         %% Detect far refs that require currying
-        {alpaca_far_ref, _, _, _, Arity} when Arity > length(Args) ->
+        #alpaca_far_ref{arity=Arity} when Arity > length(Args) ->
             CArgs = lists:map(
                fun(A) -> 
                     {symbol, L, "carg_" ++ integer_to_list(A)}
