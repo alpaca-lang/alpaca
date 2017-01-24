@@ -346,12 +346,37 @@ gen_expr(Env, #alpaca_apply{expr={{symbol, _L, N}, Arity}, args=Args}) ->
 gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     FunName = "synth_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
     Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
-    SynthBinding = #var_binding{
-                      name={symbol, L, FunName},
-                      to_bind=Expr,
-                      expr=#alpaca_apply{line=L, expr={symbol, L, FunName}, args=Args}},
+    case Expr of
+        %% Detect far refs that require currying
+        {alpaca_far_ref, _, _, _, Arity} when Arity > length(Args) ->
+            CArgs = lists:map(
+               fun(A) -> 
+                    {symbol, L, "carg_" ++ integer_to_list(A)}
+               end, 
+               lists:seq(length(Args)+1, Arity)),
+               CurryExpr = #alpaca_fun_def{
+                             name={symbol, L, FunName},
+                             arity=length(Args),
+                             versions=[#alpaca_fun_version{
+                                          args=CArgs,
+                                          body=#alpaca_apply{
+                                            line=L,
+                                            expr=Expr,
+                                            args=Args ++ CArgs}}]},
+               Binding = #fun_binding{
+                        expr={symbol, L, FunName},
+                        def=CurryExpr},
+               gen_expr(Env2, Binding);
+        _ ->
+            SynthBinding = #var_binding{
+                              name={symbol, L, FunName},
+                              to_bind=Expr,
+                              expr=#alpaca_apply{
+                                        line=L, expr={symbol, L, FunName},
+                                        args=Args}},
 
-    gen_expr(Env2, SynthBinding);
+            gen_expr(Env2, SynthBinding)
+    end;
 
 gen_expr(Env, #alpaca_ffi{}=FFI) ->
     #alpaca_ffi{
