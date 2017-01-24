@@ -28,6 +28,7 @@
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
 -record(adt, {name=undefined :: undefined|string(),
+              module=undefined :: atom(),
               vars=[] :: list({string(), typ()}),
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
@@ -207,7 +208,6 @@
           module=undefined :: atom(),
           name="" :: string()
          }).
-% -type alpaca_constructor_name() :: {type_constructor, integer(), string()}.
 -type alpaca_constructor_name() :: #type_constructor{}.
 
 -record(alpaca_constructor, {
