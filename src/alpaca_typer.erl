@@ -1597,18 +1597,28 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     CurryFun = 
         fun(OriginalErr) ->
             %% Attempt to find a curryable version
-            FN = case Expr of
-                    {symbol, Line, FunName} -> FunName;
-                    {bif, FunName, _, _, _} -> FunName
+            {Mod, FN, Env2} = case Expr of
+                {symbol, Line, FunName} -> 
+                    {Env#env.current_module, FunName, Env};
+                
+                {bif, FunName, _, _, _} -> 
+                    {Env#env.current_module, FunName, Env};
+                
+                {alpaca_far_ref, _, ModName, FunName, _} ->
+                    EnteredModules = [Env#env.current_module | Env#env.entered_modules],
+                    {ok, Module, _} = extract_module_bindings(Env, ModName, FunName),
+                    E = Env#env{current_module=Module,
+                                entered_modules=EnteredModules},
+                    {Module, FunName, E}
             end,
-            CurryFuns = get_curryable_funs(Env#env.current_module, FN, length(Args)+1),
+            CurryFuns = get_curryable_funs(Mod, FN, length(Args)+1),
             case CurryFuns of
                 [] -> OriginalErr;
-                [Item] -> case typ_of(Env, Lvl, Item) of
+                [Item] -> case typ_of(Env2, Lvl, Item) of
                                 {{t_arrow, TArgs, TRet}, NextVar} ->
                                     {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
                                     CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
-                                    typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)
+                                    typ_apply(Env2, Lvl, CurriedTypF, NextVar, Args, L)
                           end;
                 Items -> {error, {ambiguous_curry, Expr, Items, L}}
             end
@@ -1617,7 +1627,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
         fun() ->
                 FN = case Expr of
                          {symbol, Line, FunName}    -> FunName;
-                         {bif, FunName, _, _, _} -> FunName
+                         {bif, FunName, _, _, _} -> FunName                      
                      end,
                 Mod = Env#env.current_module,
                 case get_fun(Mod, FN, length(Args)) of
@@ -1640,7 +1650,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
 
     case typ_of(Env, Lvl, Expr) of
         {error, {bad_variable_name, _}} -> ForwardFun();
-        {error, _} = E -> E;
+        {error, _} = E -> E;            
         {TypF, NextVar} ->
             %% If the function in the environment is the wrong arity we want to
             %% try to locate a matching one in the module.
@@ -1650,7 +1660,11 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             try
                 typ_apply(Env, Lvl, TypF, NextVar, Args, L)
             catch
-                error:{arity_error, _, _} -> ForwardFun()                                     
+                error:{arity_error, _, _} -> 
+                    case Expr of
+                        {alpaca_far_ref, _, _, _, _} = E -> CurryFun(E);
+                        _ -> ForwardFun()
+                    end
             end        
     end;
 
@@ -2097,33 +2111,6 @@ typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
     Result.
 
 typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
-    %% we make a deep copy of the function we're unifying
-    %% so that the types we apply to the function don't
-    %% force every other application to unify with them
-    %% where the other callers may be expecting a
-    %% polymorphic function.  See Pierce's TAPL, chapter 22.
-
-    %{CopiedTypF, _} = deep_copy_type(TypF, maps:new()),
-    %% placeholder:
-    CopiedTypF = TypF,
-
-    case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
-        {error, _}=Err -> Err;
-        {ArgTypes, NextVar2} ->
-            TypRes = new_cell(t_rec),
-            Env2 = update_counter(NextVar2, Env),
-
-            Arrow = new_cell({t_arrow, ArgTypes, TypRes}),
-            case unify(CopiedTypF, Arrow, Env2, Line) of
-                {error, _} = E ->
-                    E;
-                ok ->
-                    #env{next_var=VarNum} = Env2,
-                    {TypRes, VarNum}
-            end
-    end.
-
-typ_apply_curry(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% we make a deep copy of the function we're unifying
     %% so that the types we apply to the function don't
     %% force every other application to unify with them

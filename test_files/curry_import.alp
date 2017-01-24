@@ -1,0 +1,12 @@
+module curry_import
+
+export run_filter
+
+import curry.filter
+import curry.(|>)
+
+let pred x = 
+    x == 3
+
+let run_filter () =
+    [1, 2, 3] |> filter pred
