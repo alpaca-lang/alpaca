@@ -135,7 +135,7 @@
 -type alpaca_binary() :: #alpaca_binary{}.
 
 -type alpaca_bits_type() :: int | float | binary | utf8.
-
+ 
 -record(alpaca_bits, {line=0 :: integer(),
                     %% Used to signal whether or not the bitstring is simply
                     %% using default size and unit values.  If it is *not*
@@ -389,6 +389,7 @@
 %%% Expressions that result in values:
 -type alpaca_value_expression() :: alpaca_const()
                                | alpaca_symbol()
+                               | alpaca_far_ref()
                                | alpaca_list()
                                | alpaca_binary()
                                | alpaca_map()
