@@ -96,10 +96,10 @@ covering_patterns(#alpaca_type{members=Members}, Mod, AllMods, SeenADTs,
 covering_patterns(#alpaca_type_tuple{members=Members}, Mod, AllMods, SeenADTs,
                   Vars) ->
     covering_patterns({t_tuple, Members}, Mod, AllMods, SeenADTs, Vars);
-covering_patterns(#alpaca_constructor{name={type_constructor, _, N}, arg=none},
+covering_patterns(#alpaca_constructor{name=#type_constructor{name=N}, arg=none},
                   _Mod, _AllMods, _SeenADTs, _Vars) ->
     [{t_adt_cons, N, none}];
-covering_patterns(#alpaca_constructor{name={type_constructor, _, N}, arg=Arg},
+covering_patterns(#alpaca_constructor{name=#type_constructor{name=N}, arg=Arg},
              Mod, AllMods, SeenADTs, Vars) ->
     ArgPatterns = covering_patterns(Arg, Mod, AllMods, SeenADTs, Vars),
     lists:map(fun(A) -> {t_adt_cons, N, A} end, ArgPatterns);
@@ -236,10 +236,10 @@ matches_bool({boolean, _, Bool}, Bool) ->
 matches_bool(Other, _Bool) ->
     matches_wildcard(Other).
 
-matches_constructor(#alpaca_type_apply{name={type_constructor, _, Name},
+matches_constructor(#alpaca_type_apply{name=#type_constructor{name=Name},
                                        arg=none}, Name, none) ->
     true;
-matches_constructor(#alpaca_type_apply{name={type_constructor, _, Name},
+matches_constructor(#alpaca_type_apply{name=#type_constructor{name=Name},
                                        arg=Arg}, Name, PArg) ->
     covered(PArg, Arg);
 matches_constructor(P, _Name, _PArg) ->
