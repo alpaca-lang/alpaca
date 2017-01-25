@@ -395,8 +395,9 @@ And here we will always get a list instead of a character list (same ADT restric
 ## Currying <a id="sec-4-3" name="sec-4-3"></a>
 
 Top level functions can be curried. Practically speaking, this means that if
-you do not provide a function with all of its required arguments,
-There are some limitations to this:
+you do not provide a function with all of its required arguments, it instead
+returns another function that takes the remaining arguments. There are some
+limitations to this:
 
 -   If multiple versions of a function are defined, such as `f/2` and `f/3`,
     supplying a single argument to `f` would be ambiguous, so this is disallowed
