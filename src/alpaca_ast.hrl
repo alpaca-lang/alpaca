@@ -28,6 +28,7 @@
 -type t_arrow() :: {t_arrow, list(typ()), typ()}.
 
 -record(adt, {name=undefined :: undefined|string(),
+              module=undefined :: atom(),
               vars=[] :: list({string(), typ()}),
               members=[] :: list(typ())}).
 -type t_adt() :: #adt{}.
@@ -202,15 +203,22 @@
 
 %%% ADT Type Tracking
 
--type alpaca_constructor_name() :: {type_constructor, integer(), string()}.
--record(alpaca_constructor, {type=undefined :: typ() | alpaca_type(),
-                           name={type_constructor, 0, ""} :: alpaca_constructor_name(),
-                           arg=none :: none
-                                     | alpaca_base_type()
-                                     | alpaca_type_var()
-                                     | alpaca_type()
-                                     | alpaca_type_tuple()
-                          }).
+-record(type_constructor, {
+          line=0 :: integer(),
+          module=undefined :: atom(),
+          name="" :: string()
+         }).
+-type alpaca_constructor_name() :: #type_constructor{}.
+
+-record(alpaca_constructor, {
+          type=undefined :: typ() | alpaca_type(),
+          name=#type_constructor{} :: alpaca_constructor_name(),
+          arg=none :: none
+                    | alpaca_base_type()
+                    | alpaca_type_var()
+                    | alpaca_type()
+                    | alpaca_type_tuple()
+         }).
 -type alpaca_constructor() :: #alpaca_constructor{}.
 
 -type alpaca_types() :: alpaca_type()
@@ -220,6 +228,7 @@
                     | alpaca_map_type().
 
 -record(alpaca_type, {
+          line=0 :: integer(),
           module=undefined :: atom(),
           name={type_name, -1, ""} :: alpaca_type_name(),
           vars=[]                  :: list(alpaca_type_var()),
@@ -229,9 +238,10 @@
          }).
 -type alpaca_type() :: #alpaca_type{}.
 
--record(alpaca_type_apply, {type=undefined :: typ(),
-                          name={type_constructor, 0, ""} :: alpaca_constructor_name(),
-                          arg=none :: none | alpaca_expression()}).
+-record(alpaca_type_apply, {
+          type=undefined :: typ(),
+          name=#type_constructor{} :: alpaca_constructor_name(),
+          arg=none :: none | alpaca_expression()}).
 -type alpaca_type_apply() :: #alpaca_type_apply{}.
 
 %%% ### Lists
