@@ -680,6 +680,8 @@ unify_adt(C1, C2, #adt{}=A, {t_map, _, _}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(C1, C2, #adt{}=A, #t_record{}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, {t_arrow, _, _}=ToCheck, Env, L) ->
+    unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(_, _, A, B, Env, L) ->
     unify_error(Env, L, A, B).
 
@@ -3194,6 +3196,22 @@ type_constructor_with_arrow_arg_test() ->
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
      ?assertMatch({error,{cannot_unify,constructor,_,t_int,t_bool}},
+                  module_typ_and_parse(Invalid)).
+
+type_constructor_with_aliased_arrow_arg_test() ->
+    Base = "module constructor\n\n"
+           "type binop 'a = ['a,'a] -> 'a\n"
+           "type intbinop = binop int\n"
+           "type wrapper = W intbinop\n\n",
+    Valid = Base ++ "let f (W b) = b 1 1\n\n",
+    ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
+    Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
+    ?assertMatch({error, {cannot_unify,constructor,7,
+                         {adt,"intbinop",[],
+                             [{adt,"binop",
+                                  [{"a",undefined}],
+                                  [{t_arrow,[t_int,t_int],t_int}]}]},
+                         {t_arrow,[t_int,t_atom],t_rec}}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
