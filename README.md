@@ -328,6 +328,7 @@ modules in Erlang with top-level entities including:
 - type declarations (ADTs)
 - functions which can contain other functions and variables via `let`
 bindings.
+- functions are automatically curried (with some limitations)
 - simple test definitions
 
 An example:

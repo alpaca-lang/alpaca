@@ -109,9 +109,9 @@
 -type alpaca_bool() :: {bool, integer(), boolean()}.
 -type alpaca_atom() :: {atom, integer(), atom()}.
 
--type alpaca_error() :: {raise_error, 
-                       integer(), 
-                       throw|error|exit, 
+-type alpaca_error() :: {raise_error,
+                       integer(),
+                       throw|error|exit,
                        alpaca_value_expression()}.
 
 %%% The variable _, meaning "don't care":
@@ -197,7 +197,7 @@
 
 -record(t_record, {members=[] :: list(t_record_member()),
                            row_var=undefined :: typ()}).
-                           
+
 -type t_record() :: #t_record{}.
 
 %%% ADT Type Tracking
@@ -379,6 +379,7 @@
 %%% Expressions that result in values:
 -type alpaca_value_expression() :: alpaca_const()
                                | alpaca_symbol()
+                               | alpaca_far_ref()
                                | alpaca_list()
                                | alpaca_binary()
                                | alpaca_map()

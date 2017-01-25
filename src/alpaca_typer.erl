@@ -280,9 +280,9 @@ deep_copy_type({t_map, K, V}, RefMap) ->
 
 deep_copy_type({t_receiver, A, B}, RefMap) ->
     %% Here we're copying the body of the receiver first and then the
-    %% receiver type itself, explicitly with a method that pulls existing 
-    %% reference cells for named type variables from the map returned by 
-    %% the body's deep copy operation.  This ensures that when the same 
+    %% receiver type itself, explicitly with a method that pulls existing
+    %% reference cells for named type variables from the map returned by
+    %% the body's deep copy operation.  This ensures that when the same
     %% type variable occurs in body the body and receive types we use the
     %% same reference cell.
     {B2, M2} = deep_copy_type(B, RefMap),
@@ -342,23 +342,23 @@ unify_error(Env, Line, Typ1, Typ2) ->
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
 %%% errors.
-%%% 
-%%% For the purposes of record unification, T1 is considered to be the lower 
+%%%
+%%% For the purposes of record unification, T1 is considered to be the lower
 %%% bound for unification.  Example:
-%%% 
+%%%
 %%% a: {x: int, y: int}  -- a row variable `A` is implied.
 %%% f: {x: int|F} -> (int, {x: int|F})
-%%% 
+%%%
 %%% Calling f(a) given the above poses no problem.  The two `x` members unify
 %%% and the `F` in f's type unifies with `y: int|A`.  But:
-%%% 
+%%%
 %%% b: {x: int}  - a row variable `B` is implied.
 %%% f: {x: int, y: int|F} -> (int, {x: int, y: int|F})
-%%% 
-%%% Here `f` is more specific than `b` and _requires_ a `y: int` member.  Its 
-%%% type must serve as a lower bound for unification, we don't want `f(b)` to 
+%%%
+%%% Here `f` is more specific than `b` and _requires_ a `y: int` member.  Its
+%%% type must serve as a lower bound for unification, we don't want `f(b)` to
 %%% succeed if the implied row variable `B` does not contain a `y: int`.
-%%% 
+%%%
 %%% Some of the packing into and unpacking from row variables is likely to get
 %%% a little hairy in the first implementation here.
 -spec unify(typ(), typ(), env(), integer()) -> ok | {error, term()}.
@@ -663,7 +663,7 @@ unify_adt(_C1, _C2,
                                   ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
                                end,
                     lists:foldl(UnifyFun, ok, lists:zip(VarsA, ToCheck));
-                _ -> 
+                _ ->
                     unify_error(Env, L, A, B)
             end
     end;
@@ -694,7 +694,7 @@ unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) when is_pid(ToCh
         end,
     Seed = unify_error(Env, L, A, ToCheck),
     lists:foldl(F, Seed, Ms);
-%% ToCheck needs to be in a reference cell for unification and we're not 
+%% ToCheck needs to be in a reference cell for unification and we're not
 %% worried about losing the cell at this level since C1 and C2 are what
 %% will actually be manipulated.
 unify_adt_and_poly(C1, C2, #adt{members=_Ms}=A, ToCheck, Env, L) ->
@@ -790,7 +790,7 @@ unify_records(LowerBound, Target, Env, Line) ->
 
     %% unify the row variables
     case RemainingTarget of
-        [] -> 
+        [] ->
             unify(LowerRow, TargetRow, Env, Line);
         _ ->
             NewTarget = new_cell(#t_record{members=RemainingTarget, row_var=TargetRow}),
@@ -806,9 +806,9 @@ unify_record_members([LowerBound|Rem], TargetRem, Env, Line) ->
             erlang:error({missing_record_field, Line, N});
         #t_record_member{type=T2} ->
             case unify(T, T2, Env, Line) of
-                {error, _}=Err -> 
+                {error, _}=Err ->
                     erlang:error(Err);
-                ok -> 
+                ok ->
                     NewTargetRem = proplists:delete(N, TargetRem),
                     unify_record_members(Rem, NewTargetRem, Env, Line)
             end
@@ -819,12 +819,12 @@ unify_record_members([LowerBound|Rem], TargetRem, Env, Line) ->
 %% need to unpack these row variables to unify records predictably and
 %% also upon completion of typing.  Problems could occur when unifying the
 %% following:
-%% 
+%%
 %% #t_record{members={x, t_int}, row_var=#t_record{members={y, t_int}}, ...}
 %% #t_record{members={y, t_int}, row_var=#t_record{members={x, t_int}}, ...}
 %%
 %% Because the members that need unifying (coming from either record to the
-%% other) are effectively hidden in their respective row variables, 
+%% other) are effectively hidden in their respective row variables,
 %% unify_record_members won't see them directly.
 flatten_record(#t_record{members=Ms, row_var=#t_record{}=Inner}) ->
     #t_record{members=InnerMs, row_var=InnerRow} = Inner,
@@ -899,7 +899,7 @@ inst_type_members(ADT, [{alpaca_map, KExp, VExp}|Rem], Env, Memo) ->
 inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
     #t_record{members=Ms, row_var=RV} = R,
     {RVC, Env2} = case RV of
-                      undefined -> 
+                      undefined ->
                           {V, E} = new_var(0, Env),
                           {new_cell(V), E};
                       {unbound, _, _}=V ->
@@ -909,9 +909,9 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
                   end,
     F = fun(#t_record_member{type=T}=M, {NewMems, _E}) ->
                 case inst_type_members(ADT, [T], Env, []) of
-                    {error, _}=Err -> 
+                    {error, _}=Err ->
                         erlang:error(Err);
-                    {ok, E2, _, [InstT]} -> 
+                    {ok, E2, _, [InstT]} ->
                         {[M#t_record_member{type=InstT}|NewMems], E2}
                 end
         end,
@@ -999,7 +999,7 @@ inst_type_arrow(EnvIn, {type_constructor, Line, Name}) ->
                 ({C, {ok, Env, ADT, _}}) ->
                      #adt{vars=Vs} = get_cell(ADT),
                      #alpaca_constructor{arg=Arg} = C,
-                     %% We need to include types from other modules even if 
+                     %% We need to include types from other modules even if
                      %% they're not exported so that types we *have* imported
                      %% that depend on those we've not can still be instantiated
                      %% correctly:
@@ -1049,10 +1049,10 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
     %% when a polymorphic ADT occurs in another type's definition it might
     %% have concrete types assigned rather than variables and thus we want
     %% to find the original/biggest list of vars for the type.  E.g.
-    %% 
+    %%
     %% type option 'a = Some 'a | None
     %% type either_int 'a = Left 'a | Right option int
-    %% 
+    %%
     VarsToUse = case length(V2) > length(Vars) of
                     true -> V2;
                     false -> Vars
@@ -1222,7 +1222,7 @@ retrieve_type(SourceModule, Module, Type, []) ->
     throw(missing_type_error(SourceModule, Module, Type));
 retrieve_type(SM, M, T, [#alpaca_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
     case [TT || #alpaca_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
-        [#alpaca_type{name={_, _, TN}}=Type] -> 
+        [#alpaca_type{name={_, _, TN}}=Type] ->
             %% now make sure the type is exported:
             case [X || X <- ETs, X =:= TN] of
                 [_] -> {ok, Type};
@@ -1503,7 +1503,7 @@ typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
 typ_of(Env, Lvl, #alpaca_record{members=Members}) ->
     F = fun(#alpaca_record_member{name=N, val=V}, {ARMembers, E}) ->
                 case typ_of(E, Lvl, V) of
-                    {error, _}=Err -> 
+                    {error, _}=Err ->
                         erlang:error(Err);
                     {VTyp, NextVar} ->
                         MTyp = #t_record_member{name=N, type=VTyp},
@@ -1559,14 +1559,14 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                         %% Type the called function in its own module:
                         case type_module(Module, Env2) of
                             {ok, #alpaca_module{functions=Funs}} ->
-                                [T] = [Typ || 
-                                          #alpaca_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs, 
-                                          N =:= X, 
+                                [T] = [Typ ||
+                                          #alpaca_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs,
+                                          N =:= X,
                                           A =:= Arity
                                       ],
                                 #env{next_var=NextVar}=Env,
                                 %% deep copy to cell the various types, needed
-                                %% because typing a module unwraps all the 
+                                %% because typing a module unwraps all the
                                 %% reference cells before returning the module:
                                 {DT, _} = deep_copy_type(T, maps:new()),
                                 typ_apply(Env, Lvl, DT, NextVar, Args, L);
@@ -1590,6 +1590,40 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
+    %% When we hit arity failures, it may be because the user
+    %% is intending a curried application. This function attempts
+    %% to find a potential function that can be unambigiously
+    %% curried, and then types against that by manipulating the
+    %% argument list and return type
+    CurryFun =
+        fun(OriginalErr) ->
+            %% Attempt to find a curryable version
+            {Mod, FN, Env2} = case Expr of
+                {symbol, _Line, FunName} ->
+                    {Env#env.current_module, FunName, Env};
+
+                {bif, FunName, _, _, _} ->
+                    {Env#env.current_module, FunName, Env};
+
+                {alpaca_far_ref, _, ModName, FunName, _} ->
+                    EnteredModules = [Env#env.current_module | Env#env.entered_modules],
+                    {ok, Module, _} = extract_module_bindings(Env, ModName, FunName),
+                    E = Env#env{current_module=Module,
+                                entered_modules=EnteredModules},
+                    {Module, FunName, E}
+            end,
+            CurryFuns = get_curryable_funs(Mod, FN, length(Args)+1),
+            case CurryFuns of
+                [] -> OriginalErr;
+                [Item] -> case typ_of(Env2, Lvl, Item) of
+                                {{t_arrow, TArgs, TRet}, NextVar} ->
+                                    {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
+                                    CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
+                                    typ_apply(Env2, Lvl, CurriedTypF, NextVar, Args, L)
+                          end;
+                Items -> {error, {ambiguous_curry, Expr, Items, L}}
+            end
+    end,
     %% If the expression we're applying arguments to is a named function
     %% (e.g. a symbol or bif), attempt to find it in the module.
     %% This ForwardFun function is used specifically to find functions defined
@@ -1606,9 +1640,16 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                         case typ_of(Env, Lvl, Fun) of
                             {error, _}=Err -> Err;
                             {TypF, NextVar} ->
-                                typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                %% We should have a t_arrow taking some args with a return value
+                                %% What we need is a t_arrow that takes some of those args and returns
+                                %% another t_arrow taking the remainder and returning the final arg
+                                try
+                                    typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                catch
+                                    throw:{arity_error, _, _} = Err -> CurryFun(Err)
+                                end
                         end;
-                    {error, _} = E -> E
+                    {error, _} = E -> CurryFun(E)
                 end
         end,
 
@@ -1618,15 +1659,17 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
         {TypF, NextVar} ->
             %% If the function in the environment is the wrong arity we want to
             %% try to locate a matching one in the module.
-            %% This does not allow for different arity functions in a sequence 
+            %% This does not allow for different arity functions in a sequence
             %% of let bindings which could be a weakness.
             %%
-            %% TODO:  some arity errors should disappear with support for 
-            %% automatic currying.
             try
                 typ_apply(Env, Lvl, TypF, NextVar, Args, L)
             catch
-                error:{arity_error, _, _} -> ForwardFun()
+                error:{arity_error, _, _} ->
+                    case Expr of
+                        #alpaca_far_ref{} -> CurryFun({error, uncurryable_far_ref});
+                        _ -> ForwardFun()
+                    end
             end
     end;
 
@@ -1749,7 +1792,7 @@ typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}
                             case _AT of
                                 {t_receiver, Recv2, _} ->
                                     {new_cell({t_pid, Recv2}), NV2};
-                                _ -> 
+                                _ ->
                                     {new_cell({t_pid, Recv}), NV2}
                                 end;
                         _ ->
@@ -1771,7 +1814,7 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                 JustTypes = lists:reverse(RevTyps),
                 RecursiveType = {t_arrow, JustTypes, new_cell(t_rec)},
                 EnvWithLetRec = update_binding(N, RecursiveType, Env2),
-                
+
                 case typ_of(EnvWithLetRec, Lvl, Body) of
                     {error, _} = Err ->
                         Err;
@@ -1779,20 +1822,20 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                         case unwrap(T) of
                             {t_receiver, Recv, Res} ->
                                 TRec = {t_receiver, new_cell(Recv), new_cell(Res)},
-                                {t_receiver, Recv2, Res2} = 
+                                {t_receiver, Recv2, Res2} =
                                     collapse_receivers(TRec, Env2, Lvl),
                                 X = {t_receiver, Recv2,
                                       {t_arrow, JustTypes, Res2}},
                                 {[X|Types], update_counter(NextVar, Env2)};
                             _ ->
                                 %% Nullary funs are really values - for type
-                                %% checking we're only interested in their 
+                                %% checking we're only interested in their
                                 %% return value
                                 case JustTypes of
                                     [] -> {[T|Types], update_counter(NextVar, Env2)};
                                     _  -> {[{t_arrow, JustTypes, T}|Types],
                                           update_counter(NextVar, Env2)}
-                                end                         
+                                end
                         end
                 end
         end,
@@ -1809,8 +1852,8 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
                                     {error, _}=Err -> Err;
                                     ok -> T2
                                 end
-                        end, 
-                        H, 
+                        end,
+                        H,
                         TypedVersions),
             case Unified of
                 {error, _}=Err -> Err;
@@ -2166,6 +2209,9 @@ get_fun(Module, FunName, Arity) ->
         {ok, Fun} -> {ok, Module, Fun}
     end.
 
+get_curryable_funs(Module, FN, MinArity) ->
+    filter_to_curryable_funs(Module#alpaca_module.functions, FN, MinArity).
+
 filter_to_fun([], _, _) ->
     not_found;
 filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
@@ -2173,6 +2219,15 @@ filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
+
+filter_to_curryable_funs(Funs, FN, MinArity) ->
+    Pred = fun(#alpaca_fun_def{name={Symbol, _, N}, arity=Arity}) ->
+               case {Arity >= MinArity, N =:= FN} of
+                    {true, true} -> true;
+                    _ -> false
+               end
+           end,
+    lists:filter(Pred, Funs).
 
 %%% for clauses we need to add bindings to the environment for any symbols
 %%% (variables) that occur in the pattern.  "NameNum" is used to give
@@ -2433,8 +2488,8 @@ infix_arrow_types_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
                    top_typ_of("let (<*>) x = x + x"))
     , ?_assertMatch({{t_arrow, [A, {t_arrow, [A], B}], B}, _},
-                    top_typ_of("let (|>) x f = f x"))  
-    ].    
+                    top_typ_of("let (|>) x f = f x"))
+    ].
 
 simple_polymorphic_let_test() ->
     Code =
@@ -3088,7 +3143,7 @@ type_constructor_with_arrow_arg_test() ->
             "let p x y = x > y\n\n"
             "let make () = Constructor p",
      ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
-    
+
     Invalid = Base ++
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
@@ -3526,7 +3581,7 @@ polymorphic_process_as_return_value_test() ->
     ?assertMatch({error, {cannot_unify, poly_process, 12, t_float, t_atom}}, Res).
 
 polymorphic_spawn_test() ->
-    FunCode = 
+    FunCode =
         "let behaviour state state_f =\n"
         "  receive with\n"
         "    x -> behaviour (state_f state x) state_f",
@@ -3537,10 +3592,10 @@ polymorphic_spawn_test() ->
                   {unbound,t2,0},
                   {t_arrow,
                    [{unbound,t0,0},
-                    {t_arrow, 
+                    {t_arrow,
                      [{unbound,t0,0},{unbound,t2,0}],
                      {unbound,t0,0}}],
-                   t_rec}}, 
+                   t_rec}},
                  FunType),
     NewBindings = [{"behaviour", FunType}|BaseEnv#env.bindings],
     NewModule = #alpaca_module{functions=[FunExp#alpaca_fun_def{type=FunType}]},
@@ -3548,7 +3603,7 @@ polymorphic_spawn_test() ->
     SpawnCode = "let f x y = x +. y in spawn behaviour 1.0 f",
     {ok, SpawnExp} = alpaca_ast_gen:parse(alpaca_scanner:scan(SpawnCode)),
     {SpawnType, _} = typ_of(EnvWithFun,  SpawnExp),
-                            
+
     ?assertMatch({t_pid, t_float}, SpawnType).
 
 
@@ -3855,7 +3910,7 @@ record_inference_test_() ->
              Code =
                  "let f r = match r with\n"
                  "  {x = x1} -> x1 + 1",
-             ?assertMatch({{t_arrow, 
+             ?assertMatch({{t_arrow,
                             [#t_record{
                                  members=[#t_record_member{
                                              name=x,
@@ -3870,7 +3925,7 @@ record_inference_test_() ->
                  "let f r = match r with\n"
                  "  {x = x1} -> (x1 * 2, r)\n\n"
                  "let g () = f {x=1, y=2}",
-             ?assertMatch({ok, 
+             ?assertMatch({ok,
                            #alpaca_module{
                               functions=[#alpaca_fun_def{
                                             name={symbol, _, "f"},
@@ -3918,7 +3973,7 @@ record_inference_test_() ->
                  "    {x=x1, a=a1} -> x1 + a1\n"
                  "  | Adt -> 0",
              ?assertMatch(
-                {ok, 
+                {ok,
                  #alpaca_module{
                     functions=[#alpaca_fun_def{
                                   type={t_arrow,
@@ -3935,7 +3990,7 @@ record_inference_test_() ->
                                                         row_var={unbound, _, _}},
                                                     {t_adt_cons, "Adt"}]
                                                        }],
-                                            t_int}}]}}, 
+                                            t_int}}]}},
                     module_typ_and_parse(Code))
      end,
      fun() ->
@@ -3962,20 +4017,20 @@ record_inference_test_() ->
 %% and records in the definition of a type impacts the unification and thus
 %% inference of a function's return type.  This test is to check for multiple
 %% orderings and regressions.
-%% 
+%%
 %% The root error appears to have been arising because in unify_adt_and_poly
 %% one of the target type members was unwrapped from its reference cell.  Since
 %% the unification was actually impacting the top level cells, we could re-cell
 %% the type and not worry about throwing that away later.
 adt_ordering_test_() ->
     [fun() ->
-             Code = 
+             Code =
                  "module simple_adt_order_1\n\n"
                  "type t 'a = Some 'a | None\n\n"
                  "let f x = match x with\n"
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
-             ?assertMatch({ok, 
+             ?assertMatch({ok,
                            #alpaca_module{
                               functions=[#alpaca_fun_def{
                                             type={t_arrow,
@@ -3987,13 +4042,13 @@ adt_ordering_test_() ->
                           module_typ_and_parse(Code))
      end
     ,fun() ->
-             Code = 
+             Code =
                  "module simple_adt_order_2\n\n"
                  "type t 'a = None | Some 'a\n\n"
                  "let f x = match x with\n"
                  "    None -> :none\n"
                  "  | Some a -> :an_a",
-             ?assertMatch({ok, 
+             ?assertMatch({ok,
                            #alpaca_module{
                               functions=[#alpaca_fun_def{
                                             type={t_arrow,
@@ -4014,7 +4069,7 @@ adt_ordering_test_() ->
                   "let g () = f #{:a => 1, :b => 2}\n\n"
                   "let h () = f [1, 2]",
               ?assertMatch(
-                 {ok, 
+                 {ok,
                   #alpaca_module{
                      functions=[#alpaca_fun_def{
                                    type={t_arrow,
@@ -4038,7 +4093,7 @@ adt_ordering_test_() ->
                  "let g () = f #{:a => 1, :b => 2}\n\n"
                  "let h () = f [1, 2]",
               ?assertMatch(
-                 {ok, 
+                 {ok,
                   #alpaca_module{
                      functions=[#alpaca_fun_def{
                                    type={t_arrow,
@@ -4097,7 +4152,7 @@ adt_ordering_test_() ->
 
 unify_with_error_test_() ->
     [fun() ->
-             Code = 
+             Code =
                  "module unify_with_error_test\n\n"
                  "let throw_on_zero x = match x with "
                  "    0 -> throw :zero"
@@ -4109,7 +4164,7 @@ unify_with_error_test_() ->
                 module_typ_and_parse(Code))
      end
      , fun() ->
-               Code = 
+               Code =
                    "module unify_with_error_test\n\n"
                    "let should_not_unify x = match x with "
                    "    0 -> throw :zero"
@@ -4166,8 +4221,8 @@ function_argument_pattern_test_() ->
                          functions=[#alpaca_fun_def{
                                        versions=[_, _],
                                        type={t_arrow,
-                                             [{t_arrow, 
-                                               [{unbound, A, _}], 
+                                             [{t_arrow,
+                                               [{unbound, A, _}],
                                                {unbound, B, _}},
                                               #adt{vars=[{_, {unbound, A, _}}]}],
                                              #adt{vars=[{_, {unbound, B, _}}]}}}]}},
@@ -4255,7 +4310,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
-                 {ok, 
+                 {ok,
                  #alpaca_module{
                     functions=[#alpaca_fun_def{
                                   type={t_arrow,
@@ -4272,7 +4327,7 @@ constrain_polymorphic_adt_funs_test_() ->
                                                         type={unbound, C, _}}]}],
                                         #adt{vars=[{_, {unbound, C, _}}]}}},
                                #alpaca_fun_def{
-                                  type={t_arrow, 
+                                  type={t_arrow,
                                         [t_unit],
                                         #adt{vars=[{"a", t_int}]}}}]
                    }},
@@ -4282,14 +4337,14 @@ constrain_polymorphic_adt_funs_test_() ->
 
 different_arity_test_() ->
     [fun() ->
-             Code = 
+             Code =
                  "module arity_test\n\n"
                  "let add x = x + x\n\n"
                  "let add x y = x + y",
              ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
      end
     , fun() ->
-              Code = 
+              Code =
                   "module arity_test\n\n"
                   "export add/2\n\n"
                   "let add x = x + x\n"
@@ -4297,24 +4352,24 @@ different_arity_test_() ->
               ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
       end
     , fun() ->
-              Code = 
+              Code =
                   "module arity_test\n\n"
                   "export add/1\n\n"
                   "let add x = x + x\n"
                   "let f x y = add x y",
               ?assertMatch(
-                 {error, {not_found, _, "add", 2}}, 
+                 {error, {not_found, _, "add", 2}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
-              Code = 
+              Code =
                   "module arity_test\n\n"
                   "export add/1\n\n"
                   "let add x = "
                   "let f a b = a + b in "
                   "f x",
               ?assertMatch(
-                 {error, {not_found, _, SyntheticName, 1}}, 
+                 {error, {not_found, _, SyntheticName, 1}},
                  module_typ_and_parse(Code))
       end
     ].
@@ -4331,7 +4386,7 @@ types_in_types_test_() ->
     [fun() ->
              %% Without importing `symbol` we should be fine if we're not
              %% referencing its constructor directly:
-             FormatterCode = 
+             FormatterCode =
                  "module formatter\n\n"
                  "import_type types_in_types.expr\n\n"
                  "import_type types_in_types.ast\n\n"
@@ -4340,12 +4395,12 @@ types_in_types_test_() ->
 
              [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
              ?assertMatch(
-                {ok, [#alpaca_module{}, #alpaca_module{}]}, 
+                {ok, [#alpaca_module{}, #alpaca_module{}]},
                 type_modules([M1, M2]))
      end
     , fun() ->
               %% Importing `symbol` and not using it should be fine:
-              FormatterCode = 
+              FormatterCode =
                   "module formatter\n\n"
                   "import_type types_in_types.symbol\n\n"
                   "import_type types_in_types.expr\n\n"
@@ -4355,13 +4410,13 @@ types_in_types_test_() ->
 
               [M1, M2] = alpaca_ast_gen:make_modules([AstCode, FormatterCode]),
               ?assertMatch(
-                 {ok, [#alpaca_module{}, #alpaca_module{}]}, 
+                 {ok, [#alpaca_module{}, #alpaca_module{}]},
                  type_modules([M1, M2]))
       end
     , fun() ->
-              %% NOT importing `symbol` and then trying to use its type 
+              %% NOT importing `symbol` and then trying to use its type
               %% constructor should yield an error:
-              FormatterCode = 
+              FormatterCode =
                   "module formatter\n\n"
                   "import_type types_in_types.expr\n\n"
                   "import_type types_in_types.ast\n\n"
@@ -4384,9 +4439,9 @@ types_in_types_test_() ->
                   "type expr = symbol | Apply (expr, expr) "
                   "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
                   "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
-              
+
               %% Importing `symbol` should let us use the constructor:
-              FormatterCode = 
+              FormatterCode =
                   "module formatter\n"
                   "import_type types_in_types.symbol\n"
                   "import_type types_in_types.expr\n"
@@ -4406,16 +4461,16 @@ types_in_types_test_() ->
 expression_typing_test_() ->
     [%% `1` is not a function from an int to something else:
      ?_assertMatch(
-        {error, {cannot_unify, _, _, t_int, {t_arrow, [t_int], _}}}, 
+        {error, {cannot_unify, _, _, t_int, {t_arrow, [t_int], _}}},
         top_typ_of("1 2")),
-     ?_assertMatch({{t_arrow, [t_unit], t_int}, _}, 
+     ?_assertMatch({{t_arrow, [t_unit], t_int}, _},
                    top_typ_of(
                      "let g () = "
                      "let f x = x + x in "
                      "let g () = f in "
                      "(g ()) 2"
                     ))
-     
+
     ].
 
 no_process_leak_test() ->
@@ -4438,4 +4493,63 @@ wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft) ->
             timer:sleep(10),
             wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft-1)
     end.
+
+curry_applications_test_() ->
+    [fun() ->
+        Code =
+            "module curry\n"
+            "let add a b = a + b\n\n"
+            "let main x = add x\n",
+
+        ?assertMatch(
+            {ok, #alpaca_module{
+                    functions=[#alpaca_fun_def{
+                        type={t_arrow,
+                            [t_int, t_int], t_int}
+
+                        },
+                        #alpaca_fun_def{
+                        type={t_arrow,
+                            [t_int], {t_arrow, [t_int], t_int}}
+                        }
+                    ]
+                }
+            },
+        module_typ_and_parse(Code))
+    end,
+    fun() ->
+        Code =
+            "module curry\n"
+            "let main x = add x\n"
+            "let add a b = a + b\n\n",
+
+        ?assertMatch(
+            {ok, #alpaca_module{
+                    functions=[
+                        #alpaca_fun_def{
+                            type={t_arrow,
+                                    [t_int], {t_arrow, [t_int], t_int}}
+                        },
+                        #alpaca_fun_def{
+                            type={t_arrow,
+                                    [t_int, t_int], t_int}
+                        }
+                    ]
+                }
+            },
+        module_typ_and_parse(Code))
+    end,
+    fun() ->
+        Code =
+            "module curry\n"
+            "let main x = add x\n"
+            "let add a b = a + b\n\n"
+            "let add a b c = a + b + c\n\n",
+
+        ?assertMatch(
+            {error, {ambiguous_curry, _, _, _}},
+            module_typ_and_parse(Code))
+    end
+    ].
+
 -endif.

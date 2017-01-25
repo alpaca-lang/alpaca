@@ -28,11 +28,11 @@
 %%   - names of top-level functions with their arity
 %%   - incrementing variable number for wildcard variables (underscores)
 %%   - numbers for synthesized function name generation
-%% 
-%% The top-level functions get looked up for correct Core Erlang call 
+%%
+%% The top-level functions get looked up for correct Core Erlang call
 %% construction.  Renaming instances of "_" (the wildcard or "don't care"
 %% variable name) is necessary because "_" is actually a legitimate variable
-%% name in Core Erlang.  If we don't rename it when there are multiple 
+%% name in Core Erlang.  If we don't rename it when there are multiple
 %% occurrences in the same pattern there will be a compilation error from
 %% the 'cerl' module.
 -record(env, {
@@ -45,7 +45,7 @@ make_env(#alpaca_module{functions=Funs}=_Mod) ->
     TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
-prefix_modulename(Name) ->    
+prefix_modulename(Name) ->
     case Name of
         erlang -> erlang;
         _ -> list_to_atom("alpaca_" ++ atom_to_list(Name))
@@ -58,7 +58,7 @@ gen(#alpaca_module{}=Mod, Opts) ->
        functions=Funs,
        tests=Tests} = Mod,
     Env = make_env(Mod),
-    PrefixModuleName = prefix_modulename(ModuleName), 
+    PrefixModuleName = prefix_modulename(ModuleName),
     {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledTests = gen_tests(Env2, Tests),
 
@@ -95,9 +95,9 @@ gen_funs(Env, Funs, [#alpaca_fun_def{}=F|T]) ->
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
-gen_fun(Env, 
+gen_fun(Env,
         #alpaca_fun_def{
-           name={symbol, _, N}, 
+           name={symbol, _, N},
            versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}) ->
 
     FName = cerl:c_fname(list_to_atom(N), 1),
@@ -199,6 +199,7 @@ gen_expr(#env{module_funs=Funs}=Env, {symbol, _, V}) ->
         0 ->
             {Env, cerl:c_apply(cerl:c_fname(list_to_atom(V), 0), [])};
         Arity when is_integer(Arity) ->
+            %% Do we have a function with the right arity?
             {Env, cerl:c_fname(list_to_atom(V), Arity)};
         undefined ->
             {Env, cerl:c_var(list_to_atom(V))}
@@ -221,11 +222,11 @@ gen_expr(Env, #alpaca_cons{head=H, tail=T}) ->
     {Env3, T2} = gen_expr(Env2, T),
     {Env3, cerl:c_cons(H2, T2)};
 gen_expr(Env, #alpaca_binary{segments=Segs}) ->
-    {Env2, Bits} = gen_bits(Env, Segs), 
+    {Env2, Bits} = gen_bits(Env, Segs),
     {Env2, cerl:c_binary(Bits)};
 gen_expr(Env, #alpaca_map{is_pattern=true}=M) ->
     Annotated = annotate_map_type(M),
-    F = fun(P, {E, Ps}) -> 
+    F = fun(P, {E, Ps}) ->
                 {E2, P2} = gen_expr(E, P),
                 {E2, [P2|Ps]}
         end,
@@ -290,32 +291,90 @@ gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=[{unit, _}]}) ->
                 1 -> cerl:c_fname(list_to_atom(Name), 1)
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
-gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=Args}) ->
-    FName = case proplists:get_value(Name, Env#env.module_funs) of
-                undefined ->
-                    cerl:c_var(list_to_atom(Name));
-                Arity ->
-                    cerl:c_fname(list_to_atom(Name), Arity)
-            end,
-    Apply = cerl:c_apply(
-              FName, 
-              [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
-    {Env, Apply};
+gen_expr(Env, #alpaca_apply{expr={symbol, L, Name}=FExpr, args=Args}) ->
+    DesiredArity = length(Args),
+    {FName, Curry, Arity} = case proplists:get_all_values(Name, Env#env.module_funs) of
+        [] -> {cerl:c_var(list_to_atom(Name)), false, 0};
+        AvailFuns ->
+            %% If we have an exact arity match, use that, otherwise curry
+            case lists:filter(fun(X) -> X =:= DesiredArity end, AvailFuns) of
+                [A] -> {cerl:c_fname(list_to_atom(Name), A), false, A};
+                _ ->
+                    %% The typer ensures that we can curry unambiguously
+                    [CurryArity] = lists:filter(fun(X) -> X > DesiredArity end, AvailFuns),
+                    {cerl:c_fname(list_to_atom(Name), CurryArity), true, CurryArity}
+            end
+    end,
+    case Curry of
+        true -> %% generate an anonymous fun
+           CurryFunName = "curry_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
+           Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
+           CArgs = lists:map(
+               fun(A) ->
+                    {symbol, L, "carg_" ++ integer_to_list(A)}
+               end,
+               lists:seq(DesiredArity+1, Arity)),
+           CurryExpr = #alpaca_fun_def{
+                             name={symbol, L, CurryFunName},
+                             arity=DesiredArity,
+                             versions=[#alpaca_fun_version{
+                                          args=CArgs,
+                                          body=#alpaca_apply{
+                                            line=L,
+                                            expr=FExpr,
+                                            args=Args ++ CArgs}}]},
+           Binding = #fun_binding{
+                        expr={symbol, L, CurryFunName},
+                        def=CurryExpr},
+
+           gen_expr(Env2, Binding);
+
+        false ->
+            Apply = cerl:c_apply(
+                        FName,
+                        [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+                        {Env, Apply}
+    end;
 gen_expr(Env, #alpaca_apply{expr={{symbol, _L, N}, Arity}, args=Args}) ->
     FName = cerl:c_fname(list_to_atom(N), Arity),
     Apply = cerl:c_apply(
-              FName, 
+              FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
 gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     FunName = "synth_fun_" ++ integer_to_list(Env#env.synthetic_fun_num),
     Env2 = Env#env{synthetic_fun_num=Env#env.synthetic_fun_num + 1},
-    SynthBinding = #var_binding{
-                      name={symbol, L, FunName},
-                      to_bind=Expr,
-                      expr=#alpaca_apply{line=L, expr={symbol, L, FunName}, args=Args}},
+    case Expr of
+        %% Detect far refs that require currying
+        #alpaca_far_ref{arity=Arity} when Arity > length(Args) ->
+            CArgs = lists:map(
+               fun(A) ->
+                    {symbol, L, "carg_" ++ integer_to_list(A)}
+               end,
+               lists:seq(length(Args)+1, Arity)),
+               CurryExpr = #alpaca_fun_def{
+                             name={symbol, L, FunName},
+                             arity=length(Args),
+                             versions=[#alpaca_fun_version{
+                                          args=CArgs,
+                                          body=#alpaca_apply{
+                                            line=L,
+                                            expr=Expr,
+                                            args=Args ++ CArgs}}]},
+               Binding = #fun_binding{
+                        expr={symbol, L, FunName},
+                        def=CurryExpr},
+               gen_expr(Env2, Binding);
+        _ ->
+            SynthBinding = #var_binding{
+                              name={symbol, L, FunName},
+                              to_bind=Expr,
+                              expr=#alpaca_apply{
+                                        line=L, expr={symbol, L, FunName},
+                                        args=Args}},
 
-    gen_expr(Env2, SynthBinding);
+            gen_expr(Env2, SynthBinding)
+    end;
 
 gen_expr(Env, #alpaca_ffi{}=FFI) ->
     #alpaca_ffi{
@@ -391,11 +450,11 @@ gen_expr(Env, #alpaca_spawn{from_module=M,
                           function={symbol, _, FN},
                           args=Args}) ->
 
-    ArgCons = lists:foldl(fun(A, L) -> 
+    ArgCons = lists:foldl(fun(A, L) ->
                                   {_, AExp} = gen_expr(Env, A),
-                                  cerl:c_cons(AExp, L) 
+                                  cerl:c_cons(AExp, L)
                           end, cerl:c_nil(), lists:reverse(Args)),
-    PrefixModuleName = prefix_modulename(M), 
+    PrefixModuleName = prefix_modulename(M),
     {Env, cerl:c_call(
             cerl:c_atom('erlang'),
             cerl:c_atom('spawn'),
@@ -501,9 +560,9 @@ record_to_map(#alpaca_record{line=RL, is_pattern=Patt, members=Ms}) ->
                 MapK = {atom, L, atom_to_list(N)},
                 #alpaca_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
         end,
-    #alpaca_map{is_pattern=Patt, 
+    #alpaca_map{is_pattern=Patt,
               structure=record,
-              line=RL, 
+              line=RL,
               pairs=lists:map(F, Ms)};
 record_to_map(NotRecord) ->
     NotRecord.
@@ -687,7 +746,7 @@ ffi_test() ->
         "  1 -> :one\n"
         "| _ -> :not_one\n",
     {ok, _, Bin} = parse_and_gen(Code),
-    {module, alpaca_ffi_test} = code:load_binary(alpaca_ffi_test, 
+    {module, alpaca_ffi_test} = code:load_binary(alpaca_ffi_test,
                                                  "alpaca_ffi_test.beam", Bin),
 
     Mod = alpaca_ffi_test,
@@ -742,6 +801,20 @@ module_info_helpers_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_module_info_helpers_test.beam", Bin),
     ?assertEqual(Mod, Mod:module_info(module)),
     ?assert(is_list(Mod:module_info())),
+    true = code:delete(Mod).
+
+curry_test() ->
+    Code =
+        "module autocurry\n"
+        "export main\n"
+        "let f x y = x + y\n"
+        "let main () = \n"
+        "  let f_ = f 5 in\n"
+        "  f_ 6",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_autocurry,
+    {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
+    ?assertEqual(Mod:main(unit), 11),
     true = code:delete(Mod).
 
 unit_as_value_test() ->

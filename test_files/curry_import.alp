@@ -1,0 +1,12 @@
+module curry_import
+
+export run_filter
+
+import curry.filter
+import curry.(|>)
+
+let eq x y = 
+    x == y
+
+let run_filter () =
+    [1, 2, 3] |> filter (eq 3)

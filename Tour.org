@@ -59,7 +59,7 @@ let even_or_odd x =
   let rem = x % 2 in
   match rem with
       0 -> Even x
-    | _ -> Odd x 
+    | _ -> Odd x
 #+END_SRC
 Note that variables and function names follow the same format, beginning with a lower-case character.
 * Included Data Types
@@ -80,11 +80,11 @@ Alpaca has integers and floats which can't mix with each other at all.  They hav
 Atoms in Alpaca are just text prefixed with ~:~, e.g. ~:this_is_an_atom~ and ~:soIsThis1~.
 *** Strings
 Strings in Alpaca are all assumed UTF-8 and will be encoded as such:
-#+BEGIN_SRC 
+#+BEGIN_SRC
 "This is a string"
 "so is 한국 and 日本"
-#+END_SRC  
-These are compiled as binaries under the hood.  If you're looking for Erlang's basic string types, character lists can be constructed by prefixing a string with ~c~, for example: 
+#+END_SRC
+These are compiled as binaries under the hood.  If you're looking for Erlang's basic string types, character lists can be constructed by prefixing a string with ~c~, for example:
 #+BEGIN_SRC
 c"character list!"
 #+END_SRC
@@ -159,7 +159,7 @@ let length my_list =
   match my_list with
       [] -> 0
     | _ :: t -> 1 + (length t)
-    
+
 let is_length_3 my_list =
   match my_list with
       [_, _, _] -> true
@@ -167,7 +167,7 @@ let is_length_3 my_list =
 #+END_SRC
 
 *** Maps
-Maps are type-checked as lists are but have separate types for their keys vs their values.  If we wanted a map with atom keys and string values, it could be expressed as the type ~map atom string~.  Functionality is relatively limited still but we can construct literal maps, add single key-value pairs to maps, and pattern match on them.  
+Maps are type-checked as lists are but have separate types for their keys vs their values.  If we wanted a map with atom keys and string values, it could be expressed as the type ~map atom string~.  Functionality is relatively limited still but we can construct literal maps, add single key-value pairs to maps, and pattern match on them.
 #+BEGIN_SRC
 #{:key => "value"}  -- a literal
 
@@ -190,7 +190,7 @@ match {x=1, hello="world"} with
    information about the hello field.  The return type of calling the
    function below with that record will be (int, {x: int, hello: string}).
 -}
-let x_in_a_tuple my_rec = 
+let x_in_a_tuple my_rec =
   match my_rec with
     {x=xx} -> (xx, my_rec)
 #+END_SRC
@@ -205,10 +205,10 @@ public interface IHasX {
 public class HasXY implements IHasX {
     public final int x;
     public final String hello;
-        
+
     public HasXY(int x, String hello) {
         this.x = x;
-        this.hello = hello;  
+        this.hello = hello;
     }
 
     public int getX() { return x; }
@@ -220,7 +220,7 @@ public IHasX identity(IHasX i) {
 }
 #+END_SRC
 
-The return of ~identity(new HasXY(1, "world"))~ "loses" the information that the passed-in argument has a ~hello~ member of type ~String~.  
+The return of ~identity(new HasXY(1, "world"))~ "loses" the information that the passed-in argument has a ~hello~ member of type ~String~.
 
 #+BEGIN_SRC
 let identity my_rec =
@@ -322,6 +322,44 @@ let g x =
       l, is_list l -> l
     | c, is_chars c -> c
 #+END_SRC
+** Currying
+
+Top level functions can be curried. Practically speaking, this means that if
+you do not provide a function with all of its required arguments, it instead
+returns another function that takes the remaining arguments. There are some
+limitations to this:
+
+- If multiple versions of a function are defined, such as ~f/2~ and ~f/3~,
+  supplying a single argument to ~f~ would be ambiguous, so this is disallowed
+- Functions defined in ~let... in...~ bindings cannot (currently) be curried
+- When currying a function defined in another module, the function must first
+  be explicitly imported, i.e. ~other_module.my_fun "hello"~ would not work,
+  but ~import other_module.my_fun;; my_fun "hello"~ would.
+
+The latter two are limitations that should go away in future.
+
+Some examples:
+
+#+BEGIN_SRC
+
+-- Currying means we can use a 'pipe forward' operator to 'chain' expressions
+let (|>) x f = f x
+
+let add a b = a + b
+let sub a b = a - b
+
+let result () =
+  10 |> add 5 |> sub 2 |> add 19
+
+-- We can create predicates for use with higher order functions, e.g.
+let eq x y =
+  x == y
+
+-- assuming a filter/2 function that takens a predicate function and a list 'a
+let filtered_list () =
+  filter (eq 3) [1, 2, 3]
+
+#+END_SRC
 * User Defined Types:  ADTs
 We can currently specify new types by combining existing ones, creating [[https://en.wikipedia.org/wiki/Algebraic_data_type][algebraic data types (ADTs)]].  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 
@@ -341,8 +379,8 @@ type opt 'a = Some 'a | None
 
 {- Here's a map "get value by key" function that uses the new `opt` type.
    It's polymorphic in that if we give this function a `map string int`
-   and a string for `key`, the return type will be an `opt int`.  If we 
-   instead give it a `map atom (list string)` and an atom for the key, 
+   and a string for `key`, the return type will be an `opt int`.  If we
+   instead give it a `map atom (list string)` and an atom for the key,
    the return type will be `opt (list string)`.
 -}
 let map_get key the_map =
@@ -383,7 +421,7 @@ let f x =
     | f, is_float f -> :float
 #+END_SRC
 * Tests
-Support for tests inside source files is currently at its most basic with the goal of keeping unit tests alongside the functions they're testing directly rather than in a separate file.  
+Support for tests inside source files is currently at its most basic with the goal of keeping unit tests alongside the functions they're testing directly rather than in a separate file.
 
 Tests:
 
@@ -440,10 +478,10 @@ A basic example will probably help:
 let a_counting_function x =
   receive with
       "add" -> a_counting_function x + 1
-    | "sub" -> a_counting_function x - 1 
+    | "sub" -> a_counting_function x - 1
 
 {- If a_counting_function/1 is exported from the module, the following
-   will spawn a `pid string`, that is, a "process that can receive 
+   will spawn a `pid string`, that is, a "process that can receive
    strings".  Note that this is not a valid top-level entry for a module,
    we just want a few simple examples.
  -}
@@ -459,7 +497,7 @@ send :add my_pid
 The type inferencer looks at the entire call graph of the function being spawned to determine type of messages that the process is capable of receiving.  Any expression that contains a call to ~receive~ becomes a "receiver" that carries the type of messages handled so if we have something like ~let x = receive with i, is_integer i -> i~, that entire expression is a receiver.  If a function contains it like this:
 
 #+BEGIN_SRC
-let f x = 
+let f x =
   let x = receive with i, is_integer i -> i in
   i
 #+END_SRC
