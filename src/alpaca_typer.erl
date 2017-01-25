@@ -3207,12 +3207,13 @@ type_constructor_with_aliased_arrow_arg_test() ->
     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
     ?assertMatch({error, {cannot_unify,constructor,7,
-                         {adt,"intbinop",[],
-                             [{adt,"binop",
-                                  [{"a",undefined}],
-                                  [{t_arrow,[t_int,t_int],t_int}]}]},
-                         {t_arrow,[t_int,t_atom],t_rec}}},
-                  module_typ_and_parse(Invalid)).
+                          #adt{name="intbinop",
+                               vars=[],
+                               members=[#adt{name="binop",
+                                             vars=[{"a",undefined}],
+                                             members=[{t_arrow,[t_int,t_int],t_int}]}]},
+                          {t_arrow,[t_int,t_atom],t_rec}}},
+                 module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
     Code =
