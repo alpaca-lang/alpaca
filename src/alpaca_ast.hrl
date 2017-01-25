@@ -109,9 +109,9 @@
 -type alpaca_bool() :: {bool, integer(), boolean()}.
 -type alpaca_atom() :: {atom, integer(), atom()}.
 
--type alpaca_error() :: {raise_error, 
-                       integer(), 
-                       throw|error|exit, 
+-type alpaca_error() :: {raise_error,
+                       integer(),
+                       throw|error|exit,
                        alpaca_value_expression()}.
 
 %%% The variable _, meaning "don't care":
@@ -134,7 +134,7 @@
 -type alpaca_binary() :: #alpaca_binary{}.
 
 -type alpaca_bits_type() :: int | float | binary | utf8.
- 
+
 -record(alpaca_bits, {line=0 :: integer(),
                     %% Used to signal whether or not the bitstring is simply
                     %% using default size and unit values.  If it is *not*
@@ -197,7 +197,7 @@
 
 -record(t_record, {members=[] :: list(t_record_member()),
                            row_var=undefined :: typ()}).
-                           
+
 -type t_record() :: #t_record{}.
 
 %%% ADT Type Tracking
