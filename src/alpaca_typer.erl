@@ -143,7 +143,7 @@ copy_cell(Cell, RefMap) ->
             {RevMembers, Map2} = lists:foldl(F, {[], RefMap}, Members),
             {RV2, Map3} = copy_cell(RV, Map2),
             {new_cell(#t_record{members=lists:reverse(RevMembers), row_var=RV2}), Map3};
-        #adt{vars=TypeVars, members=Members, module=Mod}=ADT ->
+        #adt{vars=TypeVars, members=Members}=ADT ->
             %% copy the type variables:
             Folder = fun({TN, C}, {L, RM}) ->
                              {C2, NM} = copy_cell(C, RM),
@@ -996,7 +996,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
     %% task here instead.  Sort of want Scala's `Try`.
     ADT_f = fun({error, _}=Err) ->
                     Err;
-               (#alpaca_constructor{type=#alpaca_type{module=Mod}=T}=C) ->
+               (#alpaca_constructor{type=#alpaca_type{}=T}=C) ->
                     {C, inst_type(T, EnvIn)}
             end,
     Cons_f = fun({error, _}=Err) ->Err;
@@ -1023,7 +1023,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                     Default = {error, {bad_constructor, Line, Name}},
                     %% constructors defined in this module or imported by it:
                     Available = EnvIn#env.type_constructors,
-                    C = proplists:get_value(Name, Available, Default);
+                    proplists:get_value(Name, Available, Default);
 
                %% and the part where we go to a different module:
                (#type_constructor{line=Line, name=Name, module=Mod}) ->
@@ -1048,7 +1048,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                                               }=M <- Ms, TCN =:= Name]
                                      end,
                             case lists:flatten(lists:map(F, Types)) of
-                                [RealC|_] ->
+                                [RealC] ->
                                     RealC;
                                 [] ->
                                     throw({error, {bad_constructor, Line, Name}})
