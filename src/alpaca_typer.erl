@@ -1044,10 +1044,10 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                             %% similar manner.
                             Types = Target#alpaca_module.types,
                             F = fun(#alpaca_type{members=Ms}=AT) ->
-                                        [M#alpaca_constructor{type=AT} ||
+                                        [AC#alpaca_constructor{type=AT} ||
                                             #alpaca_constructor{
                                                name=#type_constructor{name=TCN}
-                                              }=M <- Ms, TCN =:= Name]
+                                              }=AC <- Ms, TCN =:= Name]
                                      end,
                             case lists:flatten(lists:map(F, Types)) of
                                 [RealC] ->
@@ -1928,7 +1928,7 @@ typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
             typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
     end.
 
-typ_ffi_args(Env, Lvl, {nil, _}) -> ok;
+typ_ffi_args(_Env, _Lvl, {nil, _}) -> ok;
 typ_ffi_args(Env, Lvl, #alpaca_cons{head=H, tail=T}) ->
     case typ_of(Env, Lvl, H) of
         {error, _}=Err -> Err;

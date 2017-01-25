@@ -152,8 +152,7 @@ basic_concat_compile_test() ->
 compile_and_load(Files, Opts) ->
     Compiled = compile({files, Files}, Opts),    
     LoadFolder = fun(#compiled_module{name=N, filename=FN, bytes=Bin}, Acc) ->
-                         Prefixed = list_to_atom("alpaca_" ++ atom_to_list(N)),
-                         {module, N_} = code:load_binary(N, FN, Bin),
+                         {module, _N} = code:load_binary(N, FN, Bin),
                          io:format("Loaded ~w ~s~n", [N, FN]),
                          [N|Acc]
                  end,
