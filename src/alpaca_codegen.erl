@@ -803,6 +803,20 @@ module_info_helpers_test() ->
     ?assert(is_list(Mod:module_info())),
     true = code:delete(Mod).
 
+curry_test() ->
+    Code =
+        "module autocurry\n"
+        "export main\n"
+        "let f x y = x + y\n"
+        "let main () = \n"
+        "  let f_ = f 5 in\n"
+        "  f_ 6",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_autocurry,
+    {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
+    ?assertEqual(Mod:main(unit), 11),
+    true = code:delete(Mod).
+
 unit_as_value_test() ->
     Code =
         "module unit_test\n\n"

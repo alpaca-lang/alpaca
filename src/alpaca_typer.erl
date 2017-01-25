@@ -4535,7 +4535,6 @@ expression_typing_test_() ->
                      "let g () = f in "
                      "(g ()) 2"
                     ))
-
     ].
 
 module_qualified_types_test_() ->
