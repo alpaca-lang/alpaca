@@ -322,6 +322,43 @@ let g x =
       l, is_list l -> l
     | c, is_chars c -> c
 #+END_SRC
+** Currying
+
+Top level functions can be curried. Practically speaking, this means that if
+you do not provide a function with all of its required arguments, 
+There are some limitations to this:
+
+- If multiple versions of a function are defined, such as ~f/2~ and ~f/3~, 
+  supplying a single argument to ~f~ would be ambiguous, so this is disallowed
+- Functions defined in ~let... in...~ bindings cannot (currently) be curried
+- When currying a function defined in another module, the function must first
+  be explicitly imported, i.e. ~other_module.my_fun "hello"~ would not work,
+  but ~import other_module.my_fun;; my_fun "hello"~ would.  
+
+The latter two are limitations that should go away in future.
+
+Some examples:
+
+#+BEGIN_SRC
+
+-- Currying means we can use a 'pipe forward' operator to 'chain' expressions
+let (|>) x f = f x
+
+let add a b = a + b
+let sub a b = a - b
+
+let result () =
+  10 |> add 5 |> sub 2 |> add 19
+
+-- We can create predicates for use with higher order functions, e.g.
+let eq x y =
+  x == y
+
+-- assuming a filter/2 function that takens a predicate function and a list 'a
+let filtered_list () =
+  filter (eq 3) [1, 2, 3]
+
+#+END_SRC
 * User Defined Types:  ADTs
 We can currently specify new types by combining existing ones, creating [[https://en.wikipedia.org/wiki/Algebraic_data_type][algebraic data types (ADTs)]].  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 
