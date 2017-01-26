@@ -29,7 +29,7 @@ BRK = \n(\n)+
 FLOAT_MATH = (\+\.)|(\-\.)|(\*\.)|(\/\.)
 TYPE_CHECK = is_integer|is_float|is_atom|is_bool|is_list|is_string|is_chars|is_pid|is_binary
 
-BASE_TYPE = atom|int|float|string|bool|binary
+BASE_TYPE = atom|int|float|string|bool|binary|chars
 BASE_LIST = list
 BASE_MAP = map
 BASE_PID = pid

@@ -158,6 +158,7 @@ type_expr -> '[' type_list ']' '->' type_expr :
 type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
+type_expr -> unit : t_unit.
 type_expr -> base_list type_expr:
   {alpaca_list, '$2'}.
 type_expr -> base_map type_expr type_expr : {alpaca_map, '$2', '$3'}.
@@ -669,6 +670,8 @@ is_literal({boolean, _, _}) -> true;
 is_literal({chars, _, _}) -> true;
 is_literal({alpaca_tuple, _, _, Members}) ->
     all_literals(Members);
+is_literal({unit, _}) ->
+    true;
 is_literal(_) -> false.
 
 all_literals([]) -> true;

@@ -2,9 +2,12 @@ module values
 
 export test_values/1
 
-type simple_adt = AnInt int | AString string
+type simple_adt = AnInt int | AString string | AFloat float |
+                  ARecord { x: int } | ABinary binary | AList (list int) |
+                  AnADT simple_adt | AnAtom atom | ABool bool | Chars chars |
+                  ATuple (int, string) | Unit ()
 
-let test_int = 41 
+let test_int = 41
 let test_string = "Vicugna pacos"
 let test_float = 0.5
 let test_record = {x = 19}
@@ -15,6 +18,20 @@ let test_atom = :nope
 let test_bool = true
 let test_chars = c"x"
 let test_tuple = (100, "100")
+let test_unit = ()
+
+let wrapped_int = AnInt 41
+let wrapped_string = AString "Vicugna pacos"
+let wrapped_float = AFloat 0.5
+let wrapped_record = ARecord {x = 19}
+let wrapped_binary = ABinary <<1: size=8, 2: size=8>>
+let wrapped_array = AList [1, 2, 3, 4]
+let wrapped_adt = AnADT (AnInt 5)
+let wrapped_atom = AnAtom :nope
+let wrapped_bool = ABool true
+let wrapped_chars = Chars c"x"
+let wrapped_tuple = ATuple (100, "100")
+let wrapped_unit = Unit ()
 
 -- Note the use of the value of test_int in an expression
 let test_values () = (test_int + 1, test_string)
