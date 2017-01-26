@@ -431,9 +431,9 @@ gen_expr(Env, #alpaca_tuple{values=Vs}) ->
                                       {E2, [V2|VV]}
                               end, {Env, []}, Vs),
     {Env2, cerl:c_tuple(lists:reverse(Vs2))};
-gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=none}) ->
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=none}) ->
     {Env, cerl:c_atom(N)};
-gen_expr(Env, #alpaca_type_apply{name={type_constructor, _, N}, arg=A}) ->
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=A}) ->
     {Env2, AExp} = gen_expr(Env, A),
     {Env2, cerl:c_tuple([cerl:c_atom(N), AExp])};
 %% Expressions, Clauses
@@ -803,6 +803,17 @@ module_info_helpers_test() ->
     ?assert(is_list(Mod:module_info())),
     true = code:delete(Mod).
 
+unit_as_value_test() ->
+    Code =
+        "module unit_test\n\n"
+        "export return_unit/1\n\n"
+        "let return_unit () = ()\n\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_unit_test,
+    {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
+    ?assertEqual({}, Mod:return_unit({})),
+    true = code:delete(Mod).
+
 curry_test() ->
     Code =
         "module autocurry\n"
@@ -815,17 +826,6 @@ curry_test() ->
     Mod = alpaca_autocurry,
     {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
     ?assertEqual(Mod:main(unit), 11),
-    true = code:delete(Mod).
-
-unit_as_value_test() ->
-    Code =
-        "module unit_test\n\n"
-        "export return_unit/1\n\n"
-        "let return_unit () = ()\n\n",
-    {ok, _, Bin} = parse_and_gen(Code),
-    Mod = alpaca_unit_test,
-    {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
-    ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
 
 -endif.
