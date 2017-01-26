@@ -99,12 +99,6 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 %% Binaries
 << : {token, {bin_open, TokenLine}}.
 >> : {token, {bin_close, TokenLine}}.
-unit : {token, {bin_unit, TokenLine}}.
-size : {token, {bin_size, TokenLine}}.
-end : {token, {bin_end, TokenLine}}.
-sign : {token, {bin_sign, TokenLine}}.
-big|little|native : {token, {bin_endian, TokenLine, TokenChars}}.
-utf8 : {token, {bin_text_encoding, TokenChars}}.
 
 %% Symbol
 {SYM}  : {token, {symbol, TokenLine, TokenChars}}.

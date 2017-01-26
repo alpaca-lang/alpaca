@@ -72,7 +72,7 @@ boolean int float atom string chars '_'
 symbol infixable '.'
 assign int_math float_math minus plus
 '[' ']' cons_infix ':'
-bin_open bin_close bin_unit bin_size bin_end bin_endian bin_sign bin_text_encoding
+bin_open bin_close
 open_brace close_brace
 map_open map_arrow
 match with '|' '->'
@@ -260,15 +260,37 @@ cons -> '[' literal_cons_items ']':
 
 %% -----  Binaries  --------------------
 bin_qualifier -> type_declare assign base_type : '$3'.
-bin_qualifier -> type_declare assign bin_text_encoding : '$3'.
-bin_qualifier -> bin_unit assign int : {unit, '$3'}.
-bin_qualifier -> bin_size assign int : {size, '$3'}.
-bin_qualifier -> bin_end assign bin_endian : '$3'.
-bin_qualifier -> bin_sign assign boolean :
-  case '$3' of
-      {boolean, L, true} -> {bin_sign, L, "signed"};
-      {boolean, L, false} -> {bin_sign, L, "unsigned"}
-  end.
+bin_qualifier -> type_declare assign symbol :
+    {symbol, L, S} = '$3',
+    case S of
+        "utf8" -> {bin_text_encoding, S};
+        _      -> return_error(L, {invalid_bin_text_encoding, S})
+    end.
+bin_qualifier -> symbol assign int :
+    {symbol, L, S} = '$1',
+    case S of
+        "size" -> {size, '$3'};
+        "unit" -> {unit, '$3'};
+        _      -> return_error(L, {invalid_bin_qualifier, S})
+    end.
+bin_qualifier -> symbol assign boolean :
+    {symbol, L, S} = '$1',
+    case {S, '$3'} of
+        {"sign", {boolean, L, true}}  -> {bin_sign, L, "signed"};
+        {"sign", {boolean, L, false}} -> {bin_sign, L, "unsigned"};
+        {_, _}                        ->
+            return_error(L, {invalid_bin_qualifier, S})
+    end.
+bin_qualifier -> symbol assign symbol :
+    {symbol, _, K} = '$1',
+    {symbol, L, V} = '$3',
+    case {K, V} of
+        {"end", "big"}    -> {bin_endian, L, V};
+        {"end", "little"} -> {bin_endian, L, V};
+        {"end", "native"} -> {bin_endian, L, V};
+        {"end", _}        -> return_error(L, {invalid_endianess, V});
+        {_, _}            -> return_error(L, {invalid_bin_qualifier, V})
+    end.
 
 bin_qualifiers -> bin_qualifier : ['$1'].
 bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
