@@ -177,11 +177,11 @@ to_binary({construct, Constructor, Of}) ->
 to_binary({union, OfTypes}) ->
     lists:join($|, [to_binary(Type) || Type <- OfTypes]);
 to_binary({list, Of}) ->
-    [<<"list">>, to_binary(Of)];
+    [<<"list">>, $(, to_binary(Of), $)];
 to_binary({map, KeyType, ValueType}) ->
-    [<<"map">>, $(, to_binary(KeyType), $), to_binary(ValueType)];
+    [<<"map">>, $(, to_binary(KeyType), $), $(, to_binary(ValueType), $)];
 to_binary({pid, Of}) ->
-    [<<"pid">>, to_binary(Of)];
+    [<<"pid">>, $(, to_binary(Of), $)];
 to_binary({tuple, OfTypes}) ->
     [$(, lists:join($,, [to_binary(Type) || Type <- OfTypes]), $)];
 to_binary({record, Keys, OfTypes}) ->
