@@ -182,6 +182,7 @@ sub_type_expr -> symbol :
 sub_type_expr -> type_tuple : '$1'.
 sub_type_expr -> '(' type_expr ')': '$2'.
 sub_type_expr -> '[' type_list ']' '->' type_expr :
+
     {t_arrow, '$2', '$5'}.
 sub_type_expr -> base_type :
   {base_type, _, T} = '$1',
