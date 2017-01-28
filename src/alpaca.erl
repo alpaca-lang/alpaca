@@ -397,4 +397,11 @@ curry_import_export_test() ->
     code:delete(M1),
     code:delete(M2).
 
+throw_with_variables_test() ->
+    Files = ["test_files/asserts.alp"],
+    [M] = compile_and_load(Files, []),
+    ?assertEqual(true, M:assert_equal(2, 2)),
+    ?assertThrow({not_equal, 1, 2}, M:assert_equal(1, 2)),
+    code:delete(M).
+
 -endif.

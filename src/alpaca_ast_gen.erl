@@ -710,6 +710,9 @@ rename_bindings(Env, M, #alpaca_clause{pattern=P, guards=Gs, result=R}=Clause) -
                     end
             end
     end;
+rename_bindings(Env, Map, {raise_error, Line, Kind, Expr}) ->
+    {Env2, Map2, Expr2} = rename_bindings(Env, Map, Expr),
+    {Env2, Map2, {raise_error, Line, Kind, Expr2}};
 rename_bindings(Env, Map, Expr) ->
     {Env, Map, Expr}.
 
