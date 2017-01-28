@@ -1594,6 +1594,48 @@ type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
 
 
+ambiguous_type_expressions_test() ->
+    ?assertMatch({ok, {alpaca_type,undefined,
+                         {type_name,1,"my_map"},
+                         [],
+                         [{alpaca_map,
+                              {alpaca_type,undefined,
+                                  {type_name,1,"foo"},
+                                  [],[]},
+                              t_atom}]}},
+                 test_parse("type my_map = map foo atom")),
+    ?assertMatch({error, _}, test_parse("type my_map = map foo bar atom")),
+    ?assertMatch({error, _}, test_parse("type my_list = list foo atom")),
+    ?assertMatch({error, _}, test_parse("type my_pid = pid foo atom")),
+    ?assertMatch({ok, {alpaca_type,undefined,
+                         {type_name,1,"my_type"},
+                         [],
+                         [{alpaca_type,undefined,
+                              {type_name,1,"foo"},
+                              [],
+                              [{alpaca_type,undefined,
+                                   {type_name,1,"bar"},
+                                   [],[]},
+                               {alpaca_type,undefined,
+                                   {type_name,1,"baz"},
+                                   [],[]}]}]}},
+                 test_parse("type my_type = foo bar baz")),
+    ?assertMatch({ok, {alpaca_type,undefined,
+                         {type_name,1,"my_type"},
+                         [],
+                         [{alpaca_type,undefined,
+                           {type_name,1,"foo"},
+                           [],
+                           [{alpaca_type,undefined,
+                             {type_name,1,"bar"},
+                             [],
+                             [{alpaca_type,undefined,
+                               {type_name,1,"baz"},
+                               [],[]}]}]}]}},
+                 test_parse("type my_type = foo (bar baz)")).
+
+
+
 expand_exports_test_() ->
     [fun() ->
              Def = fun(Name, Arity) ->

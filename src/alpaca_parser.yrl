@@ -18,7 +18,7 @@ comment
 op infix
 const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
-type_expressions type_tuple comma_separated_type_list type_list
+sub_type_expr type_expressions type_tuple comma_separated_type_list type_list
 type_apply
 type_import type_export types_to_export
 
@@ -126,8 +126,8 @@ type_export -> export_type types_to_export :
 
 module_def -> module atom : {module, '$1'}.
 
-type_expressions -> type_expr : ['$1'].
-type_expressions -> type_expr type_expressions : ['$1'|'$2'].
+type_expressions -> sub_type_expr : ['$1'].
+type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
 
 poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
@@ -145,24 +145,26 @@ record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'
 record_type -> open_brace record_type_members close_brace : 
   #t_record{members='$2'}.
 
-type_expr -> type_var : '$1'.
-type_expr -> record_type : '$1'.
 type_expr -> poly_type : '$1'.
-type_expr -> symbol :
+type_expr -> sub_type_expr : '$1'.
+
+sub_type_expr -> type_var : '$1'.
+sub_type_expr -> record_type : '$1'.
+sub_type_expr -> symbol :
   {symbol, L, N} = '$1',
   #alpaca_type{name={type_name, L, N}, vars=[]}. % not polymorphic
-type_expr -> type_tuple : '$1'.
-type_expr -> '(' type_expr ')': '$2'.
-type_expr -> '[' type_list ']' '->' type_expr :
+sub_type_expr -> type_tuple : '$1'.
+sub_type_expr -> '(' type_expr ')': '$2'.
+sub_type_expr -> '[' type_list ']' '->' type_expr :
     {t_arrow, '$2', '$5'}.
-type_expr -> base_type :
+sub_type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
-type_expr -> unit : t_unit.
-type_expr -> base_list type_expr:
+sub_type_expr -> unit : t_unit.
+type_expr -> base_list sub_type_expr:
   {alpaca_list, '$2'}.
-type_expr -> base_map type_expr type_expr : {alpaca_map, '$2', '$3'}.
-type_expr -> base_pid type_expr :
+sub_type_expr -> base_map sub_type_expr sub_type_expr : {alpaca_map, '$2', '$3'}.
+sub_type_expr -> base_pid sub_type_expr :
   {alpaca_pid, '$2'}.
 
 type_list -> comma_separated_type_list : '$1'.
@@ -204,8 +206,6 @@ type -> type_declare symbol assign type_members :
 poly_type_decl -> symbol type_vars :
   {symbol, L, N} = '$1',
   #alpaca_type{name={type_name, L, N}, vars='$2'}.
-poly_type -> poly_type type_vars :
-  '$1'#alpaca_type{vars='$1'#alpaca_type.vars ++ ['$2']}.
 
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
