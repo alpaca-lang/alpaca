@@ -365,7 +365,9 @@ base_types() ->
      <<"float">>,
      <<"string">>,
      <<"bool">>,
-     <<"binary">>
+     <<"binary">>,
+     <<"chars">>,
+     <<"()">>
     ].
 
 is_unique(List) ->
