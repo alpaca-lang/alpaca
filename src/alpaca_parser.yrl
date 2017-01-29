@@ -135,19 +135,13 @@ poly_type -> symbol type_expressions :
   Members = '$2',
 
   %% Any concrete type in the type_expressions gets a synthesized variable name:
-  F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
-              {[V|Vs], VarNum};
-         (Expr, {Vs, VarNum}) ->
-              VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
-              {[{{type_var, L, VN}, Expr}|Vs], VarNum + 1}
-      end,
-  {Vars, _} = lists:foldl(F, {[], 0}, Members),
+  Vars = make_vars_for_concrete_types('$2', L),
 
   #alpaca_type{
      line = L,
      name = {type_name, L, N}, 
      members = Members, 
-     vars = lists:reverse(Vars)}.
+     vars = Vars}.
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, _L, N} = '$1',
@@ -174,19 +168,13 @@ module_qualified_type -> module_qualified_type_name :
 module_qualified_type -> module_qualified_type_name type_expressions:
   {module_qualified_type_name, L, Mod, Name} = '$1',
   %% Any concrete type in the type_expressions gets a synthesized variable name:
-  F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
-              {[V|Vs], VarNum};
-         (Expr, {Vs, VarNum}) ->
-              VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
-              {[{{type_var, L, VN}, Expr}|Vs], VarNum + 1}
-      end,
-  {Vars, _} = lists:foldl(F, {[], 0}, '$2'),
+  Vars = make_vars_for_concrete_types('$2', L),
 
   #alpaca_type{
      line = L,
      module = list_to_atom(Mod),
      name = {type_name, L, Name},
-     vars = lists:reverse(Vars)}.
+     vars = Vars}.
 
 type_expr -> poly_type : '$1'.
 type_expr -> module_qualified_type : '$1'.
@@ -785,3 +773,13 @@ add_qualifier(#alpaca_bits{}=B, {bin_text_encoding, Enc}) ->
     B#alpaca_bits{type=list_to_atom(Enc)};
 add_qualifier(#alpaca_bits{}=B, {bin_sign, _, S}) ->
     B#alpaca_bits{sign=list_to_atom(S)}.
+
+make_vars_for_concrete_types(Vars, Line) ->
+    F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
+                {[V|Vs], VarNum};
+           (Expr, {Vs, VarNum}) ->
+                VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
+                {[{{type_var, Line, VN}, Expr}|Vs], VarNum + 1}
+        end,
+    {Vs, _} = lists:foldl(F, {[], 0}, Vars),
+    lists:reverse(Vs).
