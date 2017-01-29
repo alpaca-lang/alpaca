@@ -4705,6 +4705,68 @@ concrete_type_parameters_test_() ->
                  "let f () = Uses Some 1.0",
              ?assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
                           module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Option =
+                 "module option "
+                 "export_type option "
+                 "type option 'a = Some 'a | None",
+
+             UsesOption =
+                 "module uses_option "
+                 "type int_opt = IntOpt option.option int "
+                 "let make_opt x = IntOpt option.Some x",
+
+             ImportsOption =
+                 "module imports_option "
+                 "import_type option.option "
+                 "type int_opt = IntOpt option int "
+                 "let make_opt x = IntOpt Some x",
+
+             Mods1 = alpaca_ast_gen:make_modules([Option, UsesOption]),
+             Mods2 = alpaca_ast_gen:make_modules([Option, ImportsOption]),
+
+             ?assertMatch({ok,
+                           [#alpaca_module{
+                               name=uses_option,
+                               types=[#alpaca_type{
+                                         members=[#alpaca_constructor{
+                                                     arg=#alpaca_type{
+                                                            name={_, _, "option"},
+                                                            module=option,
+                                                            vars=[{_, t_int}]
+                                                           }}]}],
+                               functions=[#alpaca_fun_def{
+                                             type={t_arrow,
+                                                   [t_int],
+                                                   #adt{
+                                                      name="int_opt",
+                                                      module=uses_option
+                                                     }}
+                                            }]
+                              },
+                            #alpaca_module{}]},
+                          type_modules(Mods1)),
+             ?assertMatch({ok,
+                           [#alpaca_module{
+                               name=imports_option,
+                               types=[#alpaca_type{
+                                         members=[#alpaca_constructor{
+                                                     arg=#alpaca_type{
+                                                            name={_, _, "option"},
+                                                            vars=[{_, t_int}]
+                                                           }}]}],
+                               functions=[#alpaca_fun_def{
+                                             type={t_arrow,
+                                                   [t_int],
+                                                   #adt{
+                                                      name="int_opt",
+                                                      module=imports_option
+                                                     }}
+                                            }]
+                              },
+                            #alpaca_module{}]},
+                          type_modules(Mods2))
      end
     ].
 

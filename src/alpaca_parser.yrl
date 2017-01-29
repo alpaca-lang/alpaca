@@ -173,11 +173,20 @@ module_qualified_type -> module_qualified_type_name :
 
 module_qualified_type -> module_qualified_type_name type_expressions:
   {module_qualified_type_name, L, Mod, Name} = '$1',
+  %% Any concrete type in the type_expressions gets a synthesized variable name:
+  F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
+              {[V|Vs], VarNum};
+         (Expr, {Vs, VarNum}) ->
+              VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
+              {[{{type_var, L, VN}, Expr}|Vs], VarNum + 1}
+      end,
+  {Vars, _} = lists:foldl(F, {[], 0}, '$2'),
+
   #alpaca_type{
      line = L,
      module = list_to_atom(Mod),
      name = {type_name, L, Name},
-     vars = [V || {type_var, _, _}=V <- '$2']}.
+     vars = lists:reverse(Vars)}.
 
 type_expr -> poly_type : '$1'.
 type_expr -> module_qualified_type : '$1'.
