@@ -133,12 +133,21 @@ type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
 poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
   Members = '$2',
-  Vars = [V || {type_var, _, _}=V <- Members],
+
+  %% Any concrete type in the type_expressions gets a synthesized variable name:
+  F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
+              {[V|Vs], VarNum};
+         (Expr, {Vs, VarNum}) ->
+              VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
+              {[{{type_var, L, VN}, Expr}|Vs], VarNum + 1}
+      end,
+  {Vars, _} = lists:foldl(F, {[], 0}, Members),
+
   #alpaca_type{
      line = L,
      name = {type_name, L, N}, 
      members = Members, 
-     vars = Vars}.
+     vars = lists:reverse(Vars)}.
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, _L, N} = '$1',

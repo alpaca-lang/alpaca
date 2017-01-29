@@ -869,7 +869,12 @@ inst_type(Typ, EnvIn) ->
     #alpaca_type{name={type_name, _, N}, module=Mod, vars=Vs, members=Ms} = Typ,
     VarFolder = fun({type_var, _, VN}, {Vars, E}) ->
                         {TVar, E2} = new_var(0, E),
-                        {[{VN, TVar}|Vars], E2}
+                        {[{VN, TVar}|Vars], E2};
+                   ({{type_var, _, VN}, Expr}, {Vars, E}) ->
+                        %% copy_cell/1 should put every nested member properly
+                        %% into its own reference cell:
+                        {Celled, _} = copy_cell(Expr, maps:new()),
+                        {[{VN, Celled}|Vars], E}
                 end,
     {Vars, Env} = lists:foldl(VarFolder, {[], EnvIn}, Vs),
     ParentADT = #adt{name=N, module=Mod, vars=lists:reverse(Vars)},
@@ -940,6 +945,7 @@ inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
         {error, _}=Err -> Err;
         Typ -> inst_type_members(ADT, T, Env, [Typ|Memo])
     end;
+
 inst_type_members(ADT, [#alpaca_type_tuple{members=Ms}|T], Env, Memo) ->
     case inst_type_members(ADT, Ms, Env, []) of
         {error, _}=Err ->
@@ -1104,10 +1110,15 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
                     false -> Vars
                 end,
 
-    ADT_vars = [{VN, proplists:get_value(VN, Vs)} || {type_var, _, VN} <- VarsToUse],
+    F = fun({type_var, _, VN}) ->
+                {VN, proplists:get_value(VN, Vs)};
+           ({{type_var, _, _}, _}=ConcreteType) ->
+                ConcreteType
+        end,
+    ADT_Vars = lists:map(F, VarsToUse),
     Vs2 = replace_vars(M1, V2, Vs),
     Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
-    new_cell(#adt{name=N, vars=ADT_vars, members=Members, module=Mod});
+    new_cell(#adt{name=N, vars=ADT_Vars, members=Members, module=Mod});
 
 inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types) ->
     InstantiatedArgs =  [ inst_constructor_arg(A, Vs, Types) || A <- ArgTypes ],
@@ -3210,7 +3221,7 @@ type_constructor_with_aliased_arrow_arg_test() ->
                          #adt{name="intbinop",
                               vars=[],
                               members=[#adt{name="binop",
-                                            vars=[{"a",undefined}],
+                                            vars=[{_, t_int}],
                                             members=[{t_arrow,[t_int,t_int],t_int}]}]},
                           {t_arrow,[t_int,t_atom],t_rec}}},
                   module_typ_and_parse(Invalid)).
@@ -4667,6 +4678,34 @@ curry_applications_test_() ->
             {error, {ambiguous_curry, _, _, _}},
             module_typ_and_parse(Code))
     end
+    ].
+
+%% For issue #113, we want to be able to define a polymorphic type and use it
+%% as a member in another type but with a concrete type rather than variables,
+%% e.g.
+%%
+%% type option 'a = Some 'a | None
+%% type int_option = option 'a
+%%
+concrete_type_parameters_test_() ->
+    [fun() ->
+             Code =
+                 "module concrete_option\n"
+                 "type opt 'a = Some 'a | None\n"
+                 "type uses_opt = Uses opt int\n"
+                 "let f () = Uses Some 1",
+             ?assertMatch({ok, #alpaca_module{}},
+                          module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code =
+                 "module should_not_unify "
+                 "type opt 'a = Some 'a | None "
+                 "type uses_opt = Uses opt int "
+                 "let f () = Uses Some 1.0",
+             ?assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+                          module_typ_and_parse(Code))
+     end
     ].
 
 -endif.

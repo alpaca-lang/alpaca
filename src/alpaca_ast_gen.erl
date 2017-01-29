@@ -1616,7 +1616,10 @@ ambiguous_type_expressions_test() ->
                          vars=[],
                          members=[#alpaca_type{
                                      name={type_name,1,"foo"},
-                                     vars=[],
+                                     vars=[{_, #alpaca_type{
+                                                  name={type_name, _, "bar"}}},
+                                           {_, #alpaca_type{
+                                                  name={type_name, _, "baz"}}}],
                                      members=[#alpaca_type{
                                                  name={type_name,1,"bar"},
                                                  vars=[],
@@ -1631,10 +1634,15 @@ ambiguous_type_expressions_test() ->
                          vars=[],
                          members=[#alpaca_type{
                                      name={type_name,1,"foo"},
-                                     vars=[],
+                                     vars=[{_,
+                                            #alpaca_type{
+                                               name={type_name, _, "bar"},
+                                               vars=[{_,
+                                                      #alpaca_type{
+                                                        name={_, _, "baz"}}}]}}],
                                      members=[#alpaca_type{
                                                  name={type_name,1,"bar"},
-                                                 vars=[],
+                                                 vars=[_],
                                                  members=[#alpaca_type{
                                                              name={type_name,1,"baz"},
                                                              vars=[],
