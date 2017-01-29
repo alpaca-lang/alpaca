@@ -5,4 +5,4 @@ export assert_equal/2
 let assert_equal a b =
   match (a == b) with
       true  -> true
-    | false -> throw (:not_equal, a, b)  
+    | false -> throw (:not_equal, a, b)
