@@ -657,14 +657,14 @@ unify_adt(_C1, _C2,
     case lists:filter(MemberFilter(NB), UnpackMembers(MA)) of
         [#adt{vars=ToCheck}] ->
             UnifyFun = fun(_, {error, _}=Err)    -> Err;
-                          ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
+                          ({{_, X}, {_, Y}}, ok) -> unify(X, Y, Env, L)
                        end,
             lists:foldl(UnifyFun, ok, lists:zip(VarsB, ToCheck));
         _ ->
             case lists:filter(MemberFilter(NA), UnpackMembers(MB)) of
                 [#adt{vars=ToCheck}] ->
                     UnifyFun = fun(_, {error, _}=Err)    -> Err;
-                                  ({{_, X}, {_, Y}}, ok) -> unify(L, X, Y, Env)
+                                  ({{_, X}, {_, Y}}, ok) -> unify(X, Y, Env, L)
                                end,
                     lists:foldl(UnifyFun, ok, lists:zip(VarsA, ToCheck));
                 _ ->
@@ -4767,6 +4767,27 @@ concrete_type_parameters_test_() ->
                               },
                             #alpaca_module{}]},
                           type_modules(Mods2))
+     end,
+     %% From @danabr's example on PR #116
+     fun() ->
+             Code =
+                 "module int_opt \n"
+                 "type opt 'a = Some 'a | None \n"
+                 "type int_opt = opt int \n"
+                 "type indirect = Indirect int_opt \n"
+                 "let deconstruct (Indirect opt) = \n"
+                 "match opt with \n"
+                 "(Some 1) -> :blah \n",
+
+             ?assertMatch({ok,
+                           #alpaca_module{
+                              functions=[#alpaca_fun_def{
+                                            type={t_arrow,
+                                                  [#adt{name="indirect"}],
+                                                  t_atom}
+                                           }]
+                             }},
+                          module_typ_and_parse(Code))
      end
     ].
 
