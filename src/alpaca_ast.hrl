@@ -231,7 +231,8 @@
           line=0 :: integer(),
           module=undefined :: atom(),
           name={type_name, -1, ""} :: alpaca_type_name(),
-          vars=[]                  :: list(alpaca_type_var()),
+          vars=[]                  :: list(alpaca_type_var()
+                                           | {alpaca_type_var(), typ()}),
           members=[]               :: list(alpaca_constructor()
                                            | alpaca_type_var()
                                            | alpaca_types())
