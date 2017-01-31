@@ -1049,12 +1049,22 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                             %% looking for and insert the ADT itself in a
                             %% similar manner.
                             Types = Target#alpaca_module.types,
-                            F = fun(#alpaca_type{members=Ms}=AT) ->
-                                        [AC#alpaca_constructor{type=AT} ||
-                                            #alpaca_constructor{
-                                               name=#type_constructor{name=TCN}
-                                              }=AC <- Ms, TCN =:= Name]
-                                     end,
+                            Exports = Target#alpaca_module.type_exports,
+
+                            F = fun(#alpaca_type{members=Ms, name={_, _, TypeN}}=AT) ->
+                                        Cs = [AC#alpaca_constructor{type=AT} ||
+                                                 #alpaca_constructor{
+                                                    name=#type_constructor{name=TCN}
+                                                   }=AC <- Ms, TCN =:= Name],
+
+                                        %% Now we make sure the type that the
+                                        %% constructor belongs to is actually
+                                        %% exported:
+                                        case [E || E <- Exports, E =:= TypeN] of
+                                            []  -> [];
+                                            [_] -> Cs
+                                        end
+                                end,
                             case lists:flatten(lists:map(F, Types)) of
                                 [RealC] ->
                                     RealC;
@@ -4789,6 +4799,60 @@ concrete_type_parameters_test_() ->
                              }},
                           module_typ_and_parse(Code))
      end
+    ].
+
+ensure_private_types_cant_import_test_() ->
+    [fun() ->
+             PrivateOptions =
+                 "module private_option \n"
+                 "type opt 'a = Some 'a | None \n",
+
+             ImportOption =
+                 "module import_option \n"
+                 "import_type private_option.opt",
+
+             UsesOption =
+                 "module uses_option \n"
+                 "type nested_int_opt = Nested opt.opt int \n"
+                 "let nest x = Nested x",
+
+             Mods1 = alpaca_ast_gen:make_modules([PrivateOptions, ImportOption]),
+             Mods2 = alpaca_ast_gen:make_modules([PrivateOptions, UsesOption]),
+             ?assertMatch({error, {unexported_type, _, _, "opt"}},
+                          type_modules(Mods1)),
+             ?assertMatch({ok, [_, _]}, type_modules(Mods2))
+     end
+     %% Make sure exporting a type containing a private type doesn't leak the
+     %% private type's constructors:
+    , fun() ->
+              Exported =
+                  "module exported \n"
+                  "export_type b \n"
+                  "type a 'a = A 'a \n"
+                  "type b = B a int",
+              UsesB =
+                  "module uses_b \n"
+                  "import_type exported.b \n"
+                  "let use_a x = A x",
+
+              Mods = alpaca_ast_gen:make_modules([Exported, UsesB]),
+              ?assertMatch({error, {bad_constructor, _, "A"}},
+                           type_modules(Mods))
+      end
+
+     %% Make sure we can't access constructors in private types:
+     , fun() ->
+               PrivateType =
+                   "module private_type \n"
+                   "type a = A int \n",
+               UsesA =
+                   "module uses_a \n"
+                   "let f x = private_type.A x",
+
+               Mods = alpaca_ast_gen:make_modules([PrivateType, UsesA]),
+               ?assertMatch({error, {bad_constructor, _, "A"}},
+                            type_modules(Mods))
+       end
     ].
 
 -endif.
