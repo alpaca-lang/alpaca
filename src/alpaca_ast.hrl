@@ -175,17 +175,12 @@
          }).
 -type alpaca_type_tuple() :: #alpaca_type_tuple{}.
 
-%% Explicit built-in list type for use in ADT definitions.
--type alpaca_list_type() :: {alpaca_list,
-                           alpaca_base_type()|alpaca_poly_type()}.
-
 -type alpaca_map_type() :: {alpaca_map,
                           alpaca_base_type()|alpaca_poly_type(),
                           alpaca_base_type()|alpaca_poly_type()}.
 
 -type alpaca_poly_type() :: alpaca_type()
                         | alpaca_type_tuple()
-                        | alpaca_list_type()
                         | alpaca_map_type().
 
 %%% ### Record Type Tracking
@@ -224,7 +219,6 @@
 -type alpaca_types() :: alpaca_type()
                     | alpaca_type_tuple()
                     | alpaca_base_type()
-                    | alpaca_list_type()
                     | alpaca_map_type().
 
 -record(alpaca_type, {
