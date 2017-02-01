@@ -1045,7 +1045,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                     M = [AM || #alpaca_module{name=N}=AM <- Mods, Mod =:= N],
                     case M of
                         [] ->
-                            #alpaca_module{module=MN} = Env#env.current_module,
+                            #alpaca_module{name=MN} = EnvIn#env.current_module,
                             throw({error, {bad_module, MN, Line, Mod}});
                         [Target] ->
                             %% in the beginning of typing, constructors/1 links
@@ -1463,7 +1463,7 @@ validate_types(MN, Ts, Mods, [#alpaca_type{}=T|Rem]) ->
 validate_types(MN, Ts, Mods, [#t_record{members=Ms}|T]) ->
     MemberTypes = [Type || #t_record_member{type=Type} <- Ms],
     validate_types(MN, Ts, Mods, MemberTypes ++ T);
-validate_types(M, TNs, Mods, [{alpaca_list, LT}|T]) ->
+validate_types(M, TNs, Mods, [{t_list, LT}|T]) ->
     [] = validate_types(M, TNs, Mods, [LT|T]),
     validate_types(M, TNs, Mods, T);
 validate_types(M, TNs, Mods, [{alpaca_map, KT, VT}|T]) ->
@@ -4677,7 +4677,7 @@ module_qualified_types_test_() ->
                    "module m "
                    "let f n.A x = x + 1",
                [M] = alpaca_ast_gen:make_modules([Code]),
-               ?assertMatch({error, {bad_module, 1, n}}, type_modules([M]))
+               ?assertMatch({error, {bad_module, m, 1, n}}, type_modules([M]))
        end
     ].
 
