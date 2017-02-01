@@ -888,7 +888,7 @@ inst_type_members(ParentADT, [], Env, FinishedMembers) ->
 %% single atom types are passed unchanged (built-in types):
 inst_type_members(ParentADT, [H|T], Env, Memo) when is_atom(H) ->
     inst_type_members(ParentADT, T, Env, [new_cell(H)|Memo]);
-inst_type_members(ADT, [{alpaca_list, TExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{t_list, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstMem]} ->
@@ -1097,7 +1097,7 @@ inst_constructor_arg(#alpaca_constructor{name=#type_constructor{name=N}},
     {t_adt_cons, N};
 inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types) ->
     new_cell({t_tuple, [inst_constructor_arg(M, Vs, Types) || M <- Ms]});
-inst_constructor_arg({alpaca_list, ElementType}, Vs, Types) ->
+inst_constructor_arg({t_list, ElementType}, Vs, Types) ->
     new_cell({t_list, inst_constructor_arg(ElementType, Vs, Types)});
 inst_constructor_arg({alpaca_map, KeyType, ValType}, Vs, Types) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs, Types),
@@ -3165,7 +3165,7 @@ type_constructor_test_() ->
               vars=[],
               members=[#alpaca_constructor{
                           name=#type_constructor{line=1, name="Constructor"},
-                          arg={alpaca_list, t_int}}]}])),
+                          arg={t_list, t_int}}]}])),
      ?_assertMatch(
         {{t_arrow,
           [{unbound, _, _}],
