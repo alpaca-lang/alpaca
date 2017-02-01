@@ -956,7 +956,7 @@ inst_type_members(ADT, [#alpaca_type_tuple{members=Ms}|T], Env, Memo) ->
     end;
 
 inst_type_members(ADT,
-                  [#alpaca_type{name={type_name, _, N}, vars=Vs, members=[], module=Mod}|T],
+                  [#alpaca_type{name={type_name, _, N}, vars=Vs, module=Mod}|T],
                   Env,
                   Memo) ->
     case inst_type_members(ADT, Vs, Env, []) of
@@ -966,8 +966,14 @@ inst_type_members(ADT,
             NewMember = #adt{name=N, module=Mod, vars=lists:zip(Names, Members)},
             inst_type_members(ADT, T, Env2, [NewMember|Memo])
     end;
-inst_type_members(ADT, [#alpaca_constructor{name=#type_constructor{name=N}}|T], Env, Memo) ->
+inst_type_members(ADT, [#alpaca_constructor{}=C|T], Env, Memo) ->
+    #alpaca_constructor{name=#type_constructor{name=N}, arg=A}=C,
+    %% We try to instantiate the constructor's argument just to make sure it's
+    %% fully valid, e.g. that it doesn't reference any type variables that don't
+    %% exist in the parent ADT's definition.
+    {ok, _, _, _} = inst_type_members(ADT, [A], Env, []),
     inst_type_members(ADT, T, Env, [{t_adt_cons, N}|Memo]);
+
 %% Everything else gets discared.  Type constructors are not types in their
 %% own right and thus not eligible for unification so we just discard them here:
 inst_type_members(ADT, [_|T], Env, Memo) ->
@@ -1340,6 +1346,8 @@ type_module(#alpaca_module{functions=Fs,
                         type_imports=Imports,
                         tests=Tests}=M,
            #env{modules=Modules}=Env) ->
+    [] = validate_types(M),
+
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
                       (_, [{error, _}=Err|_]) -> Err;
@@ -1403,6 +1411,52 @@ type_module_tests([], _, _, Funs) ->
     Funs;
 type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
     type_module_tests(Rem, Env, typ_of(Env, 0, E), Funs).
+
+%% Here we make a quick pass over each type defined in a module to ensure
+%% types that are members of a type are defined in this module or imported.
+validate_types(#alpaca_module{name=Mod, types=Types, type_imports=Imports}) ->
+    TypeNames =
+        [N || #alpaca_type{name={_, _, N}} <- Types] ++
+        [N || #alpaca_type_import{type=N} <- Imports],
+    validate_types(Mod, TypeNames, Types).
+
+validate_types(_ModName, _TypeNames, []) ->
+    [];
+validate_types(
+  ModName,
+  TypeNames,
+  [#alpaca_type{module=MN}=H|T]) when MN =:= undefined; MN =:= ModName ->
+    #alpaca_type{name={_, L, N}, vars=Vs, members=Ms}=H,
+    case [TN || TN <- TypeNames, TN =:= N] of
+        [] ->
+            throw({invalid_type, ModName, L, N});
+        _ ->
+            validate_types(ModName, TypeNames, Ms),
+            validate_types(ModName, TypeNames, Vs),
+            validate_types(ModName, TypeNames, T)
+    end;
+ validate_types(MN, TNs, [{{type_var, _, _}, Typ}|T]) ->
+     validate_types(MN, TNs, [Typ]),
+     validate_types(MN, TNs, T);
+ validate_types(MN, TNs, [#alpaca_constructor{arg=A}|T]) ->
+    validate_types(MN, TNs, [A]),
+    validate_types(MN, TNs, T);
+ validate_types(ModName, TypeNames, [#alpaca_type_tuple{members=Ms}|T]) ->
+    validate_types(ModName, TypeNames, Ms),
+    validate_types(ModName, TypeNames, T);
+validate_types(MN, Ts, [#t_record{members=Ms}|T]) ->
+    MemberTypes = [Type || #t_record_member{type=Type} <- Ms],
+    validate_types(MN, Ts, MemberTypes ++ T);
+validate_types(M, TNs, [{alpaca_list, LT}|T]) ->
+    [] = validate_types(M, TNs, [LT|T]),
+    validate_types(M, TNs, T);
+validate_types(M, TNs, [{alpaca_map, KT, VT}|T]) ->
+    [] = validate_types(M, TNs, [KT, VT] ++ T),
+    validate_types(M, TNs, T);
+validate_types(M, Ts, [_H|T]) ->
+    validate_types(M, Ts, T).
+
+
 
 %% In the past I returned the environment entirely but this contained mutations
 %% beyond just the counter for new type variable names.  The integer in the
@@ -2290,7 +2344,7 @@ filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
 filter_to_curryable_funs(Funs, FN, MinArity) ->
-    Pred = fun(#alpaca_fun_def{name={Symbol, _, N}, arity=Arity}) ->
+    Pred = fun(#alpaca_fun_def{name={_Symbol, _, N}, arity=Arity}) ->
                case {Arity >= MinArity, N =:= FN} of
                     {true, true} -> true;
                     _ -> false
@@ -4853,6 +4907,82 @@ ensure_private_types_cant_import_test_() ->
                ?assertMatch({error, {bad_constructor, _, "A"}},
                             type_modules(Mods))
        end
+    ].
+
+%% From issue #91, a type's members must all exist, both concrete types and
+%% type variables.
+error_on_missing_types_test_() ->
+    [fun() ->
+             Code =
+                 "module m \n"
+                 "type t = b",
+             ?assertMatch({error, {invalid_type, m, 2, "b"}},
+                          module_typ_and_parse(Code))
+     end
+     , fun() ->
+               Code =
+                   "module m \n"
+                   "type t 'a = A 'a \n"
+                   "type u = t b",
+               ?assertMatch({error, {invalid_type, m, 3, "b"}},
+                            module_typ_and_parse(Code))
+       end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T b",
+              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = (int, b)",
+              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = {x: b}",
+              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T int | list b",
+              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = map atom c",
+              ?assertMatch({error, {invalid_type, m, 2, "c"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T 'a",
+              ?assertMatch({error, {bad_variable, 2, "a"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T (int, float, 'c)",
+              ?assertMatch({error, {bad_variable, 2, "c"}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t 'a = map atom (t 'a)",
+              ?assertMatch({ok, #alpaca_module{}},
+                            module_typ_and_parse(Code))
+      end
     ].
 
 -endif.
