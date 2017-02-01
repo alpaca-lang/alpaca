@@ -1431,7 +1431,7 @@ validate_types(
     #alpaca_type{name={_, L, N}, vars=Vs, members=Ms}=H,
     case [TN || TN <- TypeNames, TN =:= N] of
         [] ->
-            throw({invalid_type, ModName, L, N});
+            throw({unknown_type, ModName, L, N});
         _ ->
             validate_types(ModName, TypeNames, Modules, Ms),
             validate_types(ModName, TypeNames, Modules, Vs),
@@ -1445,7 +1445,7 @@ validate_types(MN, Ts, Mods, [#alpaca_type{}=T|Rem]) ->
         [#alpaca_module{types=Xs}] ->
             case [X || #alpaca_type{name={_, _, Y}}=X <- Xs, Y =:= N] of
                 [] -> 
-                    throw({invalid_type, MN, L, N});
+                    throw({unknown_type, MN, L, N});
                 [_] ->
                     [] = validate_types(MN, Ts, Mods, Vs),
                     validate_types(MN, Ts, Mods, Rem)
@@ -4932,7 +4932,7 @@ error_on_missing_types_test_() ->
              Code =
                  "module m \n"
                  "type t = b",
-             ?assertMatch({error, {invalid_type, m, 2, "b"}},
+             ?assertMatch({error, {unknown_type, m, 2, "b"}},
                           module_typ_and_parse(Code))
      end
      , fun() ->
@@ -4940,42 +4940,42 @@ error_on_missing_types_test_() ->
                    "module m \n"
                    "type t 'a = A 'a \n"
                    "type u = t b",
-               ?assertMatch({error, {invalid_type, m, 3, "b"}},
+               ?assertMatch({error, {unknown_type, m, 3, "b"}},
                             module_typ_and_parse(Code))
        end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T b",
-              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, "b"}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = (int, b)",
-              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, "b"}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = {x: b}",
-              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, "b"}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T int | list b",
-              ?assertMatch({error, {invalid_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, "b"}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = map atom c",
-              ?assertMatch({error, {invalid_type, m, 2, "c"}},
+              ?assertMatch({error, {unknown_type, m, 2, "c"}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5010,7 +5010,7 @@ error_on_missing_types_test_() ->
               M1 = "module m",
               M2 = "module n \n type t = m.a",
               Mods = alpaca_ast_gen:make_modules([M1, M2]),
-              ?assertMatch({error, {invalid_type, n, 2, "a"}},
+              ?assertMatch({error, {unknown_type, n, 2, "a"}},
                             type_modules(Mods))
       end
     ].
