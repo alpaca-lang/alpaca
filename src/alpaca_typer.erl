@@ -1045,7 +1045,8 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                     M = [AM || #alpaca_module{name=N}=AM <- Mods, Mod =:= N],
                     case M of
                         [] ->
-                            throw({error, {bad_module, Line, Mod}});
+                            #alpaca_module{module=MN} = Env#env.current_module,
+                            throw({error, {bad_module, MN, Line, Mod}});
                         [Target] ->
                             %% in the beginning of typing, constructors/1 links
                             %% the actual type to the constructor contained
@@ -1346,7 +1347,7 @@ type_module(#alpaca_module{functions=Fs,
                         type_imports=Imports,
                         tests=Tests}=M,
            #env{modules=Modules}=Env) ->
-    [] = validate_types(M),
+    [] = validate_types(M, Modules),
 
     %% Fold function to yield all the imported types or report a missing one.
     ImportFolder = fun(_, {error, _}=Err) -> Err;
@@ -1414,47 +1415,62 @@ type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
 
 %% Here we make a quick pass over each type defined in a module to ensure
 %% types that are members of a type are defined in this module or imported.
-validate_types(#alpaca_module{name=Mod, types=Types, type_imports=Imports}) ->
+validate_types(#alpaca_module{name=Mod, types=Types, type_imports=Imports}, Mods) ->
     TypeNames =
         [N || #alpaca_type{name={_, _, N}} <- Types] ++
         [N || #alpaca_type_import{type=N} <- Imports],
-    validate_types(Mod, TypeNames, Types).
+    validate_types(Mod, TypeNames, Mods, Types).
 
-validate_types(_ModName, _TypeNames, []) ->
+validate_types(_ModName, _TypeNames, _Modules, []) ->
     [];
 validate_types(
   ModName,
   TypeNames,
+  Modules,
   [#alpaca_type{module=MN}=H|T]) when MN =:= undefined; MN =:= ModName ->
     #alpaca_type{name={_, L, N}, vars=Vs, members=Ms}=H,
     case [TN || TN <- TypeNames, TN =:= N] of
         [] ->
             throw({invalid_type, ModName, L, N});
         _ ->
-            validate_types(ModName, TypeNames, Ms),
-            validate_types(ModName, TypeNames, Vs),
-            validate_types(ModName, TypeNames, T)
+            validate_types(ModName, TypeNames, Modules, Ms),
+            validate_types(ModName, TypeNames, Modules, Vs),
+            validate_types(ModName, TypeNames, Modules, T)
     end;
- validate_types(MN, TNs, [{{type_var, _, _}, Typ}|T]) ->
-     validate_types(MN, TNs, [Typ]),
-     validate_types(MN, TNs, T);
- validate_types(MN, TNs, [#alpaca_constructor{arg=A}|T]) ->
-    validate_types(MN, TNs, [A]),
-    validate_types(MN, TNs, T);
- validate_types(ModName, TypeNames, [#alpaca_type_tuple{members=Ms}|T]) ->
-    validate_types(ModName, TypeNames, Ms),
-    validate_types(ModName, TypeNames, T);
-validate_types(MN, Ts, [#t_record{members=Ms}|T]) ->
+validate_types(MN, Ts, Mods, [#alpaca_type{}=T|Rem]) ->
+    #alpaca_type{name={_, L, N}, module=TargetMod, vars=Vs} = T,
+    case [M || #alpaca_module{name=X}=M <- Mods, X =:= TargetMod] of
+        [] -> 
+            throw({bad_module, MN, L, TargetMod});
+        [#alpaca_module{types=Xs}] ->
+            case [X || #alpaca_type{name={_, _, Y}}=X <- Xs, Y =:= N] of
+                [] -> 
+                    throw({invalid_type, MN, L, N});
+                [_] ->
+                    [] = validate_types(MN, Ts, Mods, Vs),
+                    validate_types(MN, Ts, Mods, Rem)
+            end
+    end;
+ validate_types(MN, TNs, Mods, [{{type_var, _, _}, Typ}|T]) ->
+     validate_types(MN, TNs, Mods, [Typ]),
+     validate_types(MN, TNs, Mods, T);
+ validate_types(MN, TNs, Mods, [#alpaca_constructor{arg=A}|T]) ->
+    validate_types(MN, TNs, Mods, [A]),
+    validate_types(MN, TNs, Mods, T);
+ validate_types(ModName, TypeNames, Mods, [#alpaca_type_tuple{members=Ms}|T]) ->
+    validate_types(ModName, TypeNames, Mods, Ms),
+    validate_types(ModName, TypeNames, Mods, T);
+validate_types(MN, Ts, Mods, [#t_record{members=Ms}|T]) ->
     MemberTypes = [Type || #t_record_member{type=Type} <- Ms],
-    validate_types(MN, Ts, MemberTypes ++ T);
-validate_types(M, TNs, [{alpaca_list, LT}|T]) ->
-    [] = validate_types(M, TNs, [LT|T]),
-    validate_types(M, TNs, T);
-validate_types(M, TNs, [{alpaca_map, KT, VT}|T]) ->
-    [] = validate_types(M, TNs, [KT, VT] ++ T),
-    validate_types(M, TNs, T);
-validate_types(M, Ts, [_H|T]) ->
-    validate_types(M, Ts, T).
+    validate_types(MN, Ts, Mods, MemberTypes ++ T);
+validate_types(M, TNs, Mods, [{alpaca_list, LT}|T]) ->
+    [] = validate_types(M, TNs, Mods, [LT|T]),
+    validate_types(M, TNs, Mods, T);
+validate_types(M, TNs, Mods, [{alpaca_map, KT, VT}|T]) ->
+    [] = validate_types(M, TNs, Mods, [KT, VT] ++ T),
+    validate_types(M, TNs, Mods, T);
+validate_types(M, Ts, Mods, [_H|T]) ->
+    validate_types(M, Ts, Mods, T).
 
 
 
@@ -4867,7 +4883,7 @@ ensure_private_types_cant_import_test_() ->
 
              UsesOption =
                  "module uses_option \n"
-                 "type nested_int_opt = Nested opt.opt int \n"
+                 "type nested_int_opt = Nested private_option.opt int \n"
                  "let nest x = Nested x",
 
              Mods1 = alpaca_ast_gen:make_modules([PrivateOptions, ImportOption]),
@@ -4982,6 +4998,20 @@ error_on_missing_types_test_() ->
                   "type t 'a = map atom (t 'a)",
               ?assertMatch({ok, #alpaca_module{}},
                             module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t 'a = n.u",
+              ?assertMatch({error, {bad_module, m, 2, n}},
+                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              M1 = "module m",
+              M2 = "module n \n type t = m.a",
+              Mods = alpaca_ast_gen:make_modules([M1, M2]),
+              ?assertMatch({error, {invalid_type, n, 2, "a"}},
+                            type_modules(Mods))
       end
     ].
 
