@@ -546,7 +546,8 @@ top_level_value_test() ->
 
 
 run_checks(ModeCodeListings) ->
-    ParsedMods = alpaca_ast_gen:make_modules(ModeCodeListings),
+    NamedSources = lists:map(fun(C) -> {?FILE, C} end, ModeCodeListings),
+    {ok, ParsedMods} = alpaca_ast_gen:make_modules(NamedSources),
     {ok, TypedMods} = alpaca_typer:type_modules(ParsedMods),
     Warnings = check_exhaustiveness(TypedMods),
     %% To test the formatter does not crash

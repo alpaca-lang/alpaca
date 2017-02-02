@@ -57,24 +57,30 @@ compile(What) ->
     compile(What, []).
 
 compile({text, Code}, Opts) ->
-    Mods = alpaca_ast_gen:make_modules([Code]),
-    case type_modules(Mods) of
-        {error, _}=Err -> Err;
-        {ok, [TypedMod]} ->
-            {ok, Forms} = alpaca_codegen:gen(TypedMod, Opts),
-            compile:forms(Forms, [report, verbose, from_core])
-    end;
+    compile_phase_1([{"<no file>", Code}], Opts);
 
 compile({files, Filenames}, Opts) ->
-    Code = load_files(Filenames),
-    {ok, Mods} = type_modules(alpaca_ast_gen:make_modules(Code)),
+    compile_phase_1(load_files(Filenames), Opts).
+
+compile_phase_1(Sources, Opts) ->
+    case alpaca_ast_gen:make_modules(Sources) of
+        {error, _}=Err -> Err;
+        {ok, Mods} -> compile_phase_2(Mods, Opts)
+    end.
+
+compile_phase_2(Mods, Opts) ->
+    case type_modules(Mods) of
+        {error, _}=Err -> Err;
+        {ok, TypedMods} -> compile_phase_3(TypedMods, Opts)
+    end.
+
+compile_phase_3(Mods, Opts) ->
     ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(Mods),
     maybe_print_exhaustivess_warnings(ExhaustivenessWarnings, Opts),
-    Compiled = lists:foldl(
-                 fun(M, Acc) ->
-                         [compile_module(M, Opts)|Acc]
-                 end, [], Mods),
-    Compiled.
+    compile_phase_4(Mods, Opts).
+
+compile_phase_4(Mods, Opts) ->
+    {ok, lists:map(fun(M) -> compile_module(M, Opts) end, Mods)}.
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of
@@ -90,7 +96,7 @@ load_files(Filenames) ->
               {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
               Res = read_file(Device, []),
               ok = file:close(Device),
-              [Res|Acc]
+              [{FN, Res}|Acc]
       end, [], Filenames).
 
 compile_module(#alpaca_module{name=N}=Mod, Opts) ->
@@ -113,7 +119,7 @@ type_modules(Mods) ->
 -ifdef(TEST).
 
 basic_file_test() ->
-    Res = file("test_files/basic_compile_file.alp"),
+    {ok, Res} = file("test_files/basic_compile_file.alp"),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     ?assertEqual('alpaca_basic_compile_file', N),
     ?assertEqual("alpaca_basic_compile_file.beam", FN),
@@ -121,7 +127,7 @@ basic_file_test() ->
     ?assertEqual(1998, N:double(999)).
 
 basic_math_compile_test() ->
-    Res = file("test_files/basic_math.alp", []),
+    {ok, Res} = file("test_files/basic_math.alp", []),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     ?assertEqual('alpaca_basic_math', N),
     ?assertEqual("alpaca_basic_math.beam", FN),
@@ -134,7 +140,7 @@ basic_math_compile_test() ->
     true = code:delete(N).
 
 basic_adt_compile_test() ->
-    Res = compile({files, ["test_files/basic_adt.alp"]}),
+    {ok, Res} = compile({files, ["test_files/basic_adt.alp"]}),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(0, N:len('Nil')),
@@ -143,14 +149,14 @@ basic_adt_compile_test() ->
     true = code:delete(N).
 
 basic_concat_compile_test() ->
-    Res = compile({files, ["test_files/string_concat.alp"]}),
+    {ok, Res} = compile({files, ["test_files/string_concat.alp"]}),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual("Hello, world", N:hello("world")),
     true = code:delete(N).
 
 compile_and_load(Files, Opts) ->
-    Compiled = compile({files, Files}, Opts),    
+    {ok, Compiled} = compile({files, Files}, Opts),
     LoadFolder = fun(#compiled_module{name=N, filename=FN, bytes=Bin}, Acc) ->
                          {module, _N} = code:load_binary(N, FN, Bin),
                          io:format("Loaded ~w ~s~n", [N, FN]),
@@ -179,9 +185,10 @@ type_imports_and_pattern_test() ->
 private_types_error_test() ->
     Files = ["test_files/unexported_adts.alp", "test_files/list_opts.alp"],
     Code = load_files(Files),
+    {ok, Mods} = alpaca_ast_gen:make_modules(Code),
     ?assertEqual(
        {error, {unexported_type, list_opts, basic_adt, "my_list"}},
-       type_modules(alpaca_ast_gen:make_modules(Code))).
+       type_modules(Mods)).
 
 basic_pid_test() ->
     Files = ["test_files/basic_pid_test.alp"],
@@ -340,7 +347,7 @@ radius_test() ->
             ["test_files/radius.alp", 
              "test_files/use_radius.alp"], 
             []),
-    ?assertEqual(1, M1:test_radius(unit)),
+    ?assertEqual(1, M2:test_radius(unit)),
     code:delete(M1),
     code:delete(M2).
 
@@ -374,9 +381,9 @@ own_formatter_test() ->
 export_import_test() ->
     Files = ["test_files/export_all_arities.alp", "test_files/import_test.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    ?assertEqual(12, M1:test_pipe({})),
-    ?assertEqual(12, M1:test_pipe_far_call({})),
-    ?assertEqual(5, M1:test_specified_arity({})),
+    ?assertEqual(12, M2:test_pipe({})),
+    ?assertEqual(12, M2:test_pipe_far_call({})),
+    ?assertEqual(5, M2:test_specified_arity({})),
     code:delete(M1),
     code:delete(M2).
 
@@ -393,7 +400,7 @@ curry_test() ->
 curry_import_export_test() ->
     Files = ["test_files/curry.alp", "test_files/curry_import.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    ?assertEqual([3], M1:run_filter(unit)),
+    ?assertEqual([3], M2:run_filter(unit)),
     code:delete(M1),
     code:delete(M2).
 

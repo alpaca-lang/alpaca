@@ -576,7 +576,7 @@ annotate_map_type(#alpaca_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
 -ifdef(TEST).
 
 parse_and_gen(Code) ->
-    [Mod] = alpaca_ast_gen:make_modules([Code]),
+    {ok, [Mod]} = alpaca_ast_gen:make_modules([{?FILE, Code}]),
     {ok, Forms} = alpaca_codegen:gen(Mod, []),
     compile:forms(Forms, [report, verbose, from_core]).
 
