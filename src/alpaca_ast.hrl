@@ -175,7 +175,7 @@
          }).
 -type alpaca_type_tuple() :: #alpaca_type_tuple{}.
 
--type alpaca_map_type() :: {alpaca_map,
+-type alpaca_map_type() :: {t_map,
                           alpaca_base_type()|alpaca_poly_type(),
                           alpaca_base_type()|alpaca_poly_type()}.
 

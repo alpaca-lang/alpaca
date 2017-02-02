@@ -132,9 +132,6 @@ covering_patterns({t_list, Elem}, Mod, AllMods, SeenADTs, Vars) ->
 %%
 %% However, to do this, we would need to know all the keys that are used
 %% in the patterns, and we do not get that information from the type.
-covering_patterns({alpaca_map, _KeyT, _ValT}, _Mod, _AllMods, _SeenADTs,
-                  _Vars) ->
-    [t_map];
 covering_patterns({t_map, _KeyT, _ValT}, _Mod, _AllMods, _SeenADTs, _Vars) ->
     [t_map];
 covering_patterns(#t_record{members=Ms}, Mod, AllMods, SeenADTs, Vars) ->

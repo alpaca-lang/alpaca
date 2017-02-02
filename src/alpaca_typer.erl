@@ -895,7 +895,7 @@ inst_type_members(ADT, [{t_list, TExp}|Rem], Env, Memo) ->
             inst_type_members(ADT, Rem, Env2,
                               [new_cell({t_list, InstMem})|Memo])
     end;
-inst_type_members(ADT, [{alpaca_map, KExp, VExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{t_map, KExp, VExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [KExp], Env, []) of
         {error, _}=Err -> Err;
         {ok, Env2, _, [InstK]} ->
@@ -1106,7 +1106,7 @@ inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types) ->
     new_cell({t_tuple, [inst_constructor_arg(M, Vs, Types) || M <- Ms]});
 inst_constructor_arg({t_list, ElementType}, Vs, Types) ->
     new_cell({t_list, inst_constructor_arg(ElementType, Vs, Types)});
-inst_constructor_arg({alpaca_map, KeyType, ValType}, Vs, Types) ->
+inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types) ->
     new_cell({t_map, inst_constructor_arg(KeyType, Vs, Types),
                      inst_constructor_arg(ValType, Vs, Types)});
 inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types) ->
@@ -1466,7 +1466,7 @@ validate_types(MN, Ts, Mods, [#t_record{members=Ms}|T]) ->
 validate_types(M, TNs, Mods, [{t_list, LT}|T]) ->
     [] = validate_types(M, TNs, Mods, [LT|T]),
     validate_types(M, TNs, Mods, T);
-validate_types(M, TNs, Mods, [{alpaca_map, KT, VT}|T]) ->
+validate_types(M, TNs, Mods, [{t_map, KT, VT}|T]) ->
     [] = validate_types(M, TNs, Mods, [KT, VT] ++ T),
     validate_types(M, TNs, Mods, T);
 validate_types(M, Ts, Mods, [_H|T]) ->
@@ -3248,7 +3248,7 @@ type_constructor_test_() ->
               vars=[],
               members=[#alpaca_constructor{
                           name=#type_constructor{line=1, name="Constructor"},
-                          arg={alpaca_map, t_int, t_string}}]}])),
+                          arg={t_map, t_int, t_string}}]}])),
      ?_assertMatch(
         {{t_arrow,
           [{unbound, _, _}],
