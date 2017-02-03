@@ -13,6 +13,24 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-type parse_error() :: {parse_error, filename(), parse_error_reason()}.
+
+-type parse_error_reason() :: {module_rename, module(), module()} |
+                              no_module |
+                              {syntax_error, line(), string()} |
+                              {invalid_top_level_construct, term()}.
+
+-type module_validation_error() :: {module_validation_error, module(),
+                                    module_validation_reason()}.
+
+-type module_validation_reason() :: {duplicate_constructor, string()} |
+                                    {duplicate_definition, string(), line()} |
+                                    {duplicate_type, string()} |
+                                    {module_not_found, module()} |
+                                    {type_not_exported, module(), string()}.
+-type filename() :: string().
+-type line() :: integer().
+
 %% Generating an Alpaca module AST from text source requires the following
 %% steps:
 %%
@@ -29,42 +47,61 @@
 %% A single function make_modules/1 provides one entry point that can be used
 %% to cover all three steps for a list of code strings.
 
+-spec make_modules(Sources) -> {ok, [alpaca_module()]} | {error, Error} when
+    Sources :: list(Source),
+    Source :: {filename(), Code},
+    Code :: string() | binary(),
+    Error :: parse_error() | module_validation_error().
 make_modules(Code) ->
-    Modules = [parse_module(SourceCode) || SourceCode <- Code],
-    rename_and_resolve(Modules).
+    try
+      Modules = [parse_module(SourceCode) || SourceCode <- Code],
+      {ok, rename_and_resolve(Modules)}
+    catch
+      throw:{parse_error,_, _}=Err -> {error, Err};
+      throw:{module_validation_error, _, _}=Err -> {error, Err}
+    end.
+
+parse_error(FileName, Error) ->
+    throw({parse_error, FileName, Error}).
+
+validation_error(#alpaca_module{name=ModName}, Error) ->
+    throw({module_validation_error, ModName, Error}).
 
 parse({ok, Tokens, _}) ->
     parse(Tokens);
 parse(Tokens) when is_list(Tokens) ->
     alpaca_parser:parse(Tokens).
 
-parse_module(Text) when is_binary(Text) ->
-    parse_module(binary:bin_to_list(Text));
-parse_module(Text) when is_list(Text) ->
+parse_module({FileName, Text}) when is_binary(Text) ->
+    parse_module({FileName, binary:bin_to_list(Text)});
+parse_module({FileName, Text}) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}),
+    {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}, FileName),
     M.
 
-parse_module([], #alpaca_module{name=no_module}) ->
-    {error, no_module_defined};
-parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
+parse_module([], #alpaca_module{name=no_module}, FileName) ->
+    parse_error(FileName, no_module);
+parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M,
+             _FileName) ->
     OrderedFuns = group_funs(Funs, N),
     TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
     {ok, M#alpaca_module{functions=OrderedFuns,
                        types = TypesWithModule}};
-parse_module([{break, _}], Mod) ->
-    parse_module([], Mod);
-parse_module(Tokens, Mod) ->
+parse_module([{break, _}], Mod, FileName) ->
+    parse_module([], Mod, FileName);
+parse_module(Tokens, Mod, FileName) ->
     case next_batch(Tokens, []) of
-        {[], Rem}        -> parse_module(Rem, Mod);
+        {[], Rem}        -> parse_module(Rem, Mod, FileName);
         {NextBatch, Rem} ->
-            {ok, Parsed} = parse(NextBatch),
-            case update_memo(Mod, Parsed) of
-                {ok, NewMemo} ->
-                    parse_module(Rem, NewMemo);
-                {error, Err} ->
-                    Err
-            end
+            Parsed = try_parse(NextBatch, FileName),
+            parse_module(Rem, update_memo(Mod, Parsed, FileName), FileName)
+    end.
+
+try_parse(Tokens, FileName) ->
+    case parse(Tokens) of
+        {ok, Res} -> Res;
+        {error, {Line, alpaca_parser, ["syntax error before: ", ErrorToken]}} ->
+          parse_error(FileName, {syntax_error, Line, ErrorToken})
     end.
 
 %% Rename bindings to account for variable names escaping receive, rewrite
@@ -82,7 +119,7 @@ parse_module(Tokens, Mod) ->
 rename_and_resolve(Modules) ->
     Expanded = expand_imports(expand_exports(Modules)),
     F = fun(Mod, {NV, Memo}) ->
-                {ok, NV2, Mod2} = rebind_and_validate_module(NV, Mod, Expanded),
+                {NV2, Mod2} = rebind_and_validate_module(NV, Mod, Expanded),
                 {NV2, [Mod2|Memo]}
         end,
     {_, Ms} = lists:foldl(F, {0, []}, Expanded),
@@ -127,10 +164,9 @@ expand_imports([M|Tail], ExportMap, Memo) ->
     F = fun({_, {_, _}}=FunWithArity) ->
                 FunWithArity;
            ({Fun, Mod}) when is_atom(Mod) ->
-                Default = {error, {no_module, Mod}},
-                case maps:get(Mod, ExportMap, Default) of
-                    {error, _}=Err ->
-                        throw(Err);
+                case maps:get(Mod, ExportMap, error) of
+                    error ->
+                        validation_error(M, {module_not_found, Mod});
                     Funs ->
                         [{Fun, {Mod, A}} || {FN, A} <- Funs, FN =:= Fun]
                 end
@@ -170,10 +206,10 @@ drop_dupes_preserve_order([H|T], [H|_]=Memo) ->
 drop_dupes_preserve_order([H|T], Memo) ->
     drop_dupes_preserve_order(T, [H|Memo]).
 
-rebind_and_validate_module(_, {error, _} = Err, _) ->
-    Err;
 rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
-    validate_user_types(rebind_and_validate_functions(NextVarNum, Mod, Modules)).
+    {_, EndMod}=Res = rebind_and_validate_functions(NextVarNum, Mod, Modules),
+    validate_user_types(EndMod),
+    Res.
 
 %% Used to track a variety of data that both rename_bindings and make_bindings
 %% require:
@@ -203,9 +239,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                current_module=Mod,
                modules=Modules},
 
-    F = fun(_, {error, _}=Err) ->
-                Err;
-           (F, {E, Memo}) ->
+    F = fun(F, {E, Memo}) ->
                 {#env{next_var=NV2, rename_map=_M}, M2, F2} = rename_bindings(E, F),
                     
                 %% We invert the returned map so that it is from
@@ -215,55 +249,38 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                 M3 = maps:merge(M2, maps:from_list(Inverted)),
                 {Env#env{next_var=NV2, rename_map=M3}, [F2|Memo]}
         end,
-    case lists:foldl(F, {Env, []}, Funs) of
-        {error, _}=Err ->
-            Err;
-        {#env{next_var=NV2, rename_map=_M}, Funs2} ->
-            %% TODO:  other parts of the compiler might care about the rename
-            %%        map but we do throw away some details deliberately
-            %%        when rewriting patterns and different function versions.
-            %%        Probably worth expanding the symbol AST node to track
-            %%        an original name.
-            {ok, NV2, Mod#alpaca_module{functions=lists:reverse(Funs2)}}
-    end.
+    {#env{next_var=NV2, rename_map=_M}, Funs2} = lists:foldl(F, {Env, []}, Funs),
+    %% TODO:  other parts of the compiler might care about the rename
+    %%        map but we do throw away some details deliberately
+    %%        when rewriting patterns and different function versions.
+    %%        Probably worth expanding the symbol AST node to track
+    %%        an original name.
+    {NV2, Mod#alpaca_module{functions=lists:reverse(Funs2)}}.
 
-validate_user_types({error, _}=Err) ->
-    Err;
-validate_user_types({ok, _, #alpaca_module{types=Ts}}=Res) ->
-    %% all type names unique
-
-    NameCheck = unique_type_names(Ts),
-    %% all type constructors unique
-    ConstructorCheck = unique_type_constructors(NameCheck, Ts),
-
-    %% I'm considering checking type variables here but might just leave
-    %% it to the type checker itself.
-    case ConstructorCheck of
-        ok               -> Res;
-        {error, _} = Err -> Err
-    end.
+validate_user_types(#alpaca_module{types=Ts}=Mod) ->
+    unique_type_names(Mod, Ts),
+    unique_type_constructors(Mod, Ts).
 
 %% check a list of things for duplicates with a comparison function and
 %% a function for creating an error from one element.  The list must be sorted.
-check_dupes([A|[B|_]=T], Compare, ErrorF) ->
+check_dupes([A,B|T], Compare) ->
     case Compare(A, B) of
-        true -> ErrorF(A);
-        false -> check_dupes(T, Compare, ErrorF)
+        true -> {error, A};
+        false -> check_dupes(T, Compare)
     end;
-check_dupes([_], _, _) ->
+check_dupes([_], _) ->
     ok;
-check_dupes([], _, _) ->
+check_dupes([], _) ->
     ok.
 
-unique_type_names(Types) ->
+unique_type_names(Mod, Types) ->
     Names = lists:sort([N || #alpaca_type{name={type_name, _, N}} <- Types]),
-    check_dupes(Names,
-                fun(A, B) -> A =:= B end,
-                fun(A) -> {error, {duplicate_type, A}} end).
+    case check_dupes(Names, fun(A, B) -> A =:= B end) of
+        ok -> ok;
+        {error, A} -> validation_error(Mod, {duplicate_type, A})
+    end.
 
-unique_type_constructors({error, _}=Err, _) ->
-    Err;
-unique_type_constructors(_, Types) ->
+unique_type_constructors(Mod, Types) ->
     %% Get the sorted names of only the constructors:
     F = fun (#alpaca_constructor{name=#type_constructor{name=N}}, Acc) -> [N|Acc];
             (_, Acc) -> Acc
@@ -272,33 +289,39 @@ unique_type_constructors(_, Types) ->
     %% can't lists:flatten here because strings are lists and we only want
     %% it flattened one level:
     Cs = lists:sort(lists:foldl(fun(A, B) -> A ++ B end, [], ToFlatten)),
-    check_dupes(Cs,
-                fun(A, B) -> A =:= B end,
-                fun(A) -> {error, {duplicate_constructor, A}} end).
+    case check_dupes(Cs, fun(A, B) -> A =:= B end) of
+        ok -> ok;
+        {error, A} -> validation_error(Mod, {duplicate_constructor, A})
+    end.
 
-update_memo(#alpaca_module{name=no_module}=Mod, {module, Name}) ->
-    {ok, Mod#alpaca_module{name=Name}};
-update_memo(#alpaca_module{name=Name}, {module, DupeName}) ->
-    {error, {module_rename, Name, DupeName}};
-update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I) ->
-    {ok, M#alpaca_module{type_imports=Imports ++ [I]}};
-update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I) ->
+update_memo(#alpaca_module{name=no_module}=Mod, {module, Name}, _FileName) ->
+    Mod#alpaca_module{name=Name};
+update_memo(#alpaca_module{name=Name}, {module, DupeName}, FileName) ->
+    parse_error(FileName, {module_rename, Name, DupeName});
+update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I,
+            _FileName) ->
+    M#alpaca_module{type_imports=Imports ++ [I]};
+update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I,
+            _FileName) ->
     #alpaca_type_export{names=Names} = I,
-    {ok, M#alpaca_module{type_exports = Exports ++ Names}};
-update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es}) ->
-    {ok, M#alpaca_module{function_exports=Es ++ Exports}};
-update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is}) ->
-    {ok, M#alpaca_module{function_imports=Imports ++ Is}};
-update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def) ->
-    {ok, M#alpaca_module{functions=[Def|Funs]}};
-update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
-    {ok, M#alpaca_module{types=[T|Ts]}};
-update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
-    {ok, M#alpaca_module{tests=[T|Tests]}};
-update_memo(M, #alpaca_comment{}) ->
-    {ok, M};
-update_memo(_, Bad) ->
-    {error, {"Top level requires defs, module, and export declarations", Bad}}.
+    M#alpaca_module{type_exports = Exports ++ Names};
+update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es},
+            _FileName) ->
+    M#alpaca_module{function_exports=Es ++ Exports};
+update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is},
+            _FileName) ->
+    M#alpaca_module{function_imports=Imports ++ Is};
+update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def,
+            _FileName) ->
+    M#alpaca_module{functions=[Def|Funs]};
+update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T, _FileName) ->
+    M#alpaca_module{types=[T|Ts]};
+update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T, _FileName) ->
+    M#alpaca_module{tests=[T|Tests]};
+update_memo(M, #alpaca_comment{}, _FileName) ->
+    M;
+update_memo(_, Bad, FileName) ->
+    parse_error(FileName, {invalid_top_level_construct, Bad}).
 
 %% Select a discrete batch of tokens to parse.  This basically wants a sequence
 %% from the beginning of a top-level expression to a recognizable break between
@@ -338,37 +361,28 @@ next_batch([Token|Tail], Memo) ->
 
 -spec rename_bindings(
         Env::#env{},
-        TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()} |
-                                     {error, term()}.
+        TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()}.
 rename_bindings(Environment, #alpaca_fun_def{}=TopLevel) ->
     #alpaca_fun_def{name={symbol, _, _}, versions=Vs}=TopLevel,
 
     F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Env, Map, Versions}) ->
-                case make_bindings(Env, Map, As) of
-                    {Env2, M2, Args} ->
-                        case rename_bindings(Env2, M2, Body) of
-                            {Env3, _M3, E} ->
-                                FV2 = FV#alpaca_fun_version{
-                                        args=Args,
-                                        body=E},
-                                %% As with patterns and clauses we deliberately
-                                %% throw away the rename map here so that the
-                                %% same symbols can be reused by distinctly
-                                %% different function definitions.
-                                {Env3, Map, [FV2|Versions]};
-                            {error, _} = Err -> 
-                                throw(Err)
-                        end;
-                    {error, _} = E -> throw(E)
-                end
+            {Env2, M2, Args} = make_bindings(Env, Map, As),
+            {Env3, _M3, E} =  rename_bindings(Env2, M2, Body),
+            FV2 = FV#alpaca_fun_version{
+                    args=Args,
+                    body=E},
+            %% As with patterns and clauses we deliberately
+            %% throw away the rename map here so that the
+            %% same symbols can be reused by distinctly
+            %% different function definitions.
+            {Env3, Map, [FV2|Versions]}
         end,
 
     {Env, M2, Vs2} = lists:foldl(F, {Environment, maps:new(), []}, Vs),
     {Env, M2, TopLevel#alpaca_fun_def{versions=Vs2}}.
 
-rebind_args(Env, Map, Args) ->
-    F = fun({error, _} = E, _) -> E;
-           ({symbol, L, N}, {#env{next_var=NV}=E, AccMap, Syms}) ->
+rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
+    F = fun({symbol, L, N}, {#env{next_var=NV}=E, AccMap, Syms}) ->
                 case maps:get(N, AccMap, undefined) of
                     undefined ->
                         Synth = next_var(NV),
@@ -377,89 +391,66 @@ rebind_args(Env, Map, Args) ->
                         , [{symbol, L, Synth}|Syms]
                         };
                     _ ->
-                        throw({duplicate_definition, N, L})
+                        validation_error(Mod, {duplicate_definition, N, L})
                 end;
            ({unit, _}=U, {E, AccMap, Syms}) ->
                 {E, AccMap, [U|Syms]};
            (Arg, {E, AccMap, Syms}) ->
                 {E, AccMap, [Arg|Syms]}
         end,
-    case lists:foldl(F, {Env, Map, []}, Args) of
-        {Env2, M, Args2} -> {Env2, M, lists:reverse(Args2)};
-        {error, _}=Err -> Err
-    end.
+    {Env2, M, Args2} = lists:foldl(F, {Env, Map, []}, Args),
+    {Env2, M, lists:reverse(Args2)}.
 
 rename_bindings(Env, Map, #fun_binding{def=Def, expr=E}) ->
-    case rename_bindings(Env, Map, Def) of
-        {error, _} = Err ->
-            Err;
-        {Env2, M2, Def2} -> case rename_bindings(Env2, M2, E) of
-                              {error, _} = Err ->
-                                    Err;
-                              {Env3, M3, E2} ->
-                                    {Env3, M3, #fun_binding{def=Def2, expr=E2}}
-                          end
-    end;
+    {Env2, M2, Def2} = rename_bindings(Env, Map, Def),
+    {Env3, M3, E2} = rename_bindings(Env2, M2, E),
+    {Env3, M3, #fun_binding{def=Def2, expr=E2}};
 
-rename_bindings(Environment, M, #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
+rename_bindings(#env{current_module=Mod}=StartEnv, M,
+                #alpaca_fun_def{name={symbol, L, Name}}=Def) ->
     #alpaca_fun_def{versions=Vs}=Def,
     {NewName, En2, M2} = case maps:get(Name, M, undefined) of
                               undefined ->
-                                  #env{next_var=NV} = Environment,
+                                  #env{next_var=NV} = StartEnv,
                                   Synth = next_var(NV),
-                                  E2 = Environment#env{next_var=NV+1},
+                                  E2 = StartEnv#env{next_var=NV+1},
                                   {Synth, E2, maps:put(Name, Synth, M)};
                               _ ->
-                                  throw({duplicate_definition, Name, L})
+                                  validation_error(Mod, {duplicate_definition, Name, L})
                           end,
 
     F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
                 #alpaca_fun_version{args=Args, body=Body} = FV,
-                case rebind_args(Env, Map, Args) of
-                    {error, _}=Err ->
-                        throw(Err);
-                    {Env2, M3, Args2} ->
-                        case rename_bindings(Env2, M3, Body) of
-                            {error, _}=Err -> 
-                                throw(Err);
-                            {Env3, _M4, Body2} ->
-                                FV2 = FV#alpaca_fun_version{
-                                        args=Args2,
-                                        body=Body2},
-                                %% As with patterns and clauses we deliberately
-                                %% throw away the rename map here so that the
-                                %% same symbols can be reused by distinctly
-                                %% different function definitions.
-                                {Env3, Map, [FV2|NewVersions]}
-                        end
-                end
+                {Env2, M3, Args2} = rebind_args(Env, Map, Args),
+                {Env3, _M4, Body2} = rename_bindings(Env2, M3, Body),
+                FV2 = FV#alpaca_fun_version{
+                        args=Args2,
+                        body=Body2},
+                %% As with patterns and clauses we deliberately
+                %% throw away the rename map here so that the
+                %% same symbols can be reused by distinctly
+                %% different function definitions.
+                {Env3, Map, [FV2|NewVersions]}
            end,
     {Env3, Map2, Vs2} = lists:foldl(F, {En2, M2, []}, Vs),
     NewDef = Def#alpaca_fun_def{name={symbol, L, NewName}, versions=lists:reverse(Vs2)},
     {Env3, Map2, NewDef};
-    
+
 rename_bindings(#env{next_var=NextVar}=Env, Map, #var_binding{}=VB) ->
     #var_binding{name={symbol, L, N}, to_bind=TB, expr=E} = VB,
     case maps:get(N, Map, undefined) of
         undefined ->
             Synth = next_var(NextVar),
             M2 = maps:put(N, Synth, Map),
-            case rename_bindings(Env#env{next_var=NextVar+1}, M2, TB) of
-                {error, _} = Err ->
-                    Err;
-                {Env2, M3, TB2} ->
-                    case rename_bindings(Env2, M3, E) of
-                        {error, _} = Err -> Err;
-                        {Env3, M4, E2} ->
-                            VB2 = #var_binding{
-                                     name={symbol, L, Synth},
-                                     to_bind=TB2,
-                                     expr=E2},
-                            {Env3, M4, VB2}
-                    end
-            end;
+            {Env2, M3, TB2} = rename_bindings(Env#env{next_var=NextVar+1}, M2, TB),
+            {Env3, M4, E2} = rename_bindings(Env2, M3, E),
+            VB2 = #var_binding{
+                     name={symbol, L, Synth},
+                     to_bind=TB2,
+                     expr=E2},
+            {Env3, M4, VB2};
         _ ->
-            throw({duplicate_definition, N, L})
+            validation_error(Env#env.current_module, {duplicate_definition, N, L})
     end;
 
 rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
@@ -501,11 +492,8 @@ rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
                 _ -> N
             end,
     {_, _, Name} = rename_bindings(Env, Map, FName),
-    case rename_binding_list(Env, Map, Args) of
-        {error, _} = Err -> Err;
-        {Env2, M2, Args2} ->
-            {Env2, M2, App#alpaca_apply{expr=Name, args=Args2}}
-    end;
+    {Env2, M2, Args2} = rename_binding_list(Env, Map, Args),
+    {Env2, M2, App#alpaca_apply{expr=Name, args=Args2}};
 
 rename_bindings(Env, Map, #alpaca_spawn{function=F, args=Args}=Spawn) ->
     {_, _, FName} = rename_bindings(Env, Map, F),
@@ -523,94 +511,54 @@ rename_bindings(Env, Map, #alpaca_send{message=M, pid=P}=Send) ->
 
 rename_bindings(Env, Map, #alpaca_type_apply{arg=none}=A) ->
     {Env, Map, A};
+
 rename_bindings(Env, Map, #alpaca_type_apply{arg=Arg}=A) ->
-    case rename_bindings(Env, Map, Arg) of
-        {error, _}=Err -> Err;
-        {Env2, M, Arg2} -> {Env2, M, A#alpaca_type_apply{arg=Arg2}}
-    end;
+    {Env2, M, Arg2} = rename_bindings(Env, Map, Arg),
+    {Env2, M, A#alpaca_type_apply{arg=Arg2}};
+
 rename_bindings(Env, Map, #alpaca_type_check{expr=E}=TC) ->
-    case rename_bindings(Env, Map, E) of
-        {error, _}=Err -> Err;
-        {Env2, M, E2} -> {Env2, M, TC#alpaca_type_check{expr=E2}}
-    end;
+    {Env2, M, E2} = rename_bindings(Env, Map, E),
+    {Env2, M, TC#alpaca_type_check{expr=E2}};
 
 rename_bindings(Env, Map, #alpaca_cons{head=H, tail=T}=Cons) ->
-    case rename_bindings(Env, Map, H) of
-        {error, _} = Err -> Err;
-        {Env2, M, H2} -> case rename_bindings(Env2, M, T) of
-                             {error, _} = Err -> Err;
-                             {Env3, M2, T2} -> {Env3, M2, Cons#alpaca_cons{
-                                                            head=H2,
-                                                            tail=T2}}
-                         end
-    end;
+    {Env2, M, H2} = rename_bindings(Env, Map, H),
+    {Env3, M2, T2} = rename_bindings(Env2, M, T),
+    {Env3, M2, Cons#alpaca_cons{head=H2, tail=T2}};
+
 rename_bindings(Env, Map, #alpaca_binary{segments=Segs}=B) ->
-    %% fold to account for errors.
-    F = fun(_, {error, _}=Err) -> Err;
-           (#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
-                case rename_bindings(E, M, V) of
-                    {E2, M2, V2} -> {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
-                    {error, _}=Err -> Err
-                end
+    F = fun(#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
+                {E2, M2, V2} = rename_bindings(E, M, V),
+                {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]}
         end,
-    case lists:foldl(F, {Env, Map, []}, Segs) of
-        {error, _}=Err ->
-            Err;
-        {Env2, M2, Segs2} ->
-            {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
-    end;
+    {Env2, M2, Segs2} = lists:foldl(F, {Env, Map, []}, Segs),
+    {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}};
+
 rename_bindings(Env, Map, #alpaca_map{pairs=Pairs}=ASTMap) ->
-    Folder = fun(_, {error, _}=Err) -> Err;
-                (P, {E, M, Ps}) ->
-                     case rename_bindings(E, M, P) of
-                         {error, _}=Err -> Err;
-                         {E2, M2, P2} -> {E2, M2, [P2|Ps]}
-                     end
+    Folder = fun(P, {E, M, Ps}) ->
+                     {E2, M2, P2} = rename_bindings(E, M, P),
+                     {E2, M2, [P2|Ps]}
              end,
-    case lists:foldl(Folder, {Env, Map, []}, Pairs) of
-        {error, _}=Err ->
-            Err;
-        {Env2, M, Pairs2} ->
-            {Env2, M, ASTMap#alpaca_map{pairs=lists:reverse(Pairs2)}}
-    end;
+    {Env2, M, Pairs2} = lists:foldl(Folder, {Env, Map, []}, Pairs),
+    {Env2, M, ASTMap#alpaca_map{pairs=lists:reverse(Pairs2)}};
+
 rename_bindings(Env, Map, #alpaca_map_add{to_add=A, existing=B}=ASTMap) ->
-    case rename_bindings(Env, Map, A) of
-        {error, _}=Err ->
-            Err;
-        {Env2, M, A2} ->
-            case rename_bindings(Env2, M, B) of
-                {error, _}=Err ->
-                    Err;
-                {Env3, M2, B2} ->
-                    {Env3, M2, ASTMap#alpaca_map_add{to_add=A2, existing=B2}}
-            end
-    end;
+    {Env2, M, A2} = rename_bindings(Env, Map, A),
+    {Env3, M2, B2} = rename_bindings(Env2, M, B),
+    {Env3, M2, ASTMap#alpaca_map_add{to_add=A2, existing=B2}};
+
 rename_bindings(Env, Map, #alpaca_map_pair{key=K, val=V}=P) ->
-    case rename_bindings(Env, Map, K) of
-        {error, _}=Err ->
-            Err;
-        {Env2, M, K2} ->
-            case rename_bindings(Env2, M, V) of
-                {error, _}=Err ->
-                    Err;
-                {Env3, M2, V2} ->
-                    {Env3, M2, P#alpaca_map_pair{key=K2, val=V2}}
-            end
-    end;
+    {Env2, M, K2} = rename_bindings(Env, Map, K),
+    {Env3, M2, V2} = rename_bindings(Env2, M, V),
+    {Env3, M2, P#alpaca_map_pair{key=K2, val=V2}};
+
 rename_bindings(Env, Map, #alpaca_tuple{values=Vs}=T) ->
-    case rename_binding_list(Env, Map, Vs) of
-        {error, _} = Err -> Err;
-        {Env2, _, Vals2} -> {Env2, Map, T#alpaca_tuple{values=Vals2}}
-    end;
+    {Env2, _, Vals2} = rename_binding_list(Env, Map, Vs),
+    {Env2, Map, T#alpaca_tuple{values=Vals2}};
 
 rename_bindings(Env, Map, #alpaca_record{members=Members}=R) ->
     F = fun(#alpaca_record_member{val=V}=RM, {NewMembers, E, M}) ->
-                case rename_bindings(E, M, V) of
-                    {error, _}=E ->
-                        erlang:error(E);
-                    {E2, M2, V2} ->
-                        {[RM#alpaca_record_member{val=V2}|NewMembers], E2, M2}
-                end
+                {E2, M2, V2} = rename_bindings(E, M, V),
+                {[RM#alpaca_record_member{val=V2}|NewMembers], E2, M2}
         end,
     {NewMembers, Env2, Map2} = lists:foldl(F, {[], Env, Map}, Members),
     {Env2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
@@ -641,7 +589,8 @@ rename_bindings(Env, Map, {symbol, L, N}=S) ->
             end;
         Synthetic -> {Env, Map, {symbol, L, Synthetic}}
     end;
-rename_bindings(Env, Map, #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
+rename_bindings(#env{current_module=CurrentMod}=Env, Map,
+                #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
     %% Find the first exported occurrence of M:N
     Modules = [Mod || #alpaca_module{name=MN}=Mod <- Env#env.modules, M =:= MN],
     case Modules of
@@ -649,67 +598,42 @@ rename_bindings(Env, Map, #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
             As = [A || {F, A} <- Mod#alpaca_module.function_exports, F =:= N],
             case As of
                 [A|_] -> {Env, Map, FR#alpaca_far_ref{arity=A}};
-                _     -> throw({error, {not_exported, M, N}})
+                _     -> validation_error(CurrentMod, {{type_not_exported, M, N}})
             end;
         _ ->
-            throw({error, {no_module, M}})
+            validation_error(CurrentMod, {module_not_found, M})
     end;
 
 rename_bindings(Env, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
-    case rename_bindings(Env, M, Args) of
-        {error, _} = Err ->
-            Err;
-        {Env2, M2, Args2} ->
-            case rename_clause_list(Env2, M2, Cs) of
-                {error, _} = Err ->
-                    Err;
-                {Env3, M3, Cs2} ->
-                    {Env3, M3, FFI#alpaca_ffi{args=Args2, clauses=Cs2}}
-            end
-    end;
+    {Env2, M2, Args2} = rename_bindings(Env, M, Args),
+    {Env3, M3, Cs2} = rename_clause_list(Env2, M2, Cs),
+    {Env3, M3, FFI#alpaca_ffi{args=Args2, clauses=Cs2}};
+
 rename_bindings(Env, M, #alpaca_match{}=Match) ->
     #alpaca_match{match_expr=ME, clauses=Cs} = Match,
-    case rename_bindings(Env, M, ME) of
-        {error, _} = Err -> Err;
-        {Env2, M2, ME2} ->
-            case rename_clause_list(Env2, M2, Cs) of
-                {error, _} = Err ->
-                    Err;
-                {Env3, M3, Cs2} ->
-                    {Env3, M3, Match#alpaca_match{match_expr=ME2, clauses=Cs2}}
-            end
-    end;
+    {Env2, M2, ME2} = rename_bindings(Env, M, ME),
+    {Env3, M3, Cs2} = rename_clause_list(Env2, M2, Cs),
+    {Env3, M3, Match#alpaca_match{match_expr=ME2, clauses=Cs2}};
 
 rename_bindings(Env, M, #alpaca_receive{clauses=Cs}=Recv) ->
-    case rename_clause_list(Env, M, Cs) of
-        {error, _} = Err -> Err;
-        {Env2, M2, Cs2}   -> {Env2, M2, Recv#alpaca_receive{clauses=Cs2}}
-    end;
+    {Env2, M2, Cs2} = rename_clause_list(Env, M, Cs),
+    {Env2, M2, Recv#alpaca_receive{clauses=Cs2}};
 
 rename_bindings(Env, M, #alpaca_clause{pattern=P, guards=Gs, result=R}=Clause) ->
     %% pattern matches create new bindings and as such we don't
     %% just want to use existing substitutions but rather error
     %% on duplicates and create entirely new ones:
-    case make_bindings(Env, M, P) of
-        {error, _} = Err -> Err;
-        {Env2, M2, P2} ->
-            case rename_bindings(Env2, M2, R) of
-                {error, _} = Err -> Err;
-                {Env3, M3, R2} ->
-                    case rename_binding_list(Env3, M3, Gs) of
-                        {error, _}=Err -> Err;
-                        {Env4, _M4, Gs2} ->
+    {Env2, M2, P2} = make_bindings(Env, M, P),
+    {Env3, M3, R2} = rename_bindings(Env2, M2, R),
+    {Env4, _M4, Gs2} = rename_binding_list(Env3, M3, Gs),
+    %% we actually throw away the modified map here
+    %% because other patterns should be able to
+    %% reuse variable names:
+    {Env4, M, Clause#alpaca_clause{
+               pattern=P2,
+               guards=Gs2,
+               result=R2}};
 
-                            %% we actually throw away the modified map here
-                            %% because other patterns should be able to
-                            %% reuse variable names:
-                            {Env4, M, Clause#alpaca_clause{
-                                       pattern=P2,
-                                       guards=Gs2,
-                                       result=R2}}
-                    end
-            end
-    end;
 rename_bindings(Env, Map, {raise_error, Line, Kind, Expr}) ->
     {Env2, Map2, Expr2} = rename_bindings(Env, Map, Expr),
     {Env2, Map2, {raise_error, Line, Kind, Expr2}};
@@ -717,91 +641,58 @@ rename_bindings(Env, Map, Expr) ->
     {Env, Map, Expr}.
 
 rename_binding_list(Env, Map, Bindings) ->
-    F = fun(_, {error, _} = Err) -> Err;
-           (A, {E, M, Memo}) ->
-                case rename_bindings(E, M, A) of
-                    {error, _} = Err -> Err;
-                    {E2, M2, A2} -> {E2, M2, [A2|Memo]}
-                end
+    F = fun(A, {E, M, Memo}) ->
+                {E2, M2, A2} = rename_bindings(E, M, A),
+                {E2, M2, [A2|Memo]}
         end,
-    case lists:foldl(F, {Env, Map, []}, Bindings) of
-        {error, _} = Err -> Err;
-        {Env2, M, Bindings2} -> {Env2, M, lists:reverse(Bindings2)}
-    end.
+    {Env2, M, Bindings2} = lists:foldl(F, {Env, Map, []}, Bindings),
+    {Env2, M, lists:reverse(Bindings2)}.
 
 %% For renaming bindings in a list of clauses.  Broken out from pattern
 %% matching because it will be reused for FFI and receive.
 rename_clause_list(Env, M, Cs) ->
-    F = fun(_, {error, _}=Err) -> Err;
-           (C, {E, Map, Memo}) ->
-                case rename_bindings(E, Map, C) of
-                    {error, _} = Err -> Err;
-                    {E2, Map2, C2} -> {E2, Map2, [C2|Memo]}
-                end
+    F = fun(C, {E, Map, Memo}) ->
+                {E2, Map2, C2} = rename_bindings(E, Map, C),
+                {E2, Map2, [C2|Memo]}
         end,
-    case lists:foldl(F, {Env, M, []}, Cs) of
-        {error, _} = Err -> Err;
-        {Env2, M2, Cs2} -> {Env2, M2, lists:reverse(Cs2)}
-    end.
+    {Env2, M2, Cs2} = lists:foldl(F, {Env, M, []}, Cs),
+    {Env2, M2, lists:reverse(Cs2)}.
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
 make_bindings(Env, M, [_|_]=Xs) ->
     {Env2, M2, Xs2} = lists:foldl(
                         fun(X, {E, Map, Memo}) ->
-                                case make_bindings(E, Map, X) of
-                                    {error, _}=Err -> throw(Err);
-                                    {E2, M2, A2} -> {E2, M2, [A2|Memo]}
-                                end
+                                {E2, M2, A2} = make_bindings(E, Map, X),
+                                {E2, M2, [A2|Memo]}
                         end,
                         {Env, M, []},
                         Xs),
     {Env2, M2, lists:reverse(Xs2)};
 
 make_bindings(Env, M, #alpaca_tuple{values=Vs}=Tup) ->
-    F = fun(_, {error, _}=E) -> E;
-           (V, {E, Map, Memo}) ->
-                case make_bindings(E, Map, V) of
-                    {error, _} = Err -> Err;
-                    {E2, M2, V2} -> {E2, M2, [V2|Memo]}
-                end
+    F = fun(V, {E, Map, Memo}) ->
+                {E2, M2, V2} = make_bindings(E, Map, V),
+                {E2, M2, [V2|Memo]}
         end,
-    case lists:foldl(F, {Env, M, []}, Vs) of
-        {error, _} = Err ->
-            Err;
-        {Env2, M2, Vs2} ->
-            {Env2, M2, Tup#alpaca_tuple{values=lists:reverse(Vs2)}}
-    end;
+    {Env2, M2, Vs2} = lists:foldl(F, {Env, M, []}, Vs),
+    {Env2, M2, Tup#alpaca_tuple{values=lists:reverse(Vs2)}};
+
 make_bindings(Env, M, #alpaca_cons{head=H, tail=T}=Cons) ->
-    case make_bindings(Env, M, H) of
-        {error, _} = Err -> Err;
-        {Env2, M2, H2} -> case make_bindings(Env2, M2, T) of
-                              {error, _} = Err ->
-                                  Err;
-                              {Env3, M3, T2} ->
-                                  {Env3, M3, Cons#alpaca_cons{head=H2, tail=T2}}
-                          end
-    end;
+    {Env2, M2, H2} = make_bindings(Env, M, H),
+    {Env3, M3, T2} = make_bindings(Env2, M2, T),
+    {Env3, M3, Cons#alpaca_cons{head=H2, tail=T2}};
+%%
 %% TODO:  this is identical to rename_bindings but for the internal call
 %% to make_bindings vs rename_bindings.  How much else in here is like this?
 %% Probably loads of abstracting/de-duping potential.
 make_bindings(Env, Map, #alpaca_binary{segments=Segs}=B) ->
-    F = fun(_, {error, _}=Err) ->
-                Err;
-           (#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
-                case make_bindings(E, M, V) of
-                    {E2, M2, V2} ->
-                        {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]};
-                    {error, _}=Err ->
-                        Err
-                end
+    F = fun(#alpaca_bits{value=V}=Bits, {E, M, Acc}) ->
+                {E2, M2, V2} = make_bindings(E, M, V),
+                {E2, M2, [Bits#alpaca_bits{value=V2}|Acc]}
         end,
-    case lists:foldl(F, {Env, Map, []}, Segs) of
-        {error, _}=Err ->
-            Err;
-        {Env2, M2, Segs2} ->
-            {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}}
-    end;
+    {Env2, M2, Segs2} = lists:foldl(F, {Env, Map, []}, Segs),
+    {Env2, M2, B#alpaca_binary{segments=lists:reverse(Segs2)}};
 
 %%% Map patterns need to rename variables used for keys and create new bindings
 %%% for variables used for values.  We want to rename for keys because we want
@@ -812,42 +703,26 @@ make_bindings(Env, Map, #alpaca_binary{segments=Segs}=B) ->
 %%%
 %%% Map patterns require the key to be something exact already.
 make_bindings(Env, BindingMap, #alpaca_map{pairs=Ps}=Map) ->
-    Folder = fun(_, {error, _}=Err) -> Err;
-                (P, {E, M, Acc}) ->
-                     case make_bindings(E, M, P) of
-                         {error, _}=Err -> Err;
-                         {E2, M2, P2}   -> {E2, M2, [P2|Acc]}
-                     end
+    Folder = fun(P, {E, M, Acc}) ->
+                     {E2, M2, P2} = make_bindings(E, M, P),
+                     {E2, M2, [P2|Acc]}
              end,
-    case lists:foldl(Folder, {Env, BindingMap, []}, Ps) of
-        {error, _}=Err -> Err;
-        {Env2, M, Pairs} ->
-            Map2 = Map#alpaca_map{is_pattern=true, pairs=lists:reverse(Pairs)},
-            {Env2, M, Map2}
-    end;
+    {Env2, M, Pairs} = lists:foldl(Folder, {Env, BindingMap, []}, Ps),
+    Map2 = Map#alpaca_map{is_pattern=true, pairs=lists:reverse(Pairs)},
+    {Env2, M, Map2};
+
 make_bindings(Env, M, #alpaca_map_pair{key=K, val=V}=P) ->
-    case rename_bindings(Env, M, K) of
-        {error, _}=Err -> Err;
-        {Env2, M2, K2} ->
-            case make_bindings(Env2, M2, V) of
-                {error, _}=Err ->
-                    Err;
-                {Env3, M3, V2} ->
-                    {Env3, M3, P#alpaca_map_pair{is_pattern=true, key=K2, val=V2}}
-            end
-    end;
+    {Env2, M2, K2} = rename_bindings(Env, M, K),
+    {Env3, M3, V2} = make_bindings(Env2, M2, V),
+    {Env3, M3, P#alpaca_map_pair{is_pattern=true, key=K2, val=V2}};
 
 %% Records can be compiled as maps so we need the is_pattern parameter
 %% on their AST nodes set correctly here too.
 make_bindings(Env, M, #alpaca_record{members=Members}=R) ->
     F = fun(#alpaca_record_member{val=V}=RM, {NewVs, E, Map}) ->
-                case make_bindings(E, Map, V) of
-                    {error, _}=Err ->
-                        erlang:error(Err);
-                    {E2, Map2, V2} ->
-                        NewR = RM#alpaca_record_member{val=V2},
-                        {[NewR|NewVs], E2, Map2}
-                end
+                {E2, Map2, V2} = make_bindings(E, Map, V),
+                NewR = RM#alpaca_record_member{val=V2},
+                {[NewR|NewVs], E2, Map2}
         end,
     {Members2, Env2, M2} = lists:foldl(F, {[], Env, M}, Members),
     NewR = R#alpaca_record{
@@ -857,13 +732,12 @@ make_bindings(Env, M, #alpaca_record{members=Members}=R) ->
 
 make_bindings(Env, M, #alpaca_type_apply{arg=none}=TA) ->
     {Env, M, TA};
-make_bindings(Env, M, #alpaca_type_apply{arg=Arg}=TA) ->
-    case make_bindings(Env, M, Arg) of
-        {Env2, M2, Arg2} -> {Env2, M2, TA#alpaca_type_apply{arg=Arg2}};
-        {error, _}=Err  -> Err
-    end;
 
-make_bindings(Env, M, {symbol, L, Name}) ->
+make_bindings(Env, M, #alpaca_type_apply{arg=Arg}=TA) ->
+    {Env2, M2, Arg2} = make_bindings(Env, M, Arg),
+    {Env2, M2, TA#alpaca_type_apply{arg=Arg2}};
+
+make_bindings(#env{current_module=Mod}=Env, M, {symbol, L, Name}) ->
     case maps:get(Name, M, undefined) of
         undefined ->
             #env{next_var=NV} = Env,
@@ -871,7 +745,7 @@ make_bindings(Env, M, {symbol, L, Name}) ->
             Env2 = Env#env{next_var=NV+1},
             {Env2, maps:put(Name, Synth, M), {symbol, L, Synth}};
         _ ->
-            throw({duplicate_definition, Name, L})
+            validation_error(Mod, {duplicate_definition, Name, L})
     end;
 make_bindings(Env, M, Expression) ->
     {Env, M, Expression}.
@@ -914,12 +788,14 @@ user_types_test_() ->
                                                vars=[{type_var, 1, "x"}]}]}
                            }]}},
         test_parse("type my_list 'x = Nil | Cons ('x, my_list 'x)")),
-     ?_assertError({badmatch, {error, {duplicate_type, "t"}}},
-                   make_modules(["module dupe_types_1\n\n"
+     ?_assertEqual({error, {module_validation_error, dupe_types_1,
+                            {duplicate_type, "t"}}},
+                   test_make_modules(["module dupe_types_1\n\n"
                                 "type t = A | B\n\n"
                                 "type t = C | int"])),
-     ?_assertError({badmatch, {error, {duplicate_constructor, "A"}}},
-                   make_modules(["module dupe_type_constructor\n\n"
+     ?_assertEqual({error, {module_validation_error, dupe_type_constructor,
+                            {duplicate_constructor, "A"}}},
+                   test_make_modules(["module dupe_type_constructor\n\n"
                                  "type t = A int | B\n\n"
                                  "type u = X float | A\n\n"])),
      %% Making sure multiple type variables work here:
@@ -1209,7 +1085,7 @@ import_test_() ->
                                       {"add", {math, 2}},
                                       {"sub", {math, 2}},
                                       {"mult", math}]},
-                parse_module(Code1))
+                parse_module({?FILE, Code1}))
      end
     ].
 
@@ -1245,7 +1121,7 @@ module_with_let_test() ->
         "let add x y =\n"
         "  let adder a b = a + b in\n"
         "  adder x y",
-    ?assertMatch(
+    ?assertMatch({ok,
        [#alpaca_module{
            name='test_mod',
            function_exports=[{"add",2}],
@@ -1267,8 +1143,8 @@ module_with_let_test() ->
                                               expr=#alpaca_apply{
                                                       expr={symbol,7,"svar_2"},
                                                       args=[{symbol,7,"svar_0"},
-                                                            {symbol,7,"svar_1"}]}}}]}]}],
-       make_modules([Code])).
+                                                            {symbol,7,"svar_1"}]}}}]}]}]},
+       test_make_modules([Code])).
 
 match_test_() ->
     [?_assertMatch(
@@ -1450,7 +1326,7 @@ simple_module_test() ->
         "let add1 x = adder x 1\n\n"
         "let add x y = adder x y\n\n"
         "let sub x y = x - y",
-    ?assertMatch(
+    ?assertMatch({ok,
        [#alpaca_module{
            name='test_mod',
            function_exports=[{"add",2},{"sub",2}],
@@ -1485,15 +1361,15 @@ simple_module_test() ->
                                       body=#alpaca_apply{type=undefined,
                                                        expr={bif, '-', 11, erlang, '-'},
                                                        args=[{symbol,11,"svar_5"},
-                                                             {symbol,11,"svar_6"}]}}]}]}],
-       make_modules([Code])).
+                                                             {symbol,11,"svar_6"}]}}]}]}]},
+       test_make_modules([Code])).
 
 break_test() ->
     % We should tolerate whitespace between the two break tokens
     Code = "module test_mod\n\n
             let a = 5\n   \n"
            "let b = 6\n\n",
-     ?assertMatch(
+     ?assertMatch({ok, 
        [#alpaca_module{
            name='test_mod',
            function_exports=[],
@@ -1507,8 +1383,8 @@ break_test() ->
                          versions=[#alpaca_fun_version{
                                       args=[],
                                       body={int, 6, 6}}]}               
-       ]}],
-       make_modules([Code])).
+       ]}]},
+       test_make_modules([Code])).
     
 
 rebinding_test_() ->
@@ -1543,9 +1419,8 @@ rebinding_test_() ->
                                                           args=[{symbol, 1, "svar_0"},
                                                                 {symbol, 1, "svar_1"}]}}}]}},
                    rename_bindings(#env{}, A)),
-     ?_assertException(throw, 
-                       {duplicate_definition, "x", 2},
-                       rename_bindings(#env{}, B)),
+     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "x", 2}},
+                   rename_bindings(#env{}, B)),
      ?_assertMatch(
         {_, _, #alpaca_fun_def{
                   name={symbol, 1, "f"},
@@ -1564,9 +1439,8 @@ rebinding_test_() ->
                                                                       {symbol, 3, "svar_3"}]},
                                                    result={symbol, 3, "svar_3"}}]}}]}},
         rename_bindings(#env{}, C)),
-     ?_assertException(throw,
-                       {duplicate_definition, "x", 2},
-                       rename_bindings(#env{}, D)),
+     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "x", 2}},
+                   rename_bindings(#env{}, D)),
      ?_assertMatch(
         {_, _,
          #alpaca_fun_def{
@@ -1588,9 +1462,8 @@ rebinding_test_() ->
                                                         tail={symbol, 3, "svar_3"}},
                                              result={symbol, 3, "svar_2"}}]}}]}},
         rename_bindings(#env{}, E)),
-     ?_assertException(throw, 
-                       {duplicate_definition, "y", 2},
-                       rename_bindings(#env{}, F))
+     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "y", 2}},
+                   rename_bindings(#env{}, F))
     ].
 
 type_expr_in_type_declaration_test() ->
@@ -1671,7 +1544,7 @@ expand_exports_test_() ->
                   "let foo x y = x + y\n\n"
                   "let bar x = x",
 
-              [Mod] = make_modules([Code]),
+              {ok, [Mod]} = test_make_modules([Code]),
               [#alpaca_module{function_exports=FEs}] = expand_exports([Mod], []),
               ?assertEqual([{"foo", 1}, {"foo", 2}, {"bar", 1}], FEs)
       end
@@ -1689,7 +1562,7 @@ expand_imports_test_() ->
                  "module m2\n\n"
                  "import m1.foo",
 
-             [Mod1, Mod2] = make_modules([Code1, Code2]),
+             {ok, [Mod1, Mod2]} = test_make_modules([Code1, Code2]),
              WithExports = expand_exports([Mod1, Mod2]),
 
              [M1, M2] = expand_imports(WithExports),
@@ -1709,8 +1582,8 @@ expand_imports_test_() ->
                   "module m\n\n"
                   "import n.foo",
 
-              Mod = parse_module(Code),
-              ?assertThrow({error, {no_module, n}},
+              Mod = parse_module({?FILE, Code}),
+              ?assertThrow({module_validation_error, m, {module_not_found, n}},
                            expand_imports(expand_exports([Mod])))
       end
     ].
@@ -1725,7 +1598,7 @@ import_rewriting_test_() ->
                  "module b\n\n"
                  "import a.add\n\n"
                  "let f () = add 2 3",
-             ?assertMatch(
+             ?assertMatch({ok, 
                 [#alpaca_module{name=a},
                  #alpaca_module{
                     name=b,
@@ -1737,8 +1610,8 @@ import_rewriting_test_() ->
                                                                name="add",
                                                                arity=2}
                                                       }}]
-                                 }]}],
-                make_modules([Code1, Code2]))
+                                 }]}]},
+                test_make_modules([Code1, Code2]))
      end
     , fun() ->
               Code1 =
@@ -1750,7 +1623,7 @@ import_rewriting_test_() ->
                   "import a.(|>)\n\n"
                   "let add_ten x = x + 10\n\n"
                   "let f () = 2 |> add_ten",
-              ?assertMatch(
+              ?assertMatch({ok,
                  [#alpaca_module{name=a},
                   #alpaca_module{
                      name=b,
@@ -1763,8 +1636,13 @@ import_rewriting_test_() ->
                                                                 name="(|>)",
                                                                 arity=2}
                                                        }}]
-                                  }]}],
-                 make_modules([Code1, Code2]))
+                                  }]}]},
+                 test_make_modules([Code1, Code2]))
       end
     ].
+
+test_make_modules(Sources) ->
+    NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
+    make_modules(NamedSources).
+
 -endif.
