@@ -1601,7 +1601,7 @@ ambiguous_type_expressions_test() ->
     ?assertMatch({ok, #alpaca_type{
                          name={type_name,1,"my_map"},
                          vars=[],
-                         members=[{alpaca_map,
+                         members=[{t_map,
                                    #alpaca_type{
                                       name={type_name,1,"foo"},
                                       vars=[],

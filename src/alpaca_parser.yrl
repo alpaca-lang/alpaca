@@ -196,7 +196,7 @@ sub_type_expr -> base_type :
 sub_type_expr -> unit : t_unit.
 type_expr -> base_list sub_type_expr:
   {t_list, '$2'}.
-sub_type_expr -> base_map sub_type_expr sub_type_expr : {alpaca_map, '$2', '$3'}.
+sub_type_expr -> base_map sub_type_expr sub_type_expr : {t_map, '$2', '$3'}.
 sub_type_expr -> base_pid sub_type_expr :
   {alpaca_pid, '$2'}.
 
