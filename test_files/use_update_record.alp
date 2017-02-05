@@ -1,5 +1,6 @@
 module use_update_record
 
-export main
+export main, overwrite_x
 
 let main () = update_record.adds_x 5 {b=2}
+let overwrite_x () = update_record.adds_x 2 {x=3.0}

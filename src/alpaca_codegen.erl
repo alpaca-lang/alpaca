@@ -261,22 +261,22 @@ gen_expr(Env, #alpaca_record{}=R) ->
     {_, RExp} = gen_expr(Env, record_to_map(R)),
     {Env, RExp};
 gen_expr(Env, #alpaca_record_update{additions=Adds, existing=Existing}) ->
-    {Env2, EExp} = gen_expr(Env, Existing),
     F = fun(#alpaca_record_member{line=L, name=N, val=V}, {E, RExp}) ->
                 Add = #alpaca_map_add{
                          to_add=#alpaca_map_pair{
                                    key={atom, L, atom_to_list(N)},
-                                   val=V}},
+                                   val=V},
+                         existing=RExp},
                 gen_expr(E, Add)
         end,
-    {Env3, RecExp} = lists:foldl(F, {Env2, EExp}, Adds),
+    {Env2, RecExp} = lists:foldl(F, {Env, Existing}, Adds),
 
     %% Generating the update as a sequence of map additions re-labels the
     %% structure as a map, here we're just moving it back to a record.
-    {_, KExp} = gen_expr(Env3, {atom, 0, "__struct__"}),
-    {_, VExp} = gen_expr(Env, {atom, 0, "record"}),
+    {_, KExp} = gen_expr(Env2, {atom, 0, "__struct__"}),
+    {_, VExp} = gen_expr(Env2, {atom, 0, "record"}),
 
-    {Env3, cerl:c_call(
+    {Env2, cerl:c_call(
              cerl:c_atom(maps),
              cerl:c_atom(put),
              [KExp, VExp, RecExp])};

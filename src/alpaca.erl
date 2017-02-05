@@ -416,7 +416,8 @@ record_update_test() ->
              "test_files/use_update_record.alp"],
     [M1, M2] = compile_and_load(Files, []),
 
-    ?assertEqual(#{'__struct__' => record, x => 5}, M2:main(unit)),
+    ?assertEqual(#{'__struct__' => record, x => 5, b => 2}, M2:main(unit)),
+    ?assertEqual(#{'__struct__' => record, x => 2}, M2:overwrite_x(unit)),
 
     code:delete(M1),
     code:delete(M2).
