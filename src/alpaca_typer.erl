@@ -784,9 +784,17 @@ try_types(_, _, [], _, _, _) ->
     no_match.
 
 unify_records(LowerBound, Target, Env, Line) ->
-    %% unify each member of the lower bound with the others
-    #t_record{members=LowerM, row_var=LowerRow} = flatten_record(LowerBound),
-    #t_record{members=TargetM, row_var=TargetRow} = flatten_record(Target),
+    %% Unify each member of the lower bound with the others.  We track whether
+    %% or not the type is for a pattern because if we _are_ unifying for
+    %% patterns then we don't need to check for missing members.
+    #t_record{
+       is_pattern=P1, 
+       members=LowerM, 
+       row_var=LowerRow} = flatten_record(LowerBound),
+    #t_record{
+       is_pattern=P2, 
+       members=TargetM, 
+       row_var=TargetRow} = flatten_record(Target),
 
     case TargetM of
         [] ->
@@ -800,7 +808,7 @@ unify_records(LowerBound, Target, Env, Line) ->
             KeyedTarget = lists:map(
                             fun(#t_record_member{name=X}=TRM) -> {X, TRM} end,
                             TargetM),
-            RemainingTarget = unify_record_members(LowerM, KeyedTarget, Env, Line),
+            RemainingTarget = unify_record_members(P1 or P2, LowerM, KeyedTarget, Env, Line),
 
             %% unify the row variables
             case RemainingTarget of
@@ -814,20 +822,22 @@ unify_records(LowerBound, Target, Env, Line) ->
             end
     end.
 
-unify_record_members([], TargetRem, _Env, _Line) ->
+unify_record_members(_IsPattern, [], TargetRem, _Env, _Line) ->
     lists:map(fun({_, X}) -> X end, TargetRem);
-unify_record_members([LowerBound|Rem], TargetRem, Env, Line) ->
+unify_record_members(IsPattern, [LowerBound|Rem], TargetRem, Env, Line) ->
     #t_record_member{name=N, type=T} = LowerBound,
     case proplists:get_value(N, TargetRem) of
-        undefined ->
+        undefined when IsPattern =:= false ->
             erlang:error({missing_record_field, module_name(Env), Line, N});
+        undefined ->
+            unify_record_members(IsPattern, Rem, TargetRem, Env, Line);
         #t_record_member{type=T2} ->
             case unify(T, T2, Env, Line) of
                 {error, _}=Err ->
                     erlang:error(Err);
                 ok ->
                     NewTargetRem = proplists:delete(N, TargetRem),
-                    unify_record_members(Rem, NewTargetRem, Env, Line)
+                    unify_record_members(IsPattern, Rem, NewTargetRem, Env, Line)
             end
     end.
 
@@ -1659,7 +1669,7 @@ typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
       end);
 
 %% Record typing:
-typ_of(Env, Lvl, #alpaca_record{members=Members}) ->
+typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
     F = fun(#alpaca_record_member{name=N, val=V}, {ARMembers, E}) ->
                 case typ_of(E, Lvl, V) of
                     {error, _}=Err ->
@@ -1671,7 +1681,10 @@ typ_of(Env, Lvl, #alpaca_record{members=Members}) ->
         end,
     {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
     {RowVar, Env3} = new_var(Lvl, Env2),
-    Res = new_cell(#t_record{members=lists:reverse(Members2), row_var=RowVar}),
+    Res = new_cell(#t_record{
+                      is_pattern=IsPattern,
+                      members=lists:reverse(Members2),
+                      row_var=RowVar}),
     {Res, Env3#env.next_var};
 
 typ_of(Env, Lvl, #alpaca_record_update{additions=Adds, existing=Exists}) ->
@@ -1715,7 +1728,7 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
                 {error, _}=Err -> Err;
                 {ATyp, NVNum} ->
                     #type_constructor{line=L} = N,
-                    case unify(ATyp, CTyp, update_counter(NVNum, Env2), L) of
+                    case unify(CTyp, ATyp, update_counter(NVNum, Env2), L) of
                         ok             -> {RTyp, NVNum};
                         {error, _}=Err -> Err
                     end
@@ -3254,7 +3267,7 @@ type_constructor_test_() ->
                           name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
      ?_assertMatch(
-        {error, {cannot_unify, _, _, t_float, t_int}},
+        {error, {cannot_unify, _, _, t_int, t_float}},
         top_typ_with_types(
           "let f x = Cons (1, Cons (2.0, Nil))",
           [#alpaca_type{
@@ -3333,7 +3346,7 @@ type_constructor_with_arrow_arg_test() ->
     Invalid = Base ++
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
-     ?assertMatch({error,{cannot_unify,constructor,_,t_int,t_bool}},
+     ?assertMatch({error,{cannot_unify, constructor, _, t_bool, t_int}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_with_aliased_arrow_arg_test() ->
@@ -3655,7 +3668,7 @@ type_var_protection_fail_unify_test() ->
 
     Res = type_modules([M]),
     ?assertMatch(
-       {error, {cannot_unify, module_matching_lists, 5, t_float, t_int}}, Res).
+       {error, {cannot_unify, module_matching_lists, 5, t_int, t_float}}, Res).
 
 type_error_in_test_test() ->
     Code =
@@ -4830,7 +4843,7 @@ concrete_type_parameters_test_() ->
                  "type opt 'a = Some 'a | None "
                  "type uses_opt = Uses opt int "
                  "let f () = Uses Some 1.0",
-             ?assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+             ?assertMatch({error, {cannot_unify, _, _, t_int, t_float}},
                           module_typ_and_parse(Code))
      end,
      fun() ->
@@ -5163,6 +5176,29 @@ record_update_test_() ->
                                                         type=t_int
                                                        }]}}}]}},
                            module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T {x: int, y: float} \n"
+                  "let main () = T {x=1}",
+              ?assertMatch(
+                 {error, {missing_record_field, m, 3,  y}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t 'a = T {x: int, y: 'a} \n"
+                  "let main () = T {x=1, y=\"hello\"}",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_fun_def{
+                                      type={t_arrow,
+                                            [_],
+                                            #adt{vars=[{"a", t_string}]}}}
+                                   ]}},
+                 module_typ_and_parse(Code))
       end
     ].
 

@@ -411,4 +411,14 @@ throw_with_variables_test() ->
     ?assertThrow({not_equal, 1, 2}, M:assert_equal(1, 2)),
     code:delete(M).
 
+record_update_test() ->
+    Files = ["test_files/update_record.alp",
+             "test_files/use_update_record.alp"],
+    [M1, M2] = compile_and_load(Files, []),
+
+    ?assertEqual(#{'__struct__' => record, x => 5}, M2:main(unit)),
+
+    code:delete(M1),
+    code:delete(M2).
+
 -endif.

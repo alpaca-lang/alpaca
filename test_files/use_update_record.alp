@@ -1,0 +1,5 @@
+module use_update_record
+
+export main
+
+let main () = update_record.adds_x 5 {b=2}

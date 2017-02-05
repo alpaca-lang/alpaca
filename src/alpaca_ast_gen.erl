@@ -361,7 +361,7 @@ next_batch([Token|Tail], Memo) ->
 
 -spec rename_bindings(
         Env::#env{},
-        TopLevel::alpaca_fun_def()) -> {integer(), map(), alpaca_fun_def()}.
+        TopLevel::alpaca_fun_def()) -> {#env{}, map(), alpaca_fun_def()}.
 rename_bindings(Environment, #alpaca_fun_def{}=TopLevel) ->
     #alpaca_fun_def{name={symbol, _, _}, versions=Vs}=TopLevel,
 
@@ -568,7 +568,7 @@ rename_bindings(Env, Map, #alpaca_record_update{}=Update) ->
     FakeRec = #alpaca_record{members=As},
     {Env2, Map2, #alpaca_record{members=Renamed}} = rename_bindings(Env, Map, FakeRec),
     {Env3, Map3, E2} = rename_bindings(Env2, Map2, E),
-    {Env, Map3, #alpaca_record_update{additions=Renamed, existing=E2}};
+    {Env3, Map3, #alpaca_record_update{additions=Renamed, existing=E2}};
 
 rename_bindings(Env, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of
