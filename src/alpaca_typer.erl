@@ -788,12 +788,12 @@ unify_records(LowerBound, Target, Env, Line) ->
     %% or not the type is for a pattern because if we _are_ unifying for
     %% patterns then we don't need to check for missing members.
     #t_record{
-       is_pattern=P1, 
-       members=LowerM, 
+       is_pattern=P1,
+       members=LowerM,
        row_var=LowerRow} = flatten_record(LowerBound),
     #t_record{
-       is_pattern=P2, 
-       members=TargetM, 
+       is_pattern=P2,
+       members=TargetM,
        row_var=TargetRow} = flatten_record(Target),
 
     case TargetM of
