@@ -30,7 +30,7 @@ binary bin_segments bin_segment bin_qualifier bin_qualifiers
 map_literal map_add map_literal_pairs map_pair
 
 %% For literal records:
-record_member record_members record record_update
+record_member record_members record record_transform
 %% For pre-defined record types:
 record_type_member record_type_members record_type
 
@@ -397,9 +397,9 @@ record -> open_brace record_members close_brace:
   {_, L} = '$1',
   #alpaca_record{line=L, arity=length('$2'), members='$2'}.
 
-record_update -> open_brace record_members '|' term close_brace:
+record_transform -> open_brace record_members '|' term close_brace:
   {_, L} = '$1',
-  #alpaca_record_update{line=L, additions='$2', existing='$4'}.
+  #alpaca_record_transform{line=L, additions='$2', existing='$4'}.
 
 %% Need to permit "empty" records for pattern matches:
 record -> open_brace close_brace:
@@ -431,7 +431,7 @@ term -> binary : '$1'.
 term -> map_literal : '$1'.
 term -> map_add : '$1'.
 term -> record : '$1'.
-term -> record_update : '$1'.
+term -> record_transform : '$1'.
 term -> module_fun : '$1'.
 term -> '(' simple_expr ')' : '$2'.
 term -> type_apply : '$1'.
@@ -760,7 +760,7 @@ term_line(Term) ->
         #alpaca_map_pair{line=L} -> L;
         #alpaca_map{line=L} -> L;
         #alpaca_record{members=[#alpaca_record_member{line=L}|_]} -> L;
-        #alpaca_record_update{line=L} -> L;
+        #alpaca_record_transform{line=L} -> L;
         #alpaca_tuple{values=[H|_]} -> term_line(H);
         #alpaca_type_apply{name=N} -> term_line(N);
         #type_constructor{line=L} -> L

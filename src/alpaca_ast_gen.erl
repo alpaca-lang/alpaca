@@ -563,12 +563,12 @@ rename_bindings(Env, Map, #alpaca_record{members=Members}=R) ->
     {NewMembers, Env2, Map2} = lists:foldl(F, {[], Env, Map}, Members),
     {Env2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
 
-rename_bindings(Env, Map, #alpaca_record_update{}=Update) ->
-    #alpaca_record_update{additions=As, existing=E} = Update,
+rename_bindings(Env, Map, #alpaca_record_transform{}=Update) ->
+    #alpaca_record_transform{additions=As, existing=E} = Update,
     FakeRec = #alpaca_record{members=As},
     {Env2, Map2, #alpaca_record{members=Renamed}} = rename_bindings(Env, Map, FakeRec),
     {Env3, Map3, E2} = rename_bindings(Env2, Map2, E),
-    {Env3, Map3, #alpaca_record_update{additions=Renamed, existing=E2}};
+    {Env3, Map3, #alpaca_record_transform{additions=Renamed, existing=E2}};
 
 rename_bindings(Env, Map, {symbol, L, N}=S) ->
     case maps:get(N, Map, undefined) of

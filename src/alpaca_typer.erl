@@ -1068,8 +1068,6 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                     Default = {error, {bad_constructor, Line, Name}},
                     %% constructors defined in this module or imported by it:
                     Available = EnvIn#env.type_constructors,
-                    io:format("Get constructor for ~s~n", [Name]),
-                    io:format("Available are ~w~n", [Available]),
                     proplists:get_value(Name, Available, Default);
 
                %% and the part where we go to a different module:
@@ -1713,7 +1711,7 @@ typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
                       row_var=RowVar}),
     {Res, Env3#env.next_var};
 
-typ_of(Env, Lvl, #alpaca_record_update{additions=Adds, existing=Exists}) ->
+typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists}) ->
     {ExistsType, NV} = case typ_of(Env, Lvl, Exists) of
                            {error, _}=Err -> throw(Err);
                            OK -> OK
@@ -5101,7 +5099,7 @@ error_on_missing_types_test_() ->
       end
     ].
 
-record_update_test_() ->
+record_transform_test_() ->
     [?_assertMatch({#t_record{members=[#t_record_member{
                                           name=a,
                                           type=t_int},

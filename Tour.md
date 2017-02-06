@@ -263,9 +263,9 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
       match my_rec with
         {x=xx} -> (xx, my_rec)
 
-1.  Functional Updates
+1.  Record Transformations
 
-    Records can be updated and extended with the same syntax.  If we wanted to add fields `x` and `y` to an existing record `rec`, it's pretty straightforward:
+    Records can be transformed and extended with the same syntax.  Alpaca doesn't consider these "updates" since the original record never changes.  If we wanted to add fields `x` and `y` to an existing record `rec`, it's pretty straightforward:
     
         let a_new_record = {x=1, y=2.0 | rec}
     
@@ -281,9 +281,9 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
         let rec1 = {x=1, y=2}
         
         -- {x: string, y: int}
-        let rec2 = {x="hello!", y=2}
+        let rec2 = {x="hello!" | rec1}
     
-    Remember that updating a record actually makes an entirely new one so we allow for members to change type since it's not **actually** a mutation anyhow.
+    Remember that transforming a record actually makes an entirely new one so we allow for members to change type since it's not **actually** a mutation anyhow.   Thanks to <https://github.com/danabr> for the suggestion of "transformation" rather than "update".
     
     There are currently no plans to enable the removal of record fields.
 

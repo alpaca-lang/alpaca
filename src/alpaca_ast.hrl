@@ -307,11 +307,11 @@
                       members=[] :: list(alpaca_record_member())}).
 -type alpaca_record() :: #alpaca_record{}.
 
--record(alpaca_record_update, {
+-record(alpaca_record_transform, {
           line=-1 :: integer(),
           additions=[] :: list(alpaca_record_member()),
           existing :: alpaca_value_expression()}).
--type alpaca_record_update() :: #alpaca_record_update{}.
+-type alpaca_record_transform() :: #alpaca_record_transform{}.
 
 %%% Pattern Matching
 
@@ -398,7 +398,7 @@
                                | alpaca_map()
                                | alpaca_map_add()
                                | alpaca_record()
-                               | alpaca_record_update()
+                               | alpaca_record_transform()
                                | alpaca_tuple()
                                | alpaca_apply()
                                | alpaca_type_apply()

@@ -260,7 +260,7 @@ gen_expr(Env, #alpaca_map_pair{key=K, val=V}) ->
 gen_expr(Env, #alpaca_record{}=R) ->
     {_, RExp} = gen_expr(Env, record_to_map(R)),
     {Env, RExp};
-gen_expr(Env, #alpaca_record_update{additions=Adds, existing=Existing}) ->
+gen_expr(Env, #alpaca_record_transform{additions=Adds, existing=Existing}) ->
     F = fun(#alpaca_record_member{line=L, name=N, val=V}, {E, RExp}) ->
                 Add = #alpaca_map_add{
                          to_add=#alpaca_map_pair{
