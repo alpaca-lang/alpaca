@@ -1,3 +1,30 @@
+* v0.2.6
+** New
+- top-level ~let~ deprecates all significant whitespace, https://github.com/lepoetemaudit
+- same function name allowed for different arity, https://github.com/j14159
+- Alpaca's compiled modules prefixed with ~alpaca_~, https://github.com/lepoetemaudit
+- zero-arity functions constrained to literals for use as values, https://github.com/lepoetemaudit
+- property-based testing with PropEr, generates full modules for testing, https://github.com/ypaq
+- import functions from other modules, https://github.com/j14159
+- exhaustiveness checking for top-level functions, https://github.com/danabr
+- functions as ADT members, https://github.com/danabr
+- automatic currying of top-level functions, https://github.com/lepoetemaudit
+- type aliases for arrow types, https://github.com/danabr
+- record transformations, https://github.com/j14159
+
+** Fixes
+- apply arguments to an expression that evaluates to a function, https://github.com/j14159
+- many whitespace fixes, https://github.com/lepoetemaudit and https://github.com/ypaq
+- unused code and warnings cleanup, https://github.com/jkakar
+- FFI calls must refer to missing variables, https://github.com/danabr
+- unit value code generation, https://github.com/danabr
+- reduced number of reserved words, https://github.com/danabr
+- module-qualified constructors and types default to private, https://github.com/j14159
+- more obvious typing of higher order types, https://github.com/danabr
+- unified internal types for lists and maps, https://github.com/danabr
+- referring to nonexistent types and type variables are errors, https://github.com/j14159
+- unified error handling in AST generation, https://github.com/danabr
+
 * v0.2.5
 - early infix function support (operators, e.g. ~|>~) from https://github.com/lepoetemaudit
 - multiple instances of ~_~ permitted in patterns
