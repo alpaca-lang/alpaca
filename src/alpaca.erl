@@ -431,4 +431,12 @@ record_update_test() ->
     code:delete(M1),
     code:delete(M2).
 
+option_map_test() ->
+    Files = ["test_files/option_example.alp"],
+    [M] = compile_and_load(Files, []),
+    ?assertEqual({'Some', 1}, M:some(1)),
+    ?assertEqual({'Some', 2}, M:map(fun(X) -> X + 1 end, M:some(1))),
+    ?assertEqual('None', M:map(fun(X) -> X + 1 end, 'None')),
+    code:delete(M).
+
 -endif.
