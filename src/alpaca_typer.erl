@@ -833,7 +833,7 @@ unify_record_members(IsPattern, [LowerBound|Rem], TargetRem, Env, Line) ->
             unify_record_members(IsPattern, Rem, TargetRem, Env, Line);
         #t_record_member{type=T2} ->
             case unify(T, T2, Env, Line) of
-                {error, _}=Err ->
+                {error, Err} ->
                     erlang:error(Err);
                 ok ->
                     NewTargetRem = proplists:delete(N, TargetRem),
@@ -1055,8 +1055,9 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                      ExtractTypes = fun(#alpaca_module{types=Ts}) -> Ts end,
                      OtherTs = lists:flatten(lists:map(ExtractTypes, Env#env.modules)),
                      Types = EnvIn#env.current_types ++ OtherTs,
-                     Arrow = {type_arrow, inst_constructor_arg(Arg, Vs, Types), ADT},
-                     {Env, Arrow}
+                     {Env2, InstArg} = inst_constructor_arg(Arg, Vs, Types, Env),
+                     Arrow = {type_arrow, InstArg, ADT},
+                     {Env2, Arrow}
              end,
 
     %% If the constructor was not qualified with a module name it's pretty
@@ -1068,6 +1069,8 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                     Default = {error, {bad_constructor, Line, Name}},
                     %% constructors defined in this module or imported by it:
                     Available = EnvIn#env.type_constructors,
+                    io:format("Get constructor for ~s~n", [Name]),
+                    io:format("Available are ~w~n", [Available]),
                     proplists:get_value(Name, Available, Default);
 
                %% and the part where we go to a different module:
@@ -1116,34 +1119,43 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
         throw:{error, _}=Error -> Error
     end.
 
-inst_constructor_arg(none, _, _) ->
-    t_unit;
-inst_constructor_arg(AtomType, _, _) when is_atom(AtomType) ->
-    AtomType;
-inst_constructor_arg({type_var, _, N}, Vs, _) ->
-    proplists:get_value(N, Vs);
-inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types) ->
+inst_constructor_arg(none, _, _, Env) ->
+    {Env, t_unit};
+inst_constructor_arg(AtomType, _, _, Env) when is_atom(AtomType) ->
+    {Env, AtomType};
+inst_constructor_arg({type_var, _, N}, Vs, _, Env) ->
+    {Env, proplists:get_value(N, Vs)};
+inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types, Env) ->
     F = fun(#t_record_member{type=T}=M) ->
-                case inst_constructor_arg(T, Vs, Types) of
+                case inst_constructor_arg(T, Vs, Types, Env) of
                     {error, _}=E -> erlang:error(E);
-                    T2           -> M#t_record_member{type=T2}
+                    {_, T2}      -> M#t_record_member{type=T2}
                 end
         end,
-    new_cell(R#t_record{members=lists:map(F, Ms)});
+    {Var, Env2} = new_var(0, Env),
+    {Env2, new_cell(R#t_record{members=lists:map(F, Ms), row_var=Var})};
 inst_constructor_arg(#alpaca_constructor{name=#type_constructor{name=N}},
-                     _Vs, _Types) ->
-    {t_adt_cons, N};
-inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types) ->
-    new_cell({t_tuple, [inst_constructor_arg(M, Vs, Types) || M <- Ms]});
-inst_constructor_arg({t_list, ElementType}, Vs, Types) ->
-    new_cell({t_list, inst_constructor_arg(ElementType, Vs, Types)});
-inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types) ->
-    new_cell({t_map, inst_constructor_arg(KeyType, Vs, Types),
-                     inst_constructor_arg(ValType, Vs, Types)});
-inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types) ->
-    new_cell({t_pid, inst_constructor_arg(MsgType, Vs, Types)});
+                     _Vs, _Types, Env) ->
+    {Env, {t_adt_cons, N}};
+inst_constructor_arg(#alpaca_type_tuple{members=Ms}, Vs, Types, Env) ->
+    F = fun(M, {E, Memo}) ->
+                {E2, M2} = inst_constructor_arg(M, Vs, Types, E),
+                {E2, [M2|Memo]}
+        end,
+    {Env2, Ms2} = lists:foldl(F, {Env, []}, Ms),
+    {Env2, new_cell({t_tuple, lists:reverse(Ms2)})};
+inst_constructor_arg({t_list, ElementType}, Vs, Types, Env) ->
+    {Env2, ListElem} = inst_constructor_arg(ElementType, Vs, Types, Env),
+    {Env2, new_cell({t_list, ListElem})};
+inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types, Env) ->
+    {Env2, KElem} = inst_constructor_arg(KeyType, Vs, Types, Env),
+    {Env3, VElem} = inst_constructor_arg(ValType, Vs, Types, Env2),
+    {Env3, new_cell({t_map, KElem, VElem})};
+inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types, Env) ->
+    {Env2, PidElem} = inst_constructor_arg(MsgType, Vs, Types, Env),
+    {Env, new_cell({t_pid, PidElem})};
 inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},
-                     Vs, Types) ->
+                     Vs, Types, Env) ->
     #alpaca_type{vars = V2, members=M2, module=Mod} = find_type(N, Types),
 
     %% when a polymorphic ADT occurs in another type's definition it might
@@ -1165,15 +1177,30 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
         end,
     ADT_Vars = lists:map(F, VarsToUse),
     Vs2 = replace_vars(M1, V2, Vs),
-    Members = lists:map(fun(M) -> inst_constructor_arg(M, Vs2, Types) end, M2),
-    new_cell(#adt{name=N, vars=ADT_Vars, members=Members, module=Mod});
+    {Env2, Members} = lists:foldl(
+                        fun(M, {E, Memo}) ->
+                                {E2, MM} = inst_constructor_arg(M, Vs2, Types, E),
+                                {E2, [MM|Memo]}
+                        end,
+                        {Env, []},
+                        M2),
+    {Env2,
+     new_cell(#adt{
+                 name=N,
+                 vars=ADT_Vars,
+                 members=lists:reverse(Members),
+                 module=Mod})};
 
-inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types) ->
-    InstantiatedArgs =  [ inst_constructor_arg(A, Vs, Types) || A <- ArgTypes ],
-    InstantiatedRet = inst_constructor_arg(RetType, Vs, Types),
-    new_cell({t_arrow, InstantiatedArgs, InstantiatedRet});
+inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types, Env) ->
+    F = fun(A, {E, Memo}) ->
+                {E2, A2} = inst_constructor_arg(A, Vs, Types, E),
+                {E2, [A2|Memo]}
+        end,
+    {Env2, InstantiatedArgs} = lists:foldl(F, {Env, []}, ArgTypes),
+    {Env3, InstantiatedRet} = inst_constructor_arg(RetType, Vs, Types, Env2),
+    {Env, new_cell({t_arrow, lists:reverse(InstantiatedArgs), InstantiatedRet})};
 
-inst_constructor_arg(Arg, _, _) ->
+inst_constructor_arg(Arg, _, _, _) ->
     throw({error, {bad_constructor_arg, Arg}}).
 
 find_type(Name, []) -> throw({error, {unknown_type, Name}});
@@ -5186,18 +5213,56 @@ record_update_test_() ->
                  {error, {missing_record_field, m, 3,  y}},
                  module_typ_and_parse(Code))
       end
-    , fun() ->
-              Code =
-                  "module m \n"
-                  "type t 'a = T {x: int, y: 'a} \n"
-                  "let main () = T {x=1, y=\"hello\"}",
-              ?assertMatch(
-                 {ok, #alpaca_module{
-                         functions=[#alpaca_fun_def{
+    ].
+
+records_and_type_constructors_test_() ->
+    [fun() ->
+             Code =
+                 "module m \n"
+                 "type t 'a = T {x: int, y: 'a} \n"
+                 "let main () = T {x=1, y=\"hello\"}",
+             ?assertMatch(
+                {ok, #alpaca_module{
+                        functions=[#alpaca_fun_def{
                                       type={t_arrow,
                                             [_],
                                             #adt{vars=[{"a", t_string}]}}}
+                                  ]}},
+                module_typ_and_parse(Code))
+     end
+     %% This test illustrates something I'm not sure we want at the moment.
+     %% Because an instance of a type constructor is used to instantiate a
+     %% type arrow rather than carry type information itself, using a
+     %% constructor with a record loses the row variable information as seen
+     %% in extract_rec/1's type.
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T {x: int} \n"
+                  "let main () = T {x=1, y=\"hello\"} \n"
+                  "let extract_rec () = match (main ()) with \n"
+                  "  T rec -> rec",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[_,
+                                    #alpaca_fun_def{
+                                      type={t_arrow,
+                                            [_],
+                                            #t_record{
+                                               members=[#t_record_member{
+                                                          name=x,
+                                                          type=t_int}]
+                                              }}}
                                    ]}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type t = T {x: int} \n"
+                  "let main () = T {x=1.0}",
+              ?assertMatch(
+                 {error, {cannot_unify, _, _, t_int, t_float}},
                  module_typ_and_parse(Code))
       end
     ].
