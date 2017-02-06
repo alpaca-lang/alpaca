@@ -418,7 +418,16 @@ record_update_test() ->
 
     ?assertEqual(#{'__struct__' => record, x => 5, b => 2}, M2:main(unit)),
     ?assertEqual(#{'__struct__' => record, x => 2}, M2:overwrite_x(unit)),
-
+    ?assertEqual(#{'__struct__' => record,
+                   a => 1,
+                   b => 2,
+                   c => 3}, M2:add_2_members(unit)),
+    ?assertEqual(#{'__struct__' => record,
+                   a => 1,
+                   b => 2,
+                   c => 3,
+                   x => 1.0,
+                   z => <<"this is z">>}, M2:add_3_members(unit)),
     code:delete(M1),
     code:delete(M2).
 

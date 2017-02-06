@@ -267,9 +267,10 @@ gen_expr(Env, #alpaca_record_update{additions=Adds, existing=Existing}) ->
                                    key={atom, L, atom_to_list(N)},
                                    val=V},
                          existing=RExp},
-                gen_expr(E, Add)
+                {E, Add}
         end,
-    {Env2, RecExp} = lists:foldl(F, {Env, Existing}, Adds),
+    {Env2, RecAst} = lists:foldl(F, {Env, Existing}, Adds),
+    {_, RecExp} = gen_expr(Env2, RecAst),
 
     %% Generating the update as a sequence of map additions re-labels the
     %% structure as a map, here we're just moving it back to a record.
