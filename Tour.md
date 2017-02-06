@@ -75,7 +75,7 @@ While you probably don't need to know any of them in detail, some of the syntax 
 
 ## About This Document<a id="sec-1-2" name="sec-1-2"></a>
 
-This document is exported from the Emacs org-mode doc `Tour.org` using `org-md-export-to-markdown`.  Corrections and suggestions welcome via PRs to the main [Alpaca repository](https://github.com/j14159/alpaca).
+This document is exported from the Emacs org-mode doc `Tour.org` using `org-md-export-to-markdown`.  Corrections and suggestions welcome via PRs to the main [Alpaca repository](https://github.com/alpaca-lang/alpaca).
 
 # The Structure of a Program<a id="sec-2" name="sec-2"></a>
 
@@ -95,22 +95,22 @@ The set of top-level elements permitted in a module are the following:
 Here's a simple example of a module:
 
     module my_module
-
+    
     -- one function that takes a single argument will be publicly accessible:
     export double/1
-
+    
     {- Our double function defines an "add" function inside of itself.
        Comments for now are C-style.
      -}
     let double x =
       let add a b = a + b in
       add x x
-
+    
     test "doubling 2 is 4" = some_test_checker (double 2) 4
-
+    
     -- Basic ADT with type constructors:
     type even_or_odd = Even int | Odd int
-
+    
     -- A function from integers to our ADT:
     let even_or_odd x =
       let rem = x % 2 in
@@ -158,12 +158,12 @@ If you're not familiar with binaries, there's some [good coverage](http://learny
 
     <<"this text is assumed to be UTF-8">>
     <<"But we can also be explicit": type=utf8>>
-
+    
     {- endian, sign, units and size all work, here's how we might encode
      * a 32-bit, big-endian, unsigned integer:
      -}
     <<SomeInteger: type=int, size=8, unit=4, end=big, sign=false>>
-
+    
     -- of course we can just list off integers and floats too:
     <<1, 2, 3.14, 4, 5, 6.0>>
 
@@ -180,25 +180,25 @@ Tuples, like functions, have a specific arity (number of contained elements).  I
     let third my_tuple =
       match my_tuple with
         (_, _, x) -> x
-
+    
     let third_string my_tuple =
       match my_tuple with
         (_, _, x), is_string x -> x
-
+    
     third (1, 2, 3) -- will return the integer 3
-
+    
     {- The following will fail compilation with a type error because
      * third_string/1 only takes tuples that have strings as their
      * third element:
      -}
     third_string (1, 2, 3)
-
+    
     {- Both of the following will also fail compilation since the function
      * third/1 requires tuples with exactly 3 elements:
      -}
     third (1, 2)
     third (1, 2, 3, 4)
-
+    
     {- This function will also fail to compile because tuples of arity 2
        and those of arity 3 are fundamentally different types:
      -}
@@ -217,7 +217,7 @@ We can build lists up with the cons operator `::` or as literals:
 
     "end" :: "a" :: "cons'd" :: "list" :: "with the nil literal []" :: []
     ["or just put", "it", "in", "square brackets"]
-
+    
     -- type error:
     [:atom, "and a string"]
 
@@ -227,7 +227,7 @@ Let's revisit pattern matching here as well with both forms:
       match my_list with
           [] -> 0
         | _ :: t -> 1 + (length t)
-
+    
     let is_length_3 my_list =
       match my_list with
           [_, _, _] -> true
@@ -238,7 +238,7 @@ Let's revisit pattern matching here as well with both forms:
 Maps are type-checked as lists are but have separate types for their keys vs their values.  If we wanted a map with atom keys and string values, it could be expressed as the type `map atom string`.  Functionality is relatively limited still but we can construct literal maps, add single key-value pairs to maps, and pattern match on them.
 
     #{:key => "value"}  -- a literal
-
+    
     {- This will cause a type error because the types of the keys
      * don't match:
      -}
@@ -249,11 +249,11 @@ Maps are type-checked as lists are but have separate types for their keys vs the
 Records can be created ad-hoc wherever you like as in OCaml and Elm and you can pattern match on the structure of records as well.
 
     {x=1, hello="world"}  -- a literal record
-
+    
     -- we have basic structural matching:
     match {x=1, hello="world"} with
       {x=xx} -> xx
-
+    
     {- We have "row polymorphism" which means that if you call the following
        function with {x=1, hello="world"}, the return type does not lose the
        information about the hello field.  The return type of calling the
@@ -263,50 +263,66 @@ Records can be created ad-hoc wherever you like as in OCaml and Elm and you can 
       match my_rec with
         {x=xx} -> (xx, my_rec)
 
-1.  What's Row Polymorphism?
+1.  Functional Updates
+
+    Records can be updated and extended with the same syntax.  If we wanted to add fields `x` and `y` to an existing record `rec`, it's pretty straightforward:
+    
+        let a_new_record = {x=1, y=2.0 | rec}
+    
+    Note that the original record `rec` has not changed, we have made an entirely new record that contains all of the fields in the original along with our new integer `x` field and the float `y` field.
+    
+    The same syntax can be used to replace a member.  If we wanted to replace `x` in the example `a_new_record` above, here's how we'd do it:
+    
+        {x=5 | a_new_record}
+    
+    What happens if we change the type of a field?
+    
+        -- {x: int, y: int}
+        let rec1 = {x=1, y=2}
+        
+        -- {x: string, y: int}
+        let rec2 = {x="hello!", y=2}
+    
+    Remember that updating a record actually makes an entirely new one so we allow for members to change type since it's not **actually** a mutation anyhow.
+    
+    There are currently no plans to enable the removal of record fields.
+
+2.  What's Row Polymorphism?
 
     The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
-
+    
         public interface IHasX {
             public int getX();
         }
-
+        
         public class HasXY implements IHasX {
             public final int x;
             public final String hello;
-
+        
             public HasXY(int x, String hello) {
                 this.x = x;
                 this.hello = hello;
             }
-
+        
             public int getX() { return x; }
             public String getHello() { return hello; }
         }
-
+        
         public IHasX identity(IHasX i) {
             return i;
         }
-
+    
     The return of `identity(new HasXY(1, "world"))` "loses" the information that the passed-in argument has a `hello` member of type `String`.
-
+    
         let identity my_rec =
           match my_rec with
             {x=_} -> my_rec
-
+    
     The return of `identity({x=1, hello="world"})` above is still the type `{x: int, hello: string}` in Alpaca  even though the function `identity` only cares about the field `x: int`.
 
-2.  What's Missing?
+3.  What's Missing?
 
-    There's not yet a way to access individual fields of a record without pattern matching (e.g. `let my_rec = {x=1, hello="world"} in x.x`) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
-
-        -- add an integer field named z to a record with x and y:
-        let xy = {x=1, y=2} in
-        {xy | z=3}
-
-    We should be able to use the above to both "update" fields in a record and also to extend a record with new fields.
-
-    There are currently no plans to enable the removal of record fields.
+    There's not yet a way to access individual fields of a record without pattern matching (e.g. `let my_rec = {x=1, hello="world"} in x.x`)
 
 ### PIDs<a id="sec-3-2-5" name="sec-3-2-5"></a>
 
@@ -392,7 +408,7 @@ And here we will always get a list instead of a character list (same ADT restric
           l, is_list l -> l
         | c, is_chars c -> c
 
-## Currying <a id="sec-4-3" name="sec-4-3"></a>
+## Currying<a id="sec-4-3" name="sec-4-3"></a>
 
 Top level functions can be curried. Practically speaking, this means that if
 you do not provide a function with all of its required arguments, it instead
@@ -403,8 +419,8 @@ limitations to this:
     supplying a single argument to `f` would be ambiguous, so this is disallowed
 -   Functions defined in `let... in...` bindings cannot (currently) be curried
 -   When currying a function defined in another module, the function must first
-    be explicitly imported, i.e. `other_module.my_fun "hello"` would not work,
-    but `import other_module.my_fun;; my_fun "hello"` would.
+    be explicitly imported, i.e. ~other<sub>module</sub>.my<sub>fun</sub> "hello"~ would not work,
+    but ~import other<sub>module</sub>.my<sub>fun</sub>;; my<sub>fun</sub> "hello"~ would.
 
 The latter two are limitations that should go away in future.
 
@@ -412,17 +428,17 @@ Some examples:
 
     -- Currying means we can use a 'pipe forward' operator to 'chain' expressions
     let (|>) x f = f x
-
+    
     let add a b = a + b
     let sub a b = a - b
-
+    
     let result () =
       10 |> add 5 |> sub 2 |> add 19
-
+    
     -- We can create predicates for use with higher order functions, e.g.
     let eq x y =
       x == y
-
+    
     -- assuming a filter/2 function that takens a predicate function and a list 'a
     let filtered_list () =
       filter (eq 3) [1, 2, 3]
@@ -441,7 +457,7 @@ We can also use "type constructors" and type variables to be a bit more expressi
        items in the type's members are polymorphic.
     -}
     type opt 'a = Some 'a | None
-
+    
     {- Here's a map "get value by key" function that uses the new `opt` type.
        It's polymorphic in that if we give this function a `map string int`
        and a string for `key`, the return type will be an `opt int`.  If we
@@ -469,11 +485,11 @@ If the above type is in scope (in the module, or imported), the following functi
 If the inferencer has more than one ADT unifying integers and floats in scope, it will choose the one that occurs first.  In the following example, `f/1` will type to accepting `int_or_float` rather than `json`.
 
     type int_or_float = int | float
-
+    
     type json = int | float | string | bool
               | list json
               | list (string, json)
-
+    
     let f x =
       match x with
           i, is_integer i -> :integer
@@ -493,20 +509,20 @@ Tests:
 Here's a simple example:
 
     let add x y = x + y
-
+    
     test "add 2 2 should result in 4" =
       add 2 2
 
 While the above test is type checked and will happily be compiled, we lack assertions to actually **test** the call to add.  They can be built relatively simply for now, here's a full module example using a simple equality check from one of the test files, `basic_module_with_tests.alp`:
 
     module add_and_a_test
-
+    
     export add/2
-
+    
     let add x y = x + y
-
+    
     test "add 2 2 should result in 4" = test_equal (add 2 2) 4
-
+    
     {- Test the equality of two terms, throwing an exception if they're
        not equal.  The two terms will need to be the same type for any
        call to this to succeed:
@@ -517,7 +533,7 @@ While the above test is type checked and will happily be compiled, we lack asser
         | false ->
             let msg = format_msg "Not equal:  ~w and ~w" x y in
             beam :erlang :error [msg] with _ -> :failed
-
+    
     -- formats a failure message:
     let format_msg base x y =
       let m = beam :io_lib :format [base, [x, y]] with msg -> msg in
@@ -539,17 +555,17 @@ A basic example will probably help:
       receive with
           "add" -> a_counting_function x + 1
         | "sub" -> a_counting_function x - 1
-
+    
     {- If a_counting_function/1 is exported from the module, the following
        will spawn a `pid string`, that is, a "process that can receive
        strings".  Note that this is not a valid top-level entry for a module,
        we just want a few simple examples.
      -}
     let my_pid = spawn a_counting_function 0
-
+    
     -- send "add" to `my_pid`:
     send "add" my_pid
-
+    
     -- type error, `my_pid` only knows how to receive strings:
     send :add my_pid
 
@@ -567,12 +583,12 @@ Mutually recursive functions can be spawned as well provided that **if** they're
       receive with
           :b -> b ()
         | _ -> a ()
-
+    
     let b () =
       receive with
           "a" -> a ()
         | _ -> b ()
-
+    
     -- The above will fail compilation unless the following ADT is in scope:
     type a_and_b = string | atom
 
@@ -583,21 +599,21 @@ As an aside, both the functions `a/1` and `b/1` above have the return type `rec`
 There are a few handy shortcuts for exporting and importing functions to be aware of.  If you have different versions of a function (same name, different number of arguments) and you want to export them all, you can leave out the arity when exporting, e.g.
 
     module example
-
+    
     -- this will export foo/1 and foo/2 for you:
     export foo
-
+    
     let foo x = x
-
+    
     let foo x y = x + y
 
 You can also import functions with or without arity, e.g. `import example.foo/1` for only the first `foo` in the example above or `import example.foo` for both versions.  Subsets of a module's functions can be imported in a list format as well, for example if we have a simple math helper module:
 
     -- some simple math functions:
     module math
-
+    
     export add, sub, mult
-
+    
     let add x y = x + y
     let sub x y = x - y
     let mult x y = x * y
@@ -606,9 +622,9 @@ We can then import two of the functions with a list:
 
     -- imports and uses two of the math functions
     module example
-
+    
     import math.[add, sub]
-
+    
     let f () = add 2 (sub 5 3)
 
 When giving lists of functions to import you can include arity if you only want a specific version of a function.
