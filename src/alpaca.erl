@@ -169,7 +169,7 @@ type_import_test() ->
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     M = alpaca_type_import,
-    ?assertEqual(2, M:test_output(unit)),
+    ?assertEqual(2, M:test_output({})),
     [code:delete(N) || N <- ModuleNames].
 
 type_imports_and_pattern_test() ->
@@ -210,11 +210,11 @@ basic_pid_test() ->
 basic_map_test() ->
     Files =["test_files/basic_map_test.alp"],
     [M] = compile_and_load(Files, []),
-    ?assertEqual({'Ok', 1}, M:get('one', M:test_map(unit))),
-    ?assertEqual('NotFound', M:get('four', M:test_map(unit))),
+    ?assertEqual({'Ok', 1}, M:get('one', M:test_map({}))),
+    ?assertEqual('NotFound', M:get('four', M:test_map({}))),
 
-    ?assertEqual({'Ok', <<"b">>}, M:get({'two', 2}, M:test_tuple_key_map(unit))),
-    ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map(unit))),
+    ?assertEqual({'Ok', <<"b">>}, M:get({'two', 2}, M:test_tuple_key_map({}))),
+    ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map({}))),
     ?assertEqual(#{one => 1, two => 2}, M:add(one, 1, #{two => 2})),
 
     code:delete(M).
@@ -229,7 +229,7 @@ basic_binary_test() ->
     ?assertEqual(1, M:first_three_bits(<<2#00100000>>)),
     ?assertEqual(3, M:first_three_bits(<<2#01100000>>)),
 
-    ?assertEqual(<<"안녕"/utf8>>, M:utf8_bins(unit)),
+    ?assertEqual(<<"안녕"/utf8>>, M:utf8_bins({})),
 
     ?assertEqual(<<" world">>, M:drop_hello(<<"hello world">>)),
 
@@ -313,9 +313,9 @@ record_vs_map_match_order_test() ->
     
 raise_errors_test() ->
     [M] = compile_and_load(["test_files/error_tests.alp"], []),
-    ?assertException(throw, <<"this should be a throw">>, M:raise_throw(unit)),
-    ?assertException(exit, <<"exit here">>, M:raise_exit(unit)),
-    ?assertException(error, <<"and an error">>, M:raise_error(unit)),
+    ?assertException(throw, <<"this should be a throw">>, M:raise_throw({})),
+    ?assertException(exit, <<"exit here">>, M:raise_exit({})),
+    ?assertException(error, <<"and an error">>, M:raise_error({})),
 
     ?assertException(throw, <<"oh no zero!">>, M:throw_or_int(0)),
     ?assertEqual(4, M:throw_or_int(2)),
@@ -347,7 +347,7 @@ radius_test() ->
             ["test_files/radius.alp", 
              "test_files/use_radius.alp"], 
             []),
-    ?assertEqual(1, M2:test_radius(unit)),
+    ?assertEqual(1, M2:test_radius({})),
     code:delete(M1),
     code:delete(M2).
 
@@ -358,7 +358,7 @@ allow_duplicate_definition_with_different_arity_test() ->
 
 apply_to_expressions_test() ->
     [M] = compile_and_load(["test_files/apply_to_expression.alp"], []),
-    ?assertEqual(4, M:foo(unit)),
+    ?assertEqual(4, M:foo({})),
     ?assertEqual(6, M:uses_fun(3)),
     code:delete(M).
 
@@ -394,13 +394,13 @@ function_in_adt_test() ->
 
 curry_test() ->
     [M] = compile_and_load(["test_files/curry.alp"], []),
-    ?assertEqual({16,26,[2]}, M:foo(unit)),
+    ?assertEqual({16,26,[2]}, M:foo({})),
     code:delete(M).
 
 curry_import_export_test() ->
     Files = ["test_files/curry.alp", "test_files/curry_import.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    ?assertEqual([3], M2:run_filter(unit)),
+    ?assertEqual([3], M2:run_filter({})),
     code:delete(M1),
     code:delete(M2).
 
@@ -410,5 +410,25 @@ throw_with_variables_test() ->
     ?assertEqual(true, M:assert_equal(2, 2)),
     ?assertThrow({not_equal, 1, 2}, M:assert_equal(1, 2)),
     code:delete(M).
+
+record_update_test() ->
+    Files = ["test_files/update_record.alp",
+             "test_files/use_update_record.alp"],
+    [M1, M2] = compile_and_load(Files, []),
+
+    ?assertEqual(#{'__struct__' => record, x => 5, b => 2}, M2:main({})),
+    ?assertEqual(#{'__struct__' => record, x => 2}, M2:overwrite_x({})),
+    ?assertEqual(#{'__struct__' => record,
+                   a => 1,
+                   b => 2,
+                   c => 3}, M2:add_2_members({})),
+    ?assertEqual(#{'__struct__' => record,
+                   a => 1,
+                   b => 2,
+                   c => 3,
+                   x => 1.0,
+                   z => <<"this is z">>}, M2:add_3_members({})),
+    code:delete(M1),
+    code:delete(M2).
 
 -endif.

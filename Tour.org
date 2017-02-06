@@ -20,7 +20,7 @@ Much of Alpaca in its current state borrows (in an unstructured manner) aspects 
 While you probably don't need to know any of them in detail, some of the syntax in this document might make a bit more sense if you're familiar with one of the above (including ML).
 
 ** About This Document
-This document is exported from the Emacs org-mode doc ~Tour.org~ using ~org-md-export-to-markdown~.  Corrections and suggestions welcome via PRs to the main [[https://github.com/j14159/alpaca][Alpaca repository]].
+This document is exported from the Emacs org-mode doc ~Tour.org~ using ~org-md-export-to-markdown~.  Corrections and suggestions welcome via PRs to the main [[https://github.com/alpaca-lang/alpaca][Alpaca repository]].
 * The Structure of a Program
 Alpaca at present is really just a new way to write modules for an Erlang application.
 
@@ -195,6 +195,32 @@ let x_in_a_tuple my_rec =
     {x=xx} -> (xx, my_rec)
 #+END_SRC
 
+**** Record Transformations
+Records can be transformed and extended with the same syntax.  Alpaca doesn't consider these "updates" since the original record never changes.  If we wanted to add fields ~x~ and ~y~ to an existing record ~rec~, it's pretty straightforward:
+#+BEGIN_SRC
+let a_new_record = {x=1, y=2.0 | rec}
+#+END_SRC
+
+Note that the original record ~rec~ has not changed, we have made an entirely new record that contains all of the fields in the original along with our new integer ~x~ field and the float ~y~ field.
+
+The same syntax can be used to replace a member.  If we wanted to replace ~x~ in the example ~a_new_record~ above, here's how we'd do it:
+#+BEGIN_SRC
+{x=5 | a_new_record}
+#+END_SRC
+
+What happens if we change the type of a field?
+#+BEGIN_SRC
+-- {x: int, y: int}
+let rec1 = {x=1, y=2}
+
+-- {x: string, y: int}
+let rec2 = {x="hello!" | rec1}
+#+END_SRC
+
+Remember that transforming a record actually makes an entirely new one so we allow for members to change type since it's not *actually* a mutation anyhow.   Thanks to https://github.com/danabr for the suggestion of "transformation" rather than "update".
+
+There are currently no plans to enable the removal of record fields.
+
 **** What's Row Polymorphism?
 The key thing we're after from row polymorphism is not losing information.  For example in Java if we had the following:
 #+BEGIN_SRC
@@ -231,15 +257,8 @@ let identity my_rec =
 The return of ~identity({x=1, hello="world"})~ above is still the type ~{x: int, hello: string}~ in Alpaca  even though the function ~identity~ only cares about the field ~x: int~.
 
 **** What's Missing?
-There's not yet a way to access individual fields of a record without pattern matching (e.g. ~let my_rec = {x=1, hello="world"} in x.x~) nor is there a way to modify a record by making a copy with new or replaced fields.  The syntax currently under consideration:
-#+BEGIN_SRC
--- add an integer field named z to a record with x and y:
-let xy = {x=1, y=2} in
-{xy | z=3}
-#+END_SRC
-We should be able to use the above to both "update" fields in a record and also to extend a record with new fields.
+There's not yet a way to access individual fields of a record without pattern matching (e.g. ~let my_rec = {x=1, hello="world"} in x.x~)
 
-There are currently no plans to enable the removal of record fields.
 *** PIDs
 Process identifiers (references to processes to which we can send messages) are typed with the kind of messages they are able to receive.  The type of process that only knows how to receive strings can be expressed as ~pid string~.  We'll cover processes and PIDs in a bit more detail later but if you're unfamiliar with them from Erlang, [[http://learnyousomeerlang.com/the-hitchhikers-guide-to-concurrency][The Hitchhiker's Guide to Concurrency]] from Learn You Some Erlang is a great place to start.
 * Functions

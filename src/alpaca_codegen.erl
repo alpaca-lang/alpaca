@@ -260,6 +260,28 @@ gen_expr(Env, #alpaca_map_pair{key=K, val=V}) ->
 gen_expr(Env, #alpaca_record{}=R) ->
     {_, RExp} = gen_expr(Env, record_to_map(R)),
     {Env, RExp};
+gen_expr(Env, #alpaca_record_transform{additions=Adds, existing=Existing}) ->
+    F = fun(#alpaca_record_member{line=L, name=N, val=V}, {E, RExp}) ->
+                Add = #alpaca_map_add{
+                         to_add=#alpaca_map_pair{
+                                   key={atom, L, atom_to_list(N)},
+                                   val=V},
+                         existing=RExp},
+                {E, Add}
+        end,
+    {Env2, RecAst} = lists:foldl(F, {Env, Existing}, Adds),
+    {_, RecExp} = gen_expr(Env2, RecAst),
+
+    %% Generating the update as a sequence of map additions re-labels the
+    %% structure as a map, here we're just moving it back to a record.
+    {_, KExp} = gen_expr(Env2, {atom, 0, "__struct__"}),
+    {_, VExp} = gen_expr(Env2, {atom, 0, "record"}),
+
+    {Env2, cerl:c_call(
+             cerl:c_atom(maps),
+             cerl:c_atom(put),
+             [KExp, VExp, RecExp])};
+
 gen_expr(Env, #alpaca_type_check{type=is_string, expr={symbol, _, _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
     TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_binary'), [Exp]),

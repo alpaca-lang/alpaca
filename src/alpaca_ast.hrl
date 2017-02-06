@@ -187,12 +187,15 @@
 %%%
 %%% These will do double-duty for both defining record types for ADTs
 %%% as well as to type records as they occur.
--record(t_record_member, {name=undefined :: atom(),
-                          type=undefined :: typ()}).
+-record(t_record_member, {
+          name=undefined :: atom(),
+          type=undefined :: typ()}).
 -type t_record_member() :: #t_record_member{}.
 
--record(t_record, {members=[] :: list(t_record_member()),
-                           row_var=undefined :: typ()}).
+-record(t_record, {
+          is_pattern=false :: boolean(),
+          members=[] :: list(t_record_member()),
+          row_var=undefined :: typ()}).
 
 -type t_record() :: #t_record{}.
 
@@ -304,6 +307,11 @@
                       members=[] :: list(alpaca_record_member())}).
 -type alpaca_record() :: #alpaca_record{}.
 
+-record(alpaca_record_transform, {
+          line=-1 :: integer(),
+          additions=[] :: list(alpaca_record_member()),
+          existing :: alpaca_value_expression()}).
+-type alpaca_record_transform() :: #alpaca_record_transform{}.
 
 %%% Pattern Matching
 
@@ -390,6 +398,7 @@
                                | alpaca_map()
                                | alpaca_map_add()
                                | alpaca_record()
+                               | alpaca_record_transform()
                                | alpaca_tuple()
                                | alpaca_apply()
                                | alpaca_type_apply()

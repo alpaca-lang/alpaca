@@ -1,0 +1,8 @@
+module use_update_record
+
+export main, overwrite_x, add_2_members, add_3_members
+
+let main () = update_record.adds_x 5 {b=2}
+let overwrite_x () = update_record.adds_x 2 {x=3.0}
+let add_2_members () = {a=1, b=2 | {c=3}}
+let add_3_members () = {a=1, b=2, c=3 | {x=1.0, z="this is z"}}

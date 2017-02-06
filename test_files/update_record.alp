@@ -1,0 +1,5 @@
+module update_record
+
+export adds_x
+
+let adds_x x_val rec = {x=x_val | rec}
