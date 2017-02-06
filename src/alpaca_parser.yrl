@@ -65,7 +65,7 @@ comment_line comment_lines
 module export import
 import_type export_type
 
-type_declare type_constructor type_var base_type base_list base_map base_pid
+type_declare type_constructor type_var base_type base_list base_pid
 
 test
 
@@ -134,14 +134,21 @@ poly_type -> symbol type_expressions :
   {symbol, L, N} = '$1',
   Members = '$2',
 
-  %% Any concrete type in the type_expressions gets a synthesized variable name:
-  Vars = make_vars_for_concrete_types('$2', L),
+  case {N, Members} of
+      {"map", [K, V]} ->
+          {t_map, K, V};
+      {"map", Params} ->
+          return_error(L, {bad_map_params, Params});
+      _ ->
+          %% Any concrete type in the type_expressions gets a synthesized variable name:
+          Vars = make_vars_for_concrete_types('$2', L),
 
-  #alpaca_type{
-     line = L,
-     name = {type_name, L, N}, 
-     members = Members, 
-     vars = Vars}.
+          #alpaca_type{
+             line = L,
+             name = {type_name, L, N},
+             members = Members,
+             vars = Vars}
+  end.
 
 record_type_member -> symbol ':' type_expr : 
   {symbol, _L, N} = '$1',
@@ -184,7 +191,13 @@ sub_type_expr -> type_var : '$1'.
 sub_type_expr -> record_type : '$1'.
 sub_type_expr -> symbol :
   {symbol, L, N} = '$1',
-  #alpaca_type{name={type_name, L, N}, vars=[]}. % not polymorphic
+  case N of
+      "map" ->
+          return_error(L, {insufficient_params, N});
+      _ ->
+          #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
+  end.
+
 sub_type_expr -> type_tuple : '$1'.
 sub_type_expr -> '(' type_expr ')': '$2'.
 sub_type_expr -> '[' type_list ']' '->' type_expr :
@@ -196,7 +209,6 @@ sub_type_expr -> base_type :
 sub_type_expr -> unit : t_unit.
 type_expr -> base_list sub_type_expr:
   {t_list, '$2'}.
-sub_type_expr -> base_map sub_type_expr sub_type_expr : {t_map, '$2', '$3'}.
 sub_type_expr -> base_pid sub_type_expr :
   {alpaca_pid, '$2'}.
 

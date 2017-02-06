@@ -1,0 +1,12 @@
+module option_example
+
+export_type option
+
+export some, map
+
+type option 'a = Some 'a | None
+
+let some x = Some x
+
+let map _ None = None
+let map f Some x = Some (f x)
