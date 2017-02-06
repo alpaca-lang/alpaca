@@ -865,7 +865,6 @@ flatten_record(#t_record{members=Ms, row_var=#t_record{}=Inner}) ->
     RecMems = [#t_record_member{name=N, type=T} || {N, T} <- maps:to_list(Deduped)],
     Rec = #t_record{members=RecMems, row_var=InnerRow},
     flatten_record(Rec);
-%    flatten_record(#t_record{members=Ms ++ InnerMs, row_var=InnerRow});
 flatten_record(#t_record{row_var=P}=R) when is_pid(P) ->
     case get_cell(P) of
         #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
