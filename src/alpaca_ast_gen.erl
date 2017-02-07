@@ -18,7 +18,8 @@
 -type parse_error_reason() :: {module_rename, module(), module()} |
                               no_module |
                               {syntax_error, line(), string()} |
-                              {invalid_top_level_construct, term()}.
+                              {invalid_top_level_construct, term()} |
+                              {insufficient_params, string()}.
 
 -type module_validation_error() :: {module_validation_error, module(),
                                     module_validation_reason()}.
@@ -101,7 +102,9 @@ try_parse(Tokens, FileName) ->
     case parse(Tokens) of
         {ok, Res} -> Res;
         {error, {Line, alpaca_parser, ["syntax error before: ", ErrorToken]}} ->
-          parse_error(FileName, {syntax_error, Line, ErrorToken})
+          parse_error(FileName, {syntax_error, Line, ErrorToken});
+        {error, {Line, alpaca_parser, Error}} ->
+          parse_error(FileName, {Line, Error})
     end.
 
 %% Rename bindings to account for variable names escaping receive, rewrite
@@ -1647,6 +1650,20 @@ import_rewriting_test_() ->
                  test_make_modules([Code1, Code2]))
       end
     ].
+
+invalid_map_type_parameters_test() ->
+    Code1 = "module a\n\n"
+            "type x = map",
+    Code2 = "module a\n\n"
+            "type x = map int",
+    Code3 = "module a\n\n"
+            "type x = map int int int",
+    ?assertMatch({error,{parse_error,_, {_,{insufficient_params,"map"}}}},
+                 test_make_modules([Code1])),
+    ?assertMatch({error,{parse_error,_, {_,{bad_map_params,[t_int]}}}},
+                 test_make_modules([Code2])),
+    ?assertMatch({error,{parse_error,_, {_,{bad_map_params,[t_int,t_int,t_int]}}}},
+                 test_make_modules([Code3])).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
