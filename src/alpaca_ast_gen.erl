@@ -18,7 +18,9 @@
 -type parse_error_reason() :: {module_rename, module(), module()} |
                               no_module |
                               {syntax_error, line(), string()} |
-                              {invalid_top_level_construct, term()} |
+                              {invalid_endianess, term()} |
+                              {invalid_bin_qualifier, string()} |
+                              {invalid_bin_type, string()} |
                               {wrong_type_arity, 't_list' | 't_map' | 't_pid',
                                non_neg_integer()}.
 
@@ -1685,6 +1687,23 @@ invalid_pid_type_parameters_test() ->
                  test_make_modules([Code1])),
     ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_pid, 2}}}},
                  test_make_modules([Code2])).
+
+invalid_base_type_parameters_test_() ->
+    Types = [ {"atom", t_atom},
+              {"binary", t_binary},
+              {"bool", t_bool},
+              {"chars", t_chars},
+              {"float", t_float},
+              {"int", t_int},
+              {"string", t_string}
+            ],
+    lists:map(fun({Token, Typ}) ->
+      Code = "module a\n\n"
+             "type concrete = Constructor\n"
+             "type x = " ++ Token ++ " concrete",
+      ?_assertMatch({error,{parse_error,_, {_,{wrong_type_arity,Typ, 1}}}},
+                   test_make_modules([Code]))
+    end, Types).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

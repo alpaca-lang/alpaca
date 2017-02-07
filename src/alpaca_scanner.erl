@@ -133,7 +133,7 @@ infer_bin_test() ->
                        {'let', 2}, {symbol, 2, "a"}, {assign, 2}, 
                                    {bin_open, 2}, {int, 2, 10},
                                    {':', 2}, {type_declare, 2},
-                                   {assign, 2}, {base_type, 2, "int"},
+                                   {assign, 2}, {symbol, 2, "int"},
                                    {bin_close, 2}
                      ],                       
     ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).
