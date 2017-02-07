@@ -432,8 +432,10 @@ record_update_test() ->
     code:delete(M2).
 
 option_map_test() ->
-    Files = ["test_files/option_example.alp"],
-    [M] = compile_and_load(Files, []),
+    %% Including asserts now to check a bug found when experimenting for the
+    %% beginning of alpaca_lib:
+    Files = ["test_files/option_example.alp", "test_files/asserts.alp"],
+    [M, _] = compile_and_load(Files, [test]),
     ?assertEqual({'Some', 1}, M:some(1)),
     ?assertEqual({'Some', 2}, M:map(fun(X) -> X + 1 end, M:some(1))),
     ?assertEqual('None', M:map(fun(X) -> X + 1 end, 'None')),
