@@ -163,7 +163,9 @@
                         | t_float
                         | t_string
                         | t_pid
-                        | t_bool.
+                        | t_bool
+                        | t_chars
+                        | t_unit.
 
 -type alpaca_type_name() :: {type_name, integer(), string()}.
 -type alpaca_type_var()  :: {type_var, integer(), string()}.
@@ -175,13 +177,19 @@
          }).
 -type alpaca_type_tuple() :: #alpaca_type_tuple{}.
 
+-type alpaca_list_type() :: {t_list, alpaca_base_type()|alpaca_poly_type()}.
+
 -type alpaca_map_type() :: {t_map,
                           alpaca_base_type()|alpaca_poly_type(),
                           alpaca_base_type()|alpaca_poly_type()}.
 
+-type alpaca_pid_type() :: {t_list, alpaca_base_type()|alpaca_poly_type()}.
+
 -type alpaca_poly_type() :: alpaca_type()
                         | alpaca_type_tuple()
-                        | alpaca_map_type().
+                        | alpaca_list_type()
+                        | alpaca_map_type()
+                        | alpaca_pid_type().
 
 %%% ### Record Type Tracking
 %%%
@@ -222,7 +230,9 @@
 -type alpaca_types() :: alpaca_type()
                     | alpaca_type_tuple()
                     | alpaca_base_type()
-                    | alpaca_map_type().
+                    | alpaca_list_type()
+                    | alpaca_map_type()
+                    | alpaca_pid_type().
 
 -record(alpaca_type, {
           line=0 :: integer(),
@@ -498,6 +508,7 @@
 %% original names.
 -record(alpaca_module, {
           name=no_module :: atom(),
+          filename=undefined :: string() | undefined,
           rename_map=maps:new() :: map(),
           function_exports=[] :: list({string(), integer()}|string()),
           function_imports=[] :: list({string(), {atom(), integer()}|string()}),
