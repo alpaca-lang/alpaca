@@ -19,7 +19,8 @@
                               no_module |
                               {syntax_error, line(), string()} |
                               {invalid_top_level_construct, term()} |
-                              {insufficient_params, string()}.
+                              {wrong_type_arity, 't_list' | 't_map' | 't_pid',
+                               non_neg_integer()}.
 
 -type module_validation_error() :: {module_validation_error, module(),
                                     module_validation_reason()}.
@@ -1658,11 +1659,11 @@ invalid_map_type_parameters_test() ->
             "type x = map int",
     Code3 = "module a\n\n"
             "type x = map int int int",
-    ?assertMatch({error,{parse_error,_, {_,{insufficient_params,"map"}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_map, 0}}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{bad_map_params,[t_int]}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 1}}}},
                  test_make_modules([Code2])),
-    ?assertMatch({error,{parse_error,_, {_,{bad_map_params,[t_int,t_int,t_int]}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 3}}}},
                  test_make_modules([Code3])).
 
 invalid_list_type_parameters_test() ->
@@ -1670,9 +1671,9 @@ invalid_list_type_parameters_test() ->
             "type x = list",
     Code2 = "module a\n\n"
             "type x = list int int",
-    ?assertMatch({error,{parse_error,_, {_,{insufficient_params,"list"}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 0}}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{bad_list_params,[t_int, t_int]}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 2}}}},
                  test_make_modules([Code2])).
 
 invalid_pid_type_parameters_test() ->
@@ -1680,9 +1681,9 @@ invalid_pid_type_parameters_test() ->
             "type x = pid",
     Code2 = "module a\n\n"
             "type x = pid int int",
-    ?assertMatch({error,{parse_error,_, {_,{insufficient_params,"pid"}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_pid, 0}}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{bad_pid_params,[t_int, t_int]}}}},
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_pid, 2}}}},
                  test_make_modules([Code2])).
 
 test_make_modules(Sources) ->

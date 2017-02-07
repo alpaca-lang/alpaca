@@ -138,15 +138,15 @@ poly_type -> symbol type_expressions :
       {"list", [E]} ->
           {t_list, E};
       {"list", Params} ->
-          return_error(L, {bad_list_params, Params});
+          return_error(L, {wrong_type_arity, t_list, length(Params)});
       {"map", [K, V]} ->
           {t_map, K, V};
       {"map", Params} ->
-          return_error(L, {bad_map_params, Params});
+          return_error(L, {wrong_type_arity, t_map, length(Params)});
       {"pid", [T]} ->
           {t_pid, T};
       {"pid", Params} ->
-          return_error(L, {bad_pid_params, Params});
+          return_error(L, {wrong_type_arity, t_pid, length(Params)});
       _ ->
           %% Any concrete type in the type_expressions gets a synthesized variable name:
           Vars = make_vars_for_concrete_types('$2', L),
@@ -201,11 +201,11 @@ sub_type_expr -> symbol :
   {symbol, L, N} = '$1',
   case N of
       "list" ->
-          return_error(L, {insufficient_params, N});
+          return_error(L, {wrong_type_arity, t_list, 0});
       "map" ->
-          return_error(L, {insufficient_params, N});
+          return_error(L, {wrong_type_arity, t_map, 0});
       "pid" ->
-          return_error(L, {insufficient_params, N});
+          return_error(L, {wrong_type_arity, t_pid, 0});
       _ ->
           #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
   end.
