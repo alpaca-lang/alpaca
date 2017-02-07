@@ -18,7 +18,12 @@
 -type parse_error_reason() :: {module_rename, module(), module()} |
                               no_module |
                               {syntax_error, line(), string()} |
-                              {invalid_top_level_construct, term()}.
+                              {invalid_endianess, term()} |
+                              {invalid_bin_qualifier, string()} |
+                              {invalid_bin_type, string()} |
+                              {invalid_fun_parameter, term()} |
+                              {wrong_type_arity, 't_list' | 't_map' | 't_pid',
+                               non_neg_integer()}.
 
 -type module_validation_error() :: {module_validation_error, module(),
                                     module_validation_reason()}.
@@ -101,7 +106,9 @@ try_parse(Tokens, FileName) ->
     case parse(Tokens) of
         {ok, Res} -> Res;
         {error, {Line, alpaca_parser, ["syntax error before: ", ErrorToken]}} ->
-          parse_error(FileName, {syntax_error, Line, ErrorToken})
+          parse_error(FileName, {syntax_error, Line, ErrorToken});
+        {error, {Line, alpaca_parser, Error}} ->
+          parse_error(FileName, {Line, Error})
     end.
 
 %% Rename bindings to account for variable names escaping receive, rewrite
@@ -1647,6 +1654,57 @@ import_rewriting_test_() ->
                  test_make_modules([Code1, Code2]))
       end
     ].
+
+invalid_map_type_parameters_test() ->
+    Code1 = "module a\n\n"
+            "type x = map",
+    Code2 = "module a\n\n"
+            "type x = map int",
+    Code3 = "module a\n\n"
+            "type x = map int int int",
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_map, 0}}}},
+                 test_make_modules([Code1])),
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 1}}}},
+                 test_make_modules([Code2])),
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 3}}}},
+                 test_make_modules([Code3])).
+
+invalid_list_type_parameters_test() ->
+    Code1 = "module a\n\n"
+            "type x = list",
+    Code2 = "module a\n\n"
+            "type x = list int int",
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 0}}}},
+                 test_make_modules([Code1])),
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 2}}}},
+                 test_make_modules([Code2])).
+
+invalid_pid_type_parameters_test() ->
+    Code1 = "module a\n\n"
+            "type x = pid",
+    Code2 = "module a\n\n"
+            "type x = pid int int",
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_pid, 0}}}},
+                 test_make_modules([Code1])),
+    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_pid, 2}}}},
+                 test_make_modules([Code2])).
+
+invalid_base_type_parameters_test_() ->
+    Types = [ {"atom", t_atom},
+              {"binary", t_binary},
+              {"bool", t_bool},
+              {"chars", t_chars},
+              {"float", t_float},
+              {"int", t_int},
+              {"string", t_string}
+            ],
+    lists:map(fun({Token, Typ}) ->
+      Code = "module a\n\n"
+             "type concrete = Constructor\n"
+             "type x = " ++ Token ++ " concrete",
+      ?_assertMatch({error,{parse_error,_, {_,{wrong_type_arity,Typ, 1}}}},
+                   test_make_modules([Code]))
+    end, Types).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

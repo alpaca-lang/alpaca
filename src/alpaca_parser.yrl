@@ -65,7 +65,7 @@ comment_line comment_lines
 module export import
 import_type export_type
 
-type_declare type_constructor type_var base_type base_list base_pid
+type_declare type_constructor type_var
 
 test
 
@@ -135,10 +135,19 @@ poly_type -> symbol type_expressions :
   Members = '$2',
 
   case {N, Members} of
-      {"map", [K, V]} ->
-          {t_map, K, V};
-      {"map", Params} ->
-          return_error(L, {bad_map_params, Params});
+      {"atom", Params}   -> type_arity_error(L, t_atom, Params);
+      {"binary", Params} -> type_arity_error(L, t_binary, Params);
+      {"bool", Params}   -> type_arity_error(L, t_bool, Params);
+      {"chars", Params}  -> type_arity_error(L, t_chars, Params);
+      {"float", Params}  -> type_arity_error(L, t_float, Params);
+      {"int", Params}    -> type_arity_error(L, t_int, Params);
+      {"list", [E]}      -> {t_list, E};
+      {"list", Params}   -> type_arity_error(L, t_list, Params);
+      {"map", [K, V]}    -> {t_map, K, V};
+      {"map", Params}    -> type_arity_error(L, t_map, Params);
+      {"pid", [T]}       -> {t_pid, T};
+      {"pid", Params}    -> type_arity_error(L, t_pid, Params);
+      {"string", Params} -> type_arity_error(L, t_string, Params);
       _ ->
           %% Any concrete type in the type_expressions gets a synthesized variable name:
           Vars = make_vars_for_concrete_types('$2', L),
@@ -192,8 +201,26 @@ sub_type_expr -> record_type : '$1'.
 sub_type_expr -> symbol :
   {symbol, L, N} = '$1',
   case N of
+      "atom" ->
+          t_atom;
+      "binary" ->
+          t_binary;
+      "bool" ->
+          t_bool;
+      "chars" ->
+          t_chars;
+      "float" ->
+          t_float;
+      "int" ->
+          t_int;
+      "list" ->
+          return_error(L, {wrong_type_arity, t_list, 0});
       "map" ->
-          return_error(L, {insufficient_params, N});
+          return_error(L, {wrong_type_arity, t_map, 0});
+      "pid" ->
+          return_error(L, {wrong_type_arity, t_pid, 0});
+      "string" ->
+          t_string;
       _ ->
           #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
   end.
@@ -203,14 +230,7 @@ sub_type_expr -> '(' type_expr ')': '$2'.
 sub_type_expr -> '[' type_list ']' '->' type_expr :
 
     {t_arrow, '$2', '$5'}.
-sub_type_expr -> base_type :
-  {base_type, _, T} = '$1',
-  list_to_atom("t_" ++ T).
 sub_type_expr -> unit : t_unit.
-type_expr -> base_list sub_type_expr:
-  {t_list, '$2'}.
-sub_type_expr -> base_pid sub_type_expr :
-  {alpaca_pid, '$2'}.
 
 type_list -> comma_separated_type_list : '$1'.
 type_list -> type_expr: ['$1'].
@@ -330,12 +350,14 @@ cons -> '[' literal_cons_items ']':
   lists:foldr(F, {nil, 0}, '$2').
 
 %% -----  Binaries  --------------------
-bin_qualifier -> type_declare assign base_type : '$3'.
 bin_qualifier -> type_declare assign symbol :
     {symbol, L, S} = '$3',
     case S of
-        "utf8" -> {bin_text_encoding, S};
-        _      -> return_error(L, {invalid_bin_text_encoding, S})
+        "binary" -> {bin_type, S};
+        "float" -> {bin_type, S};
+        "int" -> {bin_type, S};
+        "utf8" -> {bin_type, S};
+        _      -> return_error(L, {invalid_bin_type, S})
     end.
 bin_qualifier -> symbol assign int :
     {symbol, L, S} = '$1',
@@ -669,7 +691,7 @@ make_infix(Op, A, B) ->
                   args=[A, B]}.
 
 make_define([{symbol, L, _} = Name|A], Expr, Level) ->
-    case validate_args(A) of
+    case validate_args(L, A) of
         {ok, []} ->
             %% If this is a zero-arg function, at the toplevel, it's a value
             %% and therefore its body must be restricted to literals only
@@ -702,19 +724,19 @@ make_define([BadName|Args], _Expr, _) ->
 %% Unit is only valid for single argument functions as a way around
 %% the problem of distinguishing between nullary functions and
 %% variable bindings in let forms:
-validate_args([{unit, _}]=Args) ->
+validate_args(_L, [{unit, _}]=Args) ->
     {ok, Args};
-validate_args(Args) ->
-    validate_args(Args, []).
+validate_args(L, Args) ->
+    validate_args(L, Args, []).
 
-validate_args([], GoodArgs) ->
+validate_args(_L, [], GoodArgs) ->
     {ok, lists:reverse(GoodArgs)};
-validate_args([#alpaca_match{}=E|_], _) ->
-    throw({invalid_fun_parameter, E});
-validate_args([#alpaca_spawn{}=E|_], _) ->
-    throw({invalid_fun_parameter, E});
-validate_args([A|T], Memo) ->
-    validate_args(T, [A|Memo]).
+validate_args(L, [#alpaca_match{}=E|_], _) ->
+    return_error(L, {invalid_fun_parameter, E});
+validate_args(L, [#alpaca_spawn{}=E|_], _) ->
+    return_error(L, {invalid_fun_parameter, E});
+validate_args(L, [A|T], Memo) ->
+    validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
 is_literal({int, _, _}) -> true;
@@ -784,10 +806,7 @@ add_qualifier(#alpaca_bits{}=B, {unit, {int, _, I}}) ->
     B#alpaca_bits{unit=I, default_sizes=false};
 add_qualifier(#alpaca_bits{}=B, {bin_endian, _, E}) ->
     B#alpaca_bits{endian=list_to_atom(E)};
-add_qualifier(#alpaca_bits{}=B, {base_type, _, T})
-  when T =:= "int"; T =:= "float"; T =:= "binary"; T =:= "utf8" ->
-    B#alpaca_bits{type=list_to_atom(T)};
-add_qualifier(#alpaca_bits{}=B, {bin_text_encoding, Enc}) ->
+add_qualifier(#alpaca_bits{}=B, {bin_type, Enc}) ->
     B#alpaca_bits{type=list_to_atom(Enc)};
 add_qualifier(#alpaca_bits{}=B, {bin_sign, _, S}) ->
     B#alpaca_bits{sign=list_to_atom(S)}.
@@ -801,3 +820,7 @@ make_vars_for_concrete_types(Vars, Line) ->
         end,
     {Vs, _} = lists:foldl(F, {[], 0}, Vars),
     lists:reverse(Vs).
+
+type_arity_error(L, Typ, Params) ->
+    return_error(L, {wrong_type_arity, Typ, length(Params)}).
+
