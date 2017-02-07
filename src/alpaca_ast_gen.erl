@@ -21,6 +21,7 @@
                               {invalid_endianess, term()} |
                               {invalid_bin_qualifier, string()} |
                               {invalid_bin_type, string()} |
+                              {invalid_fun_parameter, term()} |
                               {wrong_type_arity, 't_list' | 't_map' | 't_pid',
                                non_neg_integer()}.
 

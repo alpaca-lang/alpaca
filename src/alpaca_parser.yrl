@@ -691,7 +691,7 @@ make_infix(Op, A, B) ->
                   args=[A, B]}.
 
 make_define([{symbol, L, _} = Name|A], Expr, Level) ->
-    case validate_args(A) of
+    case validate_args(L, A) of
         {ok, []} ->
             %% If this is a zero-arg function, at the toplevel, it's a value
             %% and therefore its body must be restricted to literals only
@@ -724,19 +724,19 @@ make_define([BadName|Args], _Expr, _) ->
 %% Unit is only valid for single argument functions as a way around
 %% the problem of distinguishing between nullary functions and
 %% variable bindings in let forms:
-validate_args([{unit, _}]=Args) ->
+validate_args(_L, [{unit, _}]=Args) ->
     {ok, Args};
-validate_args(Args) ->
-    validate_args(Args, []).
+validate_args(L, Args) ->
+    validate_args(L, Args, []).
 
-validate_args([], GoodArgs) ->
+validate_args(_L, [], GoodArgs) ->
     {ok, lists:reverse(GoodArgs)};
-validate_args([#alpaca_match{}=E|_], _) ->
-    throw({invalid_fun_parameter, E});
-validate_args([#alpaca_spawn{}=E|_], _) ->
-    throw({invalid_fun_parameter, E});
-validate_args([A|T], Memo) ->
-    validate_args(T, [A|Memo]).
+validate_args(L, [#alpaca_match{}=E|_], _) ->
+    return_error(L, {invalid_fun_parameter, E});
+validate_args(L, [#alpaca_spawn{}=E|_], _) ->
+    return_error(L, {invalid_fun_parameter, E});
+validate_args(L, [A|T], Memo) ->
+    validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
 is_literal({int, _, _}) -> true;
