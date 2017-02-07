@@ -6,10 +6,13 @@ export (|>)
 
 let (|>) x f = f x
 
+let many_args x y z o =
+  x + y + z + o
+
 let non_curry x =
   x + x
 
-let add x y = 
+let add x y =
   x + y
 
 let whatever i a =
@@ -29,11 +32,13 @@ let filter pred l =
 let eq a b =
   a == b
 
-let filtered_list () =    
+let filtered_list () =
   [1, 2, 3]
   |> filter (eq 2)
 
 let foo () =
+  let many_args_curry = many_args 1 in
+  let unused_curry = many_args_curry 2 4 1 in
   let adder = add 6 in
   (whatever 6 "yeh" |> add 5 |> add 5, adder 20, filtered_list ())
 

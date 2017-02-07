@@ -338,7 +338,7 @@ gen_expr(Env, #alpaca_apply{expr={symbol, L, Name}=FExpr, args=Args}) ->
                lists:seq(DesiredArity+1, Arity)),
            CurryExpr = #alpaca_fun_def{
                              name={symbol, L, CurryFunName},
-                             arity=DesiredArity,
+                             arity=Arity-DesiredArity,
                              versions=[#alpaca_fun_version{
                                           args=CArgs,
                                           body=#alpaca_apply{
