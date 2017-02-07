@@ -1435,19 +1435,26 @@ type_module(#alpaca_module{functions=Fs,
                              type_constructors=constructors(AllTypes),
                              entered_modules=[Name|Env2#env.entered_modules]},
 
-                    FunRes = typ_module_funs(Fs, Env3, []),
 
-                    case type_module_tests(Tests, Env3, ok, FunRes) of
-                        {error, _} = Err        ->
+                    %% We need to get the environment back from typ_module_funs
+                    %% so that the top-level function bindings are available to
+                    %% tests:
+                    case typ_module_funs(Fs, Env3, []) of
+                        {error, _}=Err ->
                             Err;
-                        Funs when is_list(Funs) ->
-                            {ok, M#alpaca_module{functions=Funs}}
+                        {Env4, FunRes} ->
+                            case type_module_tests(Tests, Env4, ok, FunRes) of
+                                {error, _} = Err        ->
+                                    Err;
+                                Funs when is_list(Funs) ->
+                                    {ok, M#alpaca_module{functions=Funs}}
+                            end
                     end
             end
     end.
 
-typ_module_funs([], _Env, Memo) ->
-    lists:reverse(Memo);
+typ_module_funs([], Env, Memo) ->
+    {Env, lists:reverse(Memo)};
 typ_module_funs([#alpaca_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
     case typ_of(Env, 0, F) of
         {error, _} = E ->

@@ -10,3 +10,12 @@ let some x = Some x
 
 let map _ None = None
 let map f Some x = Some (f x)
+
+let ident x = x
+
+test "mapping a Some 1 with identity should result in Some 1" =
+  asserts.assert_equal Some 1 (map ident Some 1)
+
+test "mapping a None with identity should result in None" =
+  let f x = x in
+  asserts.assert_equal (map f None) None
