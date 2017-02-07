@@ -65,7 +65,7 @@ comment_line comment_lines
 module export import
 import_type export_type
 
-type_declare type_constructor type_var base_type base_list base_pid
+type_declare type_constructor type_var base_type base_pid
 
 test
 
@@ -135,6 +135,10 @@ poly_type -> symbol type_expressions :
   Members = '$2',
 
   case {N, Members} of
+      {"list", [E]} ->
+          {t_list, E};
+      {"list", Params} ->
+          return_error(L, {bad_list_params, Params});
       {"map", [K, V]} ->
           {t_map, K, V};
       {"map", Params} ->
@@ -192,6 +196,8 @@ sub_type_expr -> record_type : '$1'.
 sub_type_expr -> symbol :
   {symbol, L, N} = '$1',
   case N of
+      "list" ->
+          return_error(L, {insufficient_params, N});
       "map" ->
           return_error(L, {insufficient_params, N});
       _ ->
@@ -207,8 +213,6 @@ sub_type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
 sub_type_expr -> unit : t_unit.
-type_expr -> base_list sub_type_expr:
-  {t_list, '$2'}.
 sub_type_expr -> base_pid sub_type_expr :
   {alpaca_pid, '$2'}.
 
