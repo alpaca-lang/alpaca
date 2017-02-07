@@ -1675,6 +1675,16 @@ invalid_list_type_parameters_test() ->
     ?assertMatch({error,{parse_error,_, {_,{bad_list_params,[t_int, t_int]}}}},
                  test_make_modules([Code2])).
 
+invalid_pid_type_parameters_test() ->
+    Code1 = "module a\n\n"
+            "type x = pid",
+    Code2 = "module a\n\n"
+            "type x = pid int int",
+    ?assertMatch({error,{parse_error,_, {_,{insufficient_params,"pid"}}}},
+                 test_make_modules([Code1])),
+    ?assertMatch({error,{parse_error,_, {_,{bad_pid_params,[t_int, t_int]}}}},
+                 test_make_modules([Code2])).
+
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
     make_modules(NamedSources).

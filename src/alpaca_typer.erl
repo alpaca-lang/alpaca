@@ -960,7 +960,7 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
     NewT = new_cell(#t_record{members=lists:reverse(NewMems), row_var=RVC}),
     inst_type_members(ADT, Rem, Env3, [NewT|Memo]);
 
-inst_type_members(ADT, [{alpaca_pid, TExp}|Rem], Env, Memo) ->
+inst_type_members(ADT, [{t_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err ->
             Err;
@@ -1148,7 +1148,7 @@ inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types, Env) ->
     {Env2, KElem} = inst_constructor_arg(KeyType, Vs, Types, Env),
     {Env3, VElem} = inst_constructor_arg(ValType, Vs, Types, Env2),
     {Env3, new_cell({t_map, KElem, VElem})};
-inst_constructor_arg({alpaca_pid, MsgType}, Vs, Types, Env) ->
+inst_constructor_arg({t_pid, MsgType}, Vs, Types, Env) ->
     {Env2, PidElem} = inst_constructor_arg(MsgType, Vs, Types, Env),
     {Env, new_cell({t_pid, PidElem})};
 inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},

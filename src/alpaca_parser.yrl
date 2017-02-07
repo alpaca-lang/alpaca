@@ -65,7 +65,7 @@ comment_line comment_lines
 module export import
 import_type export_type
 
-type_declare type_constructor type_var base_type base_pid
+type_declare type_constructor type_var base_type
 
 test
 
@@ -143,6 +143,10 @@ poly_type -> symbol type_expressions :
           {t_map, K, V};
       {"map", Params} ->
           return_error(L, {bad_map_params, Params});
+      {"pid", [T]} ->
+          {t_pid, T};
+      {"pid", Params} ->
+          return_error(L, {bad_pid_params, Params});
       _ ->
           %% Any concrete type in the type_expressions gets a synthesized variable name:
           Vars = make_vars_for_concrete_types('$2', L),
@@ -200,6 +204,8 @@ sub_type_expr -> symbol :
           return_error(L, {insufficient_params, N});
       "map" ->
           return_error(L, {insufficient_params, N});
+      "pid" ->
+          return_error(L, {insufficient_params, N});
       _ ->
           #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
   end.
@@ -213,8 +219,6 @@ sub_type_expr -> base_type :
   {base_type, _, T} = '$1',
   list_to_atom("t_" ++ T).
 sub_type_expr -> unit : t_unit.
-sub_type_expr -> base_pid sub_type_expr :
-  {alpaca_pid, '$2'}.
 
 type_list -> comma_separated_type_list : '$1'.
 type_list -> type_expr: ['$1'].
