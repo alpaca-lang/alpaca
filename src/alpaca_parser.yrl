@@ -125,8 +125,6 @@ type_export -> export_type types_to_export :
   Names = [N || {symbol, _, N} <- '$2'],
   #alpaca_type_export{line=L, names=Names}.
 
-module_def -> module atom : {module, '$1'}.
-
 type_expressions -> sub_type_expr : ['$1'].
 type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
 
@@ -541,8 +539,8 @@ ffi_call -> beam atom atom cons with match_clauses:
             clauses='$6'}.
 
 module_def -> module symbol :
-{symbol, _, Name} = '$2',
-{module, list_to_atom(Name)}.
+{symbol, L, Name} = '$2',
+{module, list_to_atom(Name), L}.
 
 export_def -> export export_list : {export, '$2'}.
 %% Imported functions come out of the parser in the following tuple format:

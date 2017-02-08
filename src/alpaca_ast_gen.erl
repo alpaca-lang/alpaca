@@ -13,26 +13,27 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type parse_error() :: {parse_error, filename(), parse_error_reason()}.
+-type parse_error() :: {parse_error, filename(), line(), error_reason()}.
 
--type parse_error_reason() :: {module_rename, module(), module()} |
-                              no_module |
-                              {syntax_error, line(), string()} |
-                              {invalid_endianess, term()} |
-                              {invalid_bin_qualifier, string()} |
-                              {invalid_bin_type, string()} |
-                              {invalid_fun_parameter, term()} |
-                              {wrong_type_arity, 't_list' | 't_map' | 't_pid',
-                               non_neg_integer()}.
+-type builtin_type() :: alpaca_base_type() |
+                        alpaca_list_type() |
+                        alpaca_map_type() |
+                        alpaca_pid_type().
 
--type module_validation_error() :: {module_validation_error, module(),
-                                    module_validation_reason()}.
+-type error_reason() :: {duplicate_definition, string()} |
+                        {duplicate_type, string()} |
+                        {function_not_exported, module(), string()} |
+                        {invalid_endianess, term()} |
+                        {invalid_bin_qualifier, string()} |
+                        {invalid_bin_type, string()} |
+                        {invalid_fun_parameter, term()} |
+                        {invalid_top_level_construct, term()} |
+                        {module_rename, module(), module()} |
+                        no_module |
+                        {no_module, module()} |
+                        {syntax_error, string()} |
+                        {wrong_type_arity, builtin_type(), non_neg_integer()}.
 
--type module_validation_reason() :: {duplicate_constructor, string()} |
-                                    {duplicate_definition, string(), line()} |
-                                    {duplicate_type, string()} |
-                                    {module_not_found, module()} |
-                                    {type_not_exported, module(), string()}.
 -type filename() :: string().
 -type line() :: integer().
 
@@ -56,21 +57,17 @@
     Sources :: list(Source),
     Source :: {filename(), Code},
     Code :: string() | binary(),
-    Error :: parse_error() | module_validation_error().
+    Error :: parse_error().
 make_modules(Code) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
       {ok, rename_and_resolve(Modules)}
     catch
-      throw:{parse_error,_, _}=Err -> {error, Err};
-      throw:{module_validation_error, _, _}=Err -> {error, Err}
+      throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
 
-parse_error(FileName, Error) ->
-    throw({parse_error, FileName, Error}).
-
-validation_error(#alpaca_module{name=ModName}, Error) ->
-    throw({module_validation_error, ModName, Error}).
+parse_error(#alpaca_module{filename=FileName}, Line, Error) ->
+    throw({parse_error, FileName, Line, Error}).
 
 parse({ok, Tokens, _}) ->
     parse(Tokens);
@@ -81,34 +78,32 @@ parse_module({FileName, Text}) when is_binary(Text) ->
     parse_module({FileName, binary:bin_to_list(Text)});
 parse_module({FileName, Text}) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    {ok, #alpaca_module{}=M} = parse_module(Tokens, #alpaca_module{}, FileName),
-    M.
+    StartMod = #alpaca_module{filename=FileName},
+    parse_module(Tokens, StartMod).
 
-parse_module([], #alpaca_module{name=no_module}, FileName) ->
-    parse_error(FileName, no_module);
-parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M,
-             _FileName) ->
+parse_module([], #alpaca_module{name=no_module}=M) ->
+    parse_error(M, 1, no_module);
+parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
     TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
-    {ok, M#alpaca_module{functions=OrderedFuns,
-                       types = TypesWithModule}};
-parse_module([{break, _}], Mod, FileName) ->
-    parse_module([], Mod, FileName);
-parse_module(Tokens, Mod, FileName) ->
+    M#alpaca_module{functions=OrderedFuns, types = TypesWithModule};
+parse_module([{break, _}], Mod) ->
+    parse_module([], Mod);
+parse_module(Tokens, Mod) ->
     case next_batch(Tokens, []) of
-        {[], Rem}        -> parse_module(Rem, Mod, FileName);
+        {[], Rem}        -> parse_module(Rem, Mod);
         {NextBatch, Rem} ->
-            Parsed = try_parse(NextBatch, FileName),
-            parse_module(Rem, update_memo(Mod, Parsed, FileName), FileName)
+            Parsed = try_parse(NextBatch, Mod),
+            parse_module(Rem, update_memo(Mod, Parsed))
     end.
 
-try_parse(Tokens, FileName) ->
+try_parse(Tokens, Mod) ->
     case parse(Tokens) of
         {ok, Res} -> Res;
         {error, {Line, alpaca_parser, ["syntax error before: ", ErrorToken]}} ->
-          parse_error(FileName, {syntax_error, Line, ErrorToken});
+          parse_error(Mod, Line, {syntax_error, ErrorToken});
         {error, {Line, alpaca_parser, Error}} ->
-          parse_error(FileName, {Line, Error})
+          parse_error(Mod, Line, Error)
     end.
 
 %% Rename bindings to account for variable names escaping receive, rewrite
@@ -173,7 +168,7 @@ expand_imports([M|Tail], ExportMap, Memo) ->
            ({Fun, Mod}) when is_atom(Mod) ->
                 case maps:get(Mod, ExportMap, error) of
                     error ->
-                        validation_error(M, {module_not_found, Mod});
+                        parse_error(M, 1, {no_module, Mod});
                     Funs ->
                         [{Fun, {Mod, A}} || {FN, A} <- Funs, FN =:= Fun]
                 end
@@ -272,7 +267,7 @@ validate_user_types(#alpaca_module{types=Ts}=Mod) ->
 %% a function for creating an error from one element.  The list must be sorted.
 check_dupes([A,B|T], Compare) ->
     case Compare(A, B) of
-        true -> {error, A};
+        true -> {error, B};
         false -> check_dupes(T, Compare)
     end;
 check_dupes([_], _) ->
@@ -281,54 +276,52 @@ check_dupes([], _) ->
     ok.
 
 unique_type_names(Mod, Types) ->
-    Names = lists:sort([N || #alpaca_type{name={type_name, _, N}} <- Types]),
-    case check_dupes(Names, fun(A, B) -> A =:= B end) of
+    Names = lists:sort([{N, L} || #alpaca_type{name={type_name, L, N}} <- Types]),
+    case check_dupes(Names, fun({A, _}, {B, _}) -> A =:= B end) of
         ok -> ok;
-        {error, A} -> validation_error(Mod, {duplicate_type, A})
+        {error, {N, L}} -> parse_error(Mod, L, {duplicate_type, N})
     end.
 
 unique_type_constructors(Mod, Types) ->
     %% Get the sorted names of only the constructors:
-    F = fun (#alpaca_constructor{name=#type_constructor{name=N}}, Acc) -> [N|Acc];
-            (_, Acc) -> Acc
+    F = fun (#alpaca_constructor{name=#type_constructor{name=N,line=L}}) ->
+                {true, {N, L}};
+            (_) -> false
         end,
-    ToFlatten = [lists:foldl(F, [], Ms) || #alpaca_type{members=Ms} <- Types],
-    %% can't lists:flatten here because strings are lists and we only want
-    %% it flattened one level:
-    Cs = lists:sort(lists:foldl(fun(A, B) -> A ++ B end, [], ToFlatten)),
-    case check_dupes(Cs, fun(A, B) -> A =:= B end) of
+    ToFlatten = [lists:filtermap(F, Ms) || #alpaca_type{members=Ms} <- Types],
+    Cs = lists:sort(lists:flatten(ToFlatten)),
+    case check_dupes(Cs, fun({A, _}, {B, _}) -> A =:= B end) of
         ok -> ok;
-        {error, A} -> validation_error(Mod, {duplicate_constructor, A})
+        {error, {N, L}} -> parse_error(Mod, L, {duplicate_constructor, N})
     end.
 
-update_memo(#alpaca_module{name=no_module}=Mod, {module, Name}, _FileName) ->
+update_memo(#alpaca_module{name=no_module}=Mod, {module, Name, _}) ->
     Mod#alpaca_module{name=Name};
-update_memo(#alpaca_module{name=Name}, {module, DupeName}, FileName) ->
-    parse_error(FileName, {module_rename, Name, DupeName});
-update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I,
-            _FileName) ->
+update_memo(#alpaca_module{name=Name}=Mod, {module, DupeName, L}) ->
+    parse_error(Mod, L, {module_rename, Name, DupeName});
+update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I) ->
     M#alpaca_module{type_imports=Imports ++ [I]};
-update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I,
-            _FileName) ->
+update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I) ->
     #alpaca_type_export{names=Names} = I,
     M#alpaca_module{type_exports = Exports ++ Names};
-update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es},
-            _FileName) ->
+update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es}) ->
     M#alpaca_module{function_exports=Es ++ Exports};
-update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is},
-            _FileName) ->
+update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is}) ->
     M#alpaca_module{function_imports=Imports ++ Is};
-update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def,
-            _FileName) ->
+update_memo(#alpaca_module{functions=Funs}=M, #alpaca_fun_def{} = Def) ->
     M#alpaca_module{functions=[Def|Funs]};
-update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T, _FileName) ->
+update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
     M#alpaca_module{types=[T|Ts]};
-update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T, _FileName) ->
+update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
     M#alpaca_module{tests=[T|Tests]};
-update_memo(M, #alpaca_comment{}, _FileName) ->
+update_memo(M, #alpaca_comment{}) ->
     M;
-update_memo(_, Bad, FileName) ->
-    parse_error(FileName, {invalid_top_level_construct, Bad}).
+update_memo(M, Bad) ->
+    %% We can' really report a meaningful line number here without either:
+    %%  a) restructuring the parser rules to make this a syntax error.
+    %%  b) Tagging all constructs generated the parser with a line number in
+    %%     a consistent way.
+    parse_error(M, 1, {invalid_top_level_construct, Bad}).
 
 %% Select a discrete batch of tokens to parse.  This basically wants a sequence
 %% from the beginning of a top-level expression to a recognizable break between
@@ -398,7 +391,7 @@ rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
                         , [{symbol, L, Synth}|Syms]
                         };
                     _ ->
-                        validation_error(Mod, {duplicate_definition, N, L})
+                        parse_error(Mod, L, {duplicate_definition, N})
                 end;
            ({unit, _}=U, {E, AccMap, Syms}) ->
                 {E, AccMap, [U|Syms]};
@@ -423,7 +416,7 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                                   E2 = StartEnv#env{next_var=NV+1},
                                   {Synth, E2, maps:put(Name, Synth, M)};
                               _ ->
-                                  validation_error(Mod, {duplicate_definition, Name, L})
+                                  parse_error(Mod, L, {duplicate_definition, Name})
                           end,
 
     F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
@@ -457,7 +450,7 @@ rename_bindings(#env{next_var=NextVar}=Env, Map, #var_binding{}=VB) ->
                      expr=E2},
             {Env3, M4, VB2};
         _ ->
-            validation_error(Env#env.current_module, {duplicate_definition, N, L})
+            parse_error(Env#env.current_module, L, {duplicate_definition, N})
     end;
 
 rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
@@ -604,7 +597,7 @@ rename_bindings(Env, Map, {symbol, L, N}=S) ->
         Synthetic -> {Env, Map, {symbol, L, Synthetic}}
     end;
 rename_bindings(#env{current_module=CurrentMod}=Env, Map,
-                #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
+                #alpaca_far_ref{module=M, name=N, arity=none, line=L}=FR) ->
     %% Find the first exported occurrence of M:N
     Modules = [Mod || #alpaca_module{name=MN}=Mod <- Env#env.modules, M =:= MN],
     case Modules of
@@ -612,10 +605,11 @@ rename_bindings(#env{current_module=CurrentMod}=Env, Map,
             As = [A || {F, A} <- Mod#alpaca_module.function_exports, F =:= N],
             case As of
                 [A|_] -> {Env, Map, FR#alpaca_far_ref{arity=A}};
-                _     -> validation_error(CurrentMod, {{type_not_exported, M, N}})
+                _     -> parse_error(CurrentMod, L,
+                                     {function_not_exported, M, N})
             end;
         _ ->
-            validation_error(CurrentMod, {module_not_found, M})
+            parse_error(CurrentMod, L, {no_module, M})
     end;
 
 rename_bindings(Env, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
@@ -759,7 +753,7 @@ make_bindings(#env{current_module=Mod}=Env, M, {symbol, L, Name}) ->
             Env2 = Env#env{next_var=NV+1},
             {Env2, maps:put(Name, Synth, M), {symbol, L, Synth}};
         _ ->
-            validation_error(Mod, {duplicate_definition, Name, L})
+            parse_error(Mod, L, {duplicate_definition, Name})
     end;
 make_bindings(Env, M, Expression) ->
     {Env, M, Expression}.
@@ -802,12 +796,12 @@ user_types_test_() ->
                                                vars=[{type_var, 1, "x"}]}]}
                            }]}},
         test_parse("type my_list 'x = Nil | Cons ('x, my_list 'x)")),
-     ?_assertEqual({error, {module_validation_error, dupe_types_1,
+     ?_assertEqual({error, {parse_error, ?FILE, 5,
                             {duplicate_type, "t"}}},
                    test_make_modules(["module dupe_types_1\n\n"
                                 "type t = A | B\n\n"
                                 "type t = C | int"])),
-     ?_assertEqual({error, {module_validation_error, dupe_type_constructor,
+     ?_assertEqual({error, {parse_error, ?FILE, 5,
                             {duplicate_constructor, "A"}}},
                    test_make_modules(["module dupe_type_constructor\n\n"
                                  "type t = A int | B\n\n"
@@ -1064,10 +1058,12 @@ application_test_() ->
     ].
 
 module_def_test_() ->
-    [?_assertMatch({ok, {module, 'test_mod'}},
+    [?_assertMatch({ok, {module, 'test_mod', 1}},
                    parse(alpaca_scanner:scan("module test_mod"))),
-     ?_assertMatch({ok, {module, 'myMod'}},
-                   parse(alpaca_scanner:scan("module myMod")))
+     ?_assertMatch({ok, {module, 'myMod', 1}},
+                   parse(alpaca_scanner:scan("module myMod"))),
+     ?_assertThrow({parse_error, ?FILE, 2, {module_rename, mod1, mod2}},
+                   parse_module({?FILE, "module mod1\nmodule mod2"}))
     ].
 
 export_test_() ->
@@ -1433,7 +1429,7 @@ rebinding_test_() ->
                                                           args=[{symbol, 1, "svar_0"},
                                                                 {symbol, 1, "svar_1"}]}}}]}},
                    rename_bindings(#env{}, A)),
-     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "x", 2}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, "x"}},
                    rename_bindings(#env{}, B)),
      ?_assertMatch(
         {_, _, #alpaca_fun_def{
@@ -1453,7 +1449,7 @@ rebinding_test_() ->
                                                                       {symbol, 3, "svar_3"}]},
                                                    result={symbol, 3, "svar_3"}}]}}]}},
         rename_bindings(#env{}, C)),
-     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "x", 2}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, "x"}},
                    rename_bindings(#env{}, D)),
      ?_assertMatch(
         {_, _,
@@ -1476,7 +1472,7 @@ rebinding_test_() ->
                                                         tail={symbol, 3, "svar_3"}},
                                              result={symbol, 3, "svar_2"}}]}}]}},
         rename_bindings(#env{}, E)),
-     ?_assertThrow({module_validation_error, no_module, {duplicate_definition, "y", 2}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, "y"}},
                    rename_bindings(#env{}, F))
     ].
 
@@ -1597,7 +1593,7 @@ expand_imports_test_() ->
                   "import n.foo",
 
               Mod = parse_module({?FILE, Code}),
-              ?assertThrow({module_validation_error, m, {module_not_found, n}},
+              ?assertThrow({parse_error, ?FILE, 1, {no_module, n}},
                            expand_imports(expand_exports([Mod])))
       end
     ].
@@ -1653,6 +1649,22 @@ import_rewriting_test_() ->
                                   }]}]},
                  test_make_modules([Code1, Code2]))
       end
+    , fun() ->
+              Code1 =
+                  "module b\n\n"
+                  "let foo () = let y = bar.baz in y",
+              ?assertEqual({error, {parse_error, ?FILE, 3, {no_module, bar}}},
+                           test_make_modules([Code1]))
+    end
+    , fun() ->
+              Code1 = "module a",
+              Code2 =
+                  "module b\n\n"
+                  "let foo () = let y = a.bar in y",
+              ?assertEqual({error, {parse_error, ?FILE, 3,
+                                    {function_not_exported, a, "bar"}}},
+                           test_make_modules([Code1, Code2]))
+    end
     ].
 
 invalid_map_type_parameters_test() ->
@@ -1662,11 +1674,11 @@ invalid_map_type_parameters_test() ->
             "type x = map int",
     Code3 = "module a\n\n"
             "type x = map int int int",
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_map, 0}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity,t_map, 0}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 1}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity, t_map, 1}}},
                  test_make_modules([Code2])),
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_map, 3}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity, t_map, 3}}},
                  test_make_modules([Code3])).
 
 invalid_list_type_parameters_test() ->
@@ -1674,9 +1686,9 @@ invalid_list_type_parameters_test() ->
             "type x = list",
     Code2 = "module a\n\n"
             "type x = list int int",
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 0}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity, t_list, 0}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_list, 2}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity, t_list, 2}}},
                  test_make_modules([Code2])).
 
 invalid_pid_type_parameters_test() ->
@@ -1684,9 +1696,9 @@ invalid_pid_type_parameters_test() ->
             "type x = pid",
     Code2 = "module a\n\n"
             "type x = pid int int",
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity,t_pid, 0}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity,t_pid, 0}}},
                  test_make_modules([Code1])),
-    ?assertMatch({error,{parse_error,_, {_,{wrong_type_arity, t_pid, 2}}}},
+    ?assertMatch({error,{parse_error, ?FILE, 3, {wrong_type_arity, t_pid, 2}}},
                  test_make_modules([Code2])).
 
 invalid_base_type_parameters_test_() ->
@@ -1702,7 +1714,7 @@ invalid_base_type_parameters_test_() ->
       Code = "module a\n\n"
              "type concrete = Constructor\n"
              "type x = " ++ Token ++ " concrete",
-      ?_assertMatch({error,{parse_error,_, {_,{wrong_type_arity,Typ, 1}}}},
+      ?_assertMatch({error,{parse_error, ?FILE, 4, {wrong_type_arity,Typ, 1}}},
                    test_make_modules([Code]))
     end, Types).
 
