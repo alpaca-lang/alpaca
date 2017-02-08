@@ -294,10 +294,10 @@ unique_type_constructors(Mod, Types) ->
         {error, {N, L}} -> parse_error(Mod, L, {duplicate_constructor, N})
     end.
 
-update_memo(#alpaca_module{name=no_module}=Mod, {module, Name}) ->
+update_memo(#alpaca_module{name=no_module}=Mod, {module, Name, _}) ->
     Mod#alpaca_module{name=Name};
-update_memo(#alpaca_module{name=Name}=Mod, {module, DupeName}) ->
-    parse_error(Mod, 1, {module_rename, Name, DupeName});
+update_memo(#alpaca_module{name=Name}=Mod, {module, DupeName, L}) ->
+    parse_error(Mod, L, {module_rename, Name, DupeName});
 update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I) ->
     M#alpaca_module{type_imports=Imports ++ [I]};
 update_memo(#alpaca_module{type_exports=Exports}=M, #alpaca_type_export{}=I) ->
@@ -1052,10 +1052,12 @@ application_test_() ->
     ].
 
 module_def_test_() ->
-    [?_assertMatch({ok, {module, 'test_mod'}},
+    [?_assertMatch({ok, {module, 'test_mod', 1}},
                    parse(alpaca_scanner:scan("module test_mod"))),
-     ?_assertMatch({ok, {module, 'myMod'}},
-                   parse(alpaca_scanner:scan("module myMod")))
+     ?_assertMatch({ok, {module, 'myMod', 1}},
+                   parse(alpaca_scanner:scan("module myMod"))),
+     ?_assertThrow({parse_error, ?FILE, 2, {module_rename, mod1, mod2}},
+                   parse_module({?FILE, "module mod1\nmodule mod2"}))
     ].
 
 export_test_() ->
