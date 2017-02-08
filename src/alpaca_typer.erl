@@ -1230,13 +1230,13 @@ unify_list([A|TA], [B|TB], {MA, MB}, Env, L) ->
     end.
 
 
--spec inst(
+-spec inst_binding(
         VarName :: atom()|string(),
+        Line :: integer(),
         Lvl :: integer(),
         Env :: env()) -> {typ(), env(), map()} | {error, term()}.
-
-inst(VarName, Lvl, #env{bindings=Bs} = Env) ->
-    Default = {error, {bad_variable_name, VarName}},
+inst_binding(VarName, Line, Lvl, #env{bindings=Bs} = Env) ->
+    Default = {error, {bad_variable_name, module_name(Env), Line, VarName}},
     case proplists:get_value(VarName, Bs, Default) of
         {error, _} = E ->
             E;
@@ -1559,8 +1559,8 @@ typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->
     {new_cell(t_string), VN};
 typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
     {new_cell(t_chars), VN};
-typ_of(Env, Lvl, {symbol, _, N}) ->
-    case inst(N, Lvl, Env) of
+typ_of(Env, Lvl, {symbol, L, N}) ->
+    case inst_binding(N, L, Lvl, Env) of
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
@@ -1606,12 +1606,17 @@ typ_of(#env{next_var=VN}, _Lvl, {unit, _}) ->
 %% unification with other terms.  I'm considering typing them as
 %% a kind of effect that wraps enclosing expressions, similar to
 %% how receivers are handled.
-typ_of(Env, Lvl, {raise_error, _, _, _}) ->
-    {T, #env{next_var=NV}} = new_var(Lvl, Env),
-    {T, NV};
+typ_of(Env, Lvl, {raise_error, _, _, Expr}) ->
+    case typ_of(Env, Lvl, Expr) of
+        {error, _}=Err ->
+            Err;
+        {_, NV} ->
+            {T, #env{next_var=NV2}} = new_var(Lvl, update_counter(NV, Env)),
+            {T, NV2}
+    end;
 
-typ_of(Env, Lvl, {'_', _}) ->
-    {T, #env{next_var=VarNum}, _} = inst('_', Lvl, Env),
+typ_of(Env, Lvl, {'_', L}) ->
+    {T, #env{next_var=VarNum}, _} = inst_binding('_', L, Lvl, Env),
     {T, VarNum};
 typ_of(Env, Lvl, #alpaca_tuple{values=Vs}) ->
     case typ_list(Vs, Lvl, Env, []) of
@@ -1767,8 +1772,8 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
     end;
 
 %% BIFs are loaded in the environment as atoms:
-typ_of(Env, Lvl, {bif, AlpacaName, _, _, _}) ->
-    case inst(AlpacaName, Lvl, Env) of
+typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
+    case inst_binding(AlpacaName, L, Lvl, Env) of
         {error, _} = E ->
             E;
         {T, #env{next_var=VarNum}, _} ->
@@ -1884,7 +1889,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
         end,
 
     case typ_of(Env, Lvl, Expr) of
-        {error, {bad_variable_name, _}} -> ForwardFun();
+        {error, {bad_variable_name, _, _, _}} -> ForwardFun();
         {error, _} = E -> E;
         {TypF, NextVar} ->
             %% If the function in the environment is the wrong arity we want to
@@ -3060,7 +3065,7 @@ ffi_test_() ->
                      "let f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
                      "| _ -> :not_one")),
-     ?_assertMatch({error,{bad_variable_name,"x"}},
+     ?_assertMatch({error,{bad_variable_name, undefined, 1, "x"}},
                    top_typ_of(
                      "let f () = beam :a :b [x] with\n"
                      "  1 -> :one\n"
@@ -4421,6 +4426,13 @@ unify_with_error_test_() ->
                   {error, {cannot_unify, _, _, t_int, t_atom}},
                   module_typ_and_parse(Code))
        end
+    , fun() ->
+              Code =
+                  "module m\n"
+                  "let f () = throw (x, :a)",
+              ?assertMatch({error, {bad_variable_name, m, 2, "x"}},
+                           module_typ_and_parse(Code))
+      end
     ].
 
 function_argument_pattern_test_() ->
