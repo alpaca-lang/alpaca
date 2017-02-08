@@ -22,15 +22,15 @@
 
 -type error_reason() :: {duplicate_definition, string()} |
                         {duplicate_type, string()} |
+                        {function_not_exported, module(), string()} |
                         {invalid_endianess, term()} |
                         {invalid_bin_qualifier, string()} |
                         {invalid_bin_type, string()} |
                         {invalid_fun_parameter, term()} |
-                        {module_not_found, module()} |
                         {module_rename, module(), module()} |
                         no_module |
+                        {no_module, module()} |
                         {syntax_error, string()} |
-                        {type_not_exported, module(), string()} |
                         {wrong_type_arity, builtin_type(), non_neg_integer()}.
 
 -type filename() :: string().
@@ -167,7 +167,7 @@ expand_imports([M|Tail], ExportMap, Memo) ->
            ({Fun, Mod}) when is_atom(Mod) ->
                 case maps:get(Mod, ExportMap, error) of
                     error ->
-                        parse_error(M, 1, {module_not_found, Mod});
+                        parse_error(M, 1, {no_module, Mod});
                     Funs ->
                         [{Fun, {Mod, A}} || {FN, A} <- Funs, FN =:= Fun]
                 end
@@ -316,6 +316,10 @@ update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
 update_memo(M, #alpaca_comment{}) ->
     M;
 update_memo(M, Bad) ->
+    %% We can' really report a meaningful line number here without either:
+    %%  a) restructuring the parser rules to make this a syntax error.
+    %%  b) Tagging all constructs generated the parser with a line number in
+    %%     a consistent way.
     parse_error(M, 1, {invalid_top_level_construct, Bad}).
 
 %% Select a discrete batch of tokens to parse.  This basically wants a sequence
@@ -592,7 +596,7 @@ rename_bindings(Env, Map, {symbol, L, N}=S) ->
         Synthetic -> {Env, Map, {symbol, L, Synthetic}}
     end;
 rename_bindings(#env{current_module=CurrentMod}=Env, Map,
-                #alpaca_far_ref{module=M, name=N, arity=none}=FR) ->
+                #alpaca_far_ref{module=M, name=N, arity=none, line=L}=FR) ->
     %% Find the first exported occurrence of M:N
     Modules = [Mod || #alpaca_module{name=MN}=Mod <- Env#env.modules, M =:= MN],
     case Modules of
@@ -600,10 +604,11 @@ rename_bindings(#env{current_module=CurrentMod}=Env, Map,
             As = [A || {F, A} <- Mod#alpaca_module.function_exports, F =:= N],
             case As of
                 [A|_] -> {Env, Map, FR#alpaca_far_ref{arity=A}};
-                _     -> parse_error(CurrentMod, 1, {{type_not_exported, M, N}})
+                _     -> parse_error(CurrentMod, L,
+                                     {function_not_exported, M, N})
             end;
         _ ->
-            parse_error(CurrentMod, 1, {module_not_found, M})
+            parse_error(CurrentMod, L, {no_module, M})
     end;
 
 rename_bindings(Env, M, #alpaca_ffi{args=Args, clauses=Cs}=FFI) ->
@@ -1587,7 +1592,7 @@ expand_imports_test_() ->
                   "import n.foo",
 
               Mod = parse_module({?FILE, Code}),
-              ?assertThrow({parse_error, ?FILE, 1, {module_not_found, n}},
+              ?assertThrow({parse_error, ?FILE, 1, {no_module, n}},
                            expand_imports(expand_exports([Mod])))
       end
     ].
@@ -1643,6 +1648,22 @@ import_rewriting_test_() ->
                                   }]}]},
                  test_make_modules([Code1, Code2]))
       end
+    , fun() ->
+              Code1 =
+                  "module b\n\n"
+                  "let foo () = let y = bar.baz in y",
+              ?assertEqual({error, {parse_error, ?FILE, 3, {no_module, bar}}},
+                           test_make_modules([Code1]))
+    end
+    , fun() ->
+              Code1 = "module a",
+              Code2 =
+                  "module b\n\n"
+                  "let foo () = let y = a.bar in y",
+              ?assertEqual({error, {parse_error, ?FILE, 3,
+                                    {function_not_exported, a, "bar"}}},
+                           test_make_modules([Code1, Code2]))
+    end
     ].
 
 invalid_map_type_parameters_test() ->
