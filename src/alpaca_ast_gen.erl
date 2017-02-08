@@ -27,6 +27,7 @@
                         {invalid_bin_qualifier, string()} |
                         {invalid_bin_type, string()} |
                         {invalid_fun_parameter, term()} |
+                        {invalid_top_level_construct, term()} |
                         {module_rename, module(), module()} |
                         no_module |
                         {no_module, module()} |
