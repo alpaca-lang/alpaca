@@ -21,3 +21,5 @@ _build
 /src/mlfe_scan.erl
 /src/alpaca_parser.erl
 /src/alpaca_scan.erl
+/src/alpaca_compiled_po.erl
+/priv/lang/*.mo

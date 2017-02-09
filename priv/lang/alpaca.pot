@@ -1,0 +1,54 @@
+
+msgid ""
+msgstr ""
+"Project-Id-Version: alpaca\n"
+"POT-Creation-Date: 2017-03-20 06:41+0100\n"
+"Plural-Forms: nplurals=1; plural=1;\n"
+
+msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgstr ""
+
+msgid "duplicate_definition %(id)"
+msgstr ""
+
+msgid "duplicate_type_definition %(id)"
+msgstr ""
+
+msgid "function_not_exported %(mod) %(name)"
+msgstr ""
+
+msgid "incomplete_expression"
+msgstr ""
+
+msgid "invalid_bin_qualifier %(qualifier)"
+msgstr ""
+
+msgid "invalid_bin_type %(type)"
+msgstr ""
+
+msgid "invalid_endianness %(endianness)"
+msgstr ""
+
+msgid "invalid_fun_parameter"
+msgstr ""
+
+msgid "invalid_top_level_construct"
+msgstr ""
+
+msgid "module_rename %(old) %(new)."
+msgstr ""
+
+msgid "no_module"
+msgstr ""
+
+msgid "no_module %(mod)"
+msgstr ""
+
+msgid "type_parameter_given_to_primitive_builtin_type %(type)"
+msgstr ""
+
+msgid "unexpected_token %(token)"
+msgstr ""
+
+msgid "unknown_error %(raw_error_term)"
+msgstr ""

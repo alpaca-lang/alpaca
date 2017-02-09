@@ -400,8 +400,8 @@ bin_qualifier -> symbol assign symbol :
         {"end", "big"}    -> {bin_endian, L, V};
         {"end", "little"} -> {bin_endian, L, V};
         {"end", "native"} -> {bin_endian, L, V};
-        {"end", _}        -> return_error(L, {invalid_endianess, V});
-        {_, _}            -> return_error(L, {invalid_bin_qualifier, V})
+        {"end", _}        -> return_error(L, {invalid_endianness, V});
+        {_, _}            -> return_error(L, {invalid_bin_qualifier, K})
     end.
 
 bin_qualifiers -> bin_qualifier : ['$1'].

@@ -1,0 +1,89 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: alpaca\n"
+"POT-Creation-Date: 2017-03-20 06:43+0100\n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 1.8.7.1\n"
+
+msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgstr ""
+"Wrong number of type parameters provided for builtin type \"%(type)\".\n"
+"Expected %(num_expected), but got %(num_supplied)."
+
+msgid "duplicate_definition %(id)"
+msgstr "Duplicate definition of \"%(id)\"."
+
+msgid "duplicate_type_definition %(id)"
+msgstr "Type \"%(id)\" has already been defined."
+
+msgid "function_not_exported %(mod) %(name)"
+msgstr "No function \"%(fun)\" exported from module \"%(mod)\"."
+
+msgid "incomplete_expression"
+msgstr "Unexpected end of expression."
+
+msgid "invalid_bin_qualifier %(qualifier)"
+msgstr ""
+"Invalid binary qualifier \"%(qualifier)\".\n"
+"Valid qualifiers are \"end\", \"sign\", \"size\", \"type\" and \"unit.\""
+
+msgid "invalid_bin_type %(type)"
+msgstr ""
+"Invalid binary part type \"%(type).\"\n"
+"Valid types are \"binary\", \"float, \"int\", and \"utf8\"."
+
+msgid "invalid_endianness %(endianness)"
+msgstr ""
+"Invalid endianness \"%(endianness)\".Did you mean \"big\", \"little\", or "
+"\"native\"?"
+
+msgid "invalid_fun_parameter"
+msgstr "Invalid pattern for function argument."
+
+msgid "invalid_top_level_construct"
+msgstr "This construct may not appear at the top level."
+
+msgid "module_rename %(old) %(new)."
+msgstr "Redefinition of module name from \"%(old)\" to \"%(new)\"."
+
+msgid "no_module"
+msgstr ""
+"No module name defined.\n"
+"You may define it like this: \"module foo\"."
+
+msgid "no_module %(mod)"
+msgstr "Cannot find any module named \"%(mod)\"."
+
+msgid "type_parameter_given_to_primitive_builtin_type %(type)"
+msgstr ""
+"Type parameter provided for built in type \"%(type)\", but none were "
+"expected."
+
+msgid "unexpected_token %(token)"
+msgstr "Syntax error before \"%(token)\"."
+
+msgid "unknown_error %(raw_error_term)"
+msgstr ""
+"%(raw_error_term)\n"
+"Sorry, we do not have a proper message for this error yet.\n"
+"Please consider filing an issue at https://www.github.com/alpaca-lang/alpaca/"
+"issues."
+
+#~ msgid "invalid_endianess %(endianess)"
+#~ msgstr ""
+#~ "Invalid endianness \"%(endianness)\".Did you mean \"big\", \"little\", or "
+#~ "\"native\"?"
+
+#~ msgid ""
+#~ "%(raw_error_term)\n"
+#~ "Sorry, we do not have a proper message for this error yet.\n"
+#~ "Please consider filing an issue at https://www.github.com/alpaca-lang/"
+#~ "alpaca."
+#~ msgstr "Redefintion of module name from \"%(old)\" to \"%(new)\"."

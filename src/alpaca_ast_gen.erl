@@ -23,9 +23,9 @@
 -type error_reason() :: {duplicate_definition, string()} |
                         {duplicate_type, string()} |
                         {function_not_exported, module(), string()} |
-                        {invalid_endianess, term()} |
                         {invalid_bin_qualifier, string()} |
                         {invalid_bin_type, string()} |
+                        {invalid_endianness, string()} |
                         {invalid_fun_parameter, term()} |
                         {invalid_top_level_construct, term()} |
                         {module_rename, module(), module()} |
