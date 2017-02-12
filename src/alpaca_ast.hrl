@@ -488,10 +488,16 @@
           body=undefined :: undefined|alpaca_expression()
          }).
 
+%% The name field in an #alpaca_fun{} is there for the typer's convenience.
+%% When typing an #alpaca_binding{}, the typer inserts the bound name into the
+%% function to enable "let rec" behaviour.  We could relax this later to allow
+%% for non-recursive let behaviour but I can't think of a good reason to go for
+%% that at the immediate moment.
 -record(alpaca_fun, {
           line=0 :: integer(),
           type=undefined :: typ(),
           arity=0 :: integer(),
+          name=undefined :: undefined | string(),
           versions=[] :: list(#alpaca_fun_version{})
          }).
 -type alpaca_fun() :: #alpaca_fun{}.
