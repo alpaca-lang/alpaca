@@ -1578,8 +1578,6 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
                 A =:= Arity
             ],
 
-    io:format("Far ref typ is ~w~n", [Typ]),
-
     Err = fun() ->
                   [CurrMod|_] = Env#env.entered_modules,
                   throw({error, {bidirectional_module_ref, Mod, CurrMod}})
@@ -1783,7 +1781,6 @@ typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
-    io:format("Far call with apply for ~w ~w~n", [Mod, X]),
     Satisfy =
         fun() ->
                 %% Naively assume a single call to the same function for now.
@@ -2122,9 +2119,14 @@ typ_of(Env, Lvl, #alpaca_binding{name={symbol, _, N}, bound_expr=E1, body=E2}) -
         {error, _}=Err ->
             Err;
         {TypE, NextVar} ->
-            Gen = gen(Lvl, TypE),
-            Env2 = update_counter(NextVar, Env),
-            typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
+            case E2 of
+                undefined ->
+                    {TypE, NextVar};
+                _ ->
+                    Gen = gen(Lvl, TypE),
+                    Env2 = update_counter(NextVar, Env),
+                    typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
+            end
     end.
 
 typ_ffi_args(_Env, _Lvl, {nil, _}) -> ok;
@@ -2464,7 +2466,7 @@ filter_to_fun([], _, _) ->
 filter_to_fun([#alpaca_binding{name={symbol, _, N}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
-filter_to_fun([#alpaca_binding{name={symbol, _, N}, body=undefined}=Fun|_], FN, 0) when N =:= FN ->
+filter_to_fun([#alpaca_binding{name={symbol, _, N}}=Fun|_], FN, 0) when N =:= FN ->
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
@@ -2968,7 +2970,7 @@ simple_inter_module_test() ->
 
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
-    io:format("~p~n", [M1]),
+
     ?assertMatch(
        {ok, #alpaca_module{
                function_exports=[],
