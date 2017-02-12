@@ -61,7 +61,6 @@
 make_modules(Code) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
-      io:format("Modules parsed~n", []),
       {ok, rename_and_resolve(Modules)}
     catch
         throw:{parse_error, _, _, _}=Err -> {error, Err}
@@ -270,7 +269,6 @@ rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
 %% All available modules required so that we can rewrite applications of
 %% functions not in Mod to inter-module calls.
 rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
-    io:format("Rebind and validate~n", []),
     #alpaca_module{name=_MN, functions=Funs}=Mod,
     BindingF = fun(#alpaca_binding{name={_, _, N}, bound_expr=#alpaca_fun{arity=A}}) ->
                        {N, A};
@@ -284,8 +282,6 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                current_bindings=Bindings,
                current_module=Mod,
                modules=Modules},
-
-    io:format("Names and arities for rebinding and validating~n", []),
 
     F = fun(F, {E, Memo}) ->
                 {#env{next_var=NV2, rename_map=_M}, M2, F2} = rename_bindings(E, F),
@@ -428,7 +424,6 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
             {Env, M2, Vs2} = lists:foldl(F, {Environment, maps:new(), []}, Vs),
             {Env, M2, TopLevel#alpaca_binding{bound_expr=Expr#alpaca_fun{versions=Vs2}}};
         _ ->
-            io:format("Rename top-level val~n", []),
             {Env, _, E} =  rename_bindings(Environment, maps:new(), Expr),
             {Env, maps:new(), TopLevel#alpaca_binding{bound_expr=E}}
     end.
