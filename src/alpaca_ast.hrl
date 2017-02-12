@@ -415,6 +415,7 @@
                                | alpaca_match()
                                | alpaca_receive()
                                | alpaca_clause()
+                               | alpaca_fun()
                                | alpaca_spawn()
                                | alpaca_send()
                                | alpaca_ffi().
@@ -487,6 +488,24 @@
           body=undefined :: undefined|alpaca_expression()
          }).
 
+-record(alpaca_fun, {
+          line=0 :: integer(),
+          type=undefined :: typ(),
+          arity=0 :: integer(),
+          versions=[] :: list(#alpaca_fun_version{})
+         }).
+-type alpaca_fun() :: #alpaca_fun{}.
+
+%% `body` remains `undefined` for top-level expressions and otherwise for
+%% things like function and variable bindings within a top-level function.
+-record(alpaca_binding, {
+          line=0 :: integer(),
+          name=undefined :: undefined | alpaca_symbol(),
+          type=undefined :: typ(),
+          bound_expr=undefined :: undefined | alpaca_expression(),
+          body=undefined :: undefined | alpaca_expression()
+         }).
+
 -record (alpaca_fun_def, {
            type=undefined :: typ(),
            name=undefined :: undefined|alpaca_symbol(),
@@ -515,7 +534,7 @@
           types=[] :: list(alpaca_type()),
           type_imports=[] :: list(alpaca_type_import()),
           type_exports=[] :: list(string()),
-          functions=[] :: list(alpaca_fun_def()),
+          functions=[] :: list(alpaca_binding()),
           tests=[] :: list(alpaca_test())
          }).
 -type alpaca_module() :: #alpaca_module{}.

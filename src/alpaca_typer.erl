@@ -1455,14 +1455,14 @@ type_module(#alpaca_module{functions=Fs,
 
 typ_module_funs([], Env, Memo) ->
     {Env, lists:reverse(Memo)};
-typ_module_funs([#alpaca_fun_def{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
+typ_module_funs([#alpaca_binding{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
     case typ_of(Env, 0, F) of
         {error, _} = E ->
             E;
         {Typ, NV} ->
             Env2 = update_counter(NV, Env),
             Env3 = update_binding(Name, Typ, Env2),
-            typ_module_funs(Rem, Env3, [F#alpaca_fun_def{type=unwrap(Typ)}|Memo])
+            typ_module_funs(Rem, Env3, [F#alpaca_binding{type=unwrap(Typ)}|Memo])
     end.
 
 type_module_tests(_, _Env, {error, _}=Err, _) ->
@@ -1573,7 +1573,7 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
                    entered_modules=EnteredModules},
     {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
     [Typ] = [Typ ||
-                #alpaca_fun_def{name={symbol, _, X}, arity=Arity, type=Typ} <- Funs,
+                #alpaca_binding{name={symbol, _, X}, bound_expr=#alpaca_fun{arity=Arity, type=Typ}} <- Funs,
                 N =:= X,
                 A =:= Arity
             ],
@@ -1795,7 +1795,10 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                         case type_module(Module, Env2) of
                             {ok, #alpaca_module{functions=Funs}} ->
                                 [T] = [Typ ||
-                                          #alpaca_fun_def{name={symbol, _, N}, arity=A, type=Typ} <- Funs,
+                                          #alpaca_binding{name={symbol, _, N},
+                                                          bound_expr=#alpaca_fun{
+                                                                        arity=A, 
+                                                                        type=Typ}} <- Funs,
                                           N =:= X,
                                           A =:= Arity
                                       ],
@@ -2036,7 +2039,7 @@ typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}
             end
     end;
 
-typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
+typ_of(EnvIn, Lvl, #alpaca_binding{name={symbol, L, N}, bound_expr=#alpaca_fun{versions=Vs}}) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
            (#alpaca_fun_version{args=Args, body=Body}, {Types, Env}) ->
@@ -2097,15 +2100,16 @@ typ_of(EnvIn, Lvl, #alpaca_fun_def{name={symbol, L, N}, versions=Vs}) ->
     end;
 
 %% A function binding inside a function:
-typ_of(Env, Lvl, #fun_binding{
-                    def=#alpaca_fun_def{name={symbol, _, N}}=E,
-                    expr=E2}) ->
+typ_of(Env, Lvl, #alpaca_binding{
+                    name={symbol, _, N},
+                    bound_expr=#alpaca_fun{}=E,
+                    body=E2}) ->
     {TypE, NextVar} = typ_of(Env, Lvl, E),
     Env2 = update_counter(NextVar, Env),
     typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2);
 
 %% A var binding inside a function:
-typ_of(Env, Lvl, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
+typ_of(Env, Lvl, #alpaca_binding{name={symbol, _, N}, bound_expr=E1, body=E2}) ->
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
             Err;
@@ -2449,14 +2453,14 @@ get_curryable_funs(Module, FN, MinArity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#alpaca_fun_def{name={symbol, _, N}, arity=Arity}=Fun|_], FN, A)
+filter_to_fun([#alpaca_binding{name={symbol, _, N}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
 filter_to_curryable_funs(Funs, FN, MinArity) ->
-    Pred = fun(#alpaca_fun_def{name={_Symbol, _, N}, arity=Arity}) ->
+    Pred = fun(#alpaca_binding{name={_Symbol, _, N}, bound_expr=#alpaca_fun{arity=Arity}}) ->
                case {Arity >= MinArity, N =:= FN} of
                     {true, true} -> true;
                     _ -> false

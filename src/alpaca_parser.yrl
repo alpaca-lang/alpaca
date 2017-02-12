@@ -696,25 +696,23 @@ make_define([{symbol, L, _} = Name|A], Expr, Level) ->
             case {Level, is_literal(Expr)} of
                 {top, false} -> 
                     {error, non_literal_value, Name, Expr};
-                _ -> 
-                    #alpaca_fun_def{
-                      name=Name,
-                      arity=0,
-                      versions=[#alpaca_fun_version{
-                                   line=L,
-                                   args=[],
-                                   body=Expr}]}
+                _ ->
+                    #alpaca_binding{
+                       name=Name,
+                       line=L,
+                       bound_expr=Expr}
             end;
         {ok, Args} ->
-            #alpaca_fun_def{
-               name=Name, 
-               arity=length(Args), 
-               versions=[#alpaca_fun_version{
-                            line=L,
-                            args=Args,
-                            body=Expr}]}
-%        {error, _} = E ->
-%            E
+            #alpaca_binding{
+               line=L,
+               name=Name,
+               bound_expr=#alpaca_fun{
+                             line=L,
+                             arity=length(Args), 
+                             versions=[#alpaca_fun_version{
+                                          line=L,
+                                          args=Args,
+                                          body=Expr}]}}
     end;
 make_define([BadName|Args], _Expr, _) ->
     {error, {invalid_function_name, BadName, Args}}.
@@ -778,25 +776,13 @@ all_literals([M|Rest]) ->
 
 %% Convert a nullary def into a variable binding:
 make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
-    #var_binding{name=N, to_bind=B, expr=Expr};
+    #alpaca_binding{name=N, bound_expr=B, body=Expr};
+%    #var_binding{name=N, to_bind=B, expr=Expr};
 make_binding(Def, Expr) ->
-    #fun_binding{def=Def, expr=Expr}.
+    Def#alpaca_binding{body=Expr}.
 
 term_line(Term) ->
-    case Term of
-        {_, L} when is_integer(L) -> L;
-        {_, L, _} when is_integer(L) -> L;
-        {bif, _, L, _, _} -> L;
-        #alpaca_apply{line=L} -> L;
-        #alpaca_cons{line=L} -> L;
-        #alpaca_map_pair{line=L} -> L;
-        #alpaca_map{line=L} -> L;
-        #alpaca_record{members=[#alpaca_record_member{line=L}|_]} -> L;
-        #alpaca_record_transform{line=L} -> L;
-        #alpaca_tuple{values=[H|_]} -> term_line(H);
-        #alpaca_type_apply{name=N} -> term_line(N);
-        #type_constructor{line=L} -> L
-    end.
+    alpaca_ast_gen:term_line(Term).
 
 add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->
     B#alpaca_bits{size=I, default_sizes=false};
