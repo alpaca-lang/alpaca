@@ -5307,6 +5307,20 @@ literal_fun_test_() ->
                    top_typ_of("fn x -> x + 1"))
     , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
                     top_typ_of("let f = fn x -> x + 1"))
+    , fun () ->
+              Code =
+                  "module m "
+                  "let map f [] = [] "
+                  "let map f (h :: t) = (f h) :: (map f t) "
+                  "let nested_fun () ="
+                  "  map (fn x -> (fn y -> y + 1) x) [1, 2, 3]",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[_,
+                                    #alpaca_binding{
+                                       type={t_arrow, [t_unit], {t_list, t_int}}}]}},
+                 module_typ_and_parse(Code))
+      end
     , fun() ->
               Code =
                   "module m \n"

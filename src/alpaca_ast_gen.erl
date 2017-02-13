@@ -232,6 +232,7 @@ term_line(Term) ->
         #alpaca_record_transform{line=L} -> L;
         #alpaca_tuple{values=[H|_]} -> term_line(H);
         #alpaca_type_apply{name=N} -> term_line(N);
+        #alpaca_fun{line=L} -> L;
         #alpaca_fun_version{line=L} -> L;
         #type_constructor{line=L} -> L
     end.

@@ -52,6 +52,7 @@ Rules.
 let         : {token, {'let', TokenLine}}.
 in          : {token, {in, TokenLine}}.
 fn          : {token, {fn, TokenLine}}.
+\x{03BB}    : {token, {fn, TokenLine}}.         % unicode lower-case lambda
 match       : {token, {match, TokenLine}}.
 with        : {token, {with, TokenLine}}.
 beam        : {token, {beam, TokenLine}}.
@@ -125,8 +126,9 @@ c"(\\"*|\\.|[^"\\])*" :
 
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
-->   : {token, {'->', TokenLine}}.
-_    : {token, {'_', TokenLine}}.
+->       : {token, {'->', TokenLine}}.
+\x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow
+_        : {token, {'_', TokenLine}}.
 
 %% Non-predefined infixes
 
