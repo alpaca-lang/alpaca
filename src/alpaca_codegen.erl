@@ -41,8 +41,13 @@
           synthetic_fun_num=0 :: integer()
          }).
 
+name_and_arity(#alpaca_binding{name={_, _, N}, bound_expr=#alpaca_fun{arity=A}}) ->
+    {N, A};
+name_and_arity(#alpaca_binding{name={_, _, N}}) ->
+    {N, 0}.
+
 make_env(#alpaca_module{functions=Funs}=_Mod) ->
-    TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
+    TopLevelFuns = [name_and_arity(F) || F <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
 prefix_modulename(Name) ->
@@ -91,37 +96,42 @@ gen_test_exports(Tests, [_|Rem], Memo) ->
 
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
-gen_funs(Env, Funs, [#alpaca_fun_def{}=F|T]) ->
+gen_funs(Env, Funs, [#alpaca_binding{}=F|T]) ->
     NewF = gen_fun(Env, F),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env,
-        #alpaca_fun_def{
+        #alpaca_binding{
            name={symbol, _, N},
-           versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}) ->
+           bound_expr=#alpaca_fun{
+                         versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}}) ->
 
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #alpaca_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
-    case Vs of
-        %% If there's a single version with only symbol and/or unit
-        %% args, don't compile a pattern match:
-        [#alpaca_fun_version{args=Args, body=Body}] ->
+gen_fun(Env, #alpaca_binding{name={symbol, _, N}, bound_expr=Bound}) ->
+    case Bound of
+        #alpaca_fun{versions=[#alpaca_fun_version{args=Args, body=Body}]}=Def ->
+            io:format("Single version~n", []),
             case needs_pattern(Args) of
                 false ->
+                    io:format("No patterns~n", []),
                     FName = cerl:c_fname(list_to_atom(N), length(Args)),
                     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
                     {_, B} = gen_expr(Env, Body),
                     {FName, cerl:c_fun(A, B)};
                 true ->
                     %% our single version has more than symbols and unit:
-                    gen_fun_patterns(Env, Def)
+                    gen_fun_patterns(Env, N, Def)
             end;
-        _ ->
+        #alpaca_fun{}=Def ->
             %% more than one version:
-            gen_fun_patterns(Env, Def)
+            gen_fun_patterns(Env, N, Def);
+        NotFunction ->
+            FName = cerl:c_fname(list_to_atom(N), 0),
+            {_, B} = gen_expr(Env, NotFunction),
+            {FName, cerl:c_fun([], B)}
     end.
 
 needs_pattern(Args) ->
@@ -133,12 +143,12 @@ needs_pattern(Args) ->
         _  -> true
     end.
 
-gen_fun_patterns(Env, #alpaca_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
+gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
     %% We need to manufacture variable names that we'll use in the
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
     %% Nest matches:
-    FName = cerl:c_fname(list_to_atom(N), A),
+    FName = cerl:c_fname(list_to_atom(Name), A),
     Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
     [_TopVar|_] = VarNames,
     B = cerl:c_case(
@@ -336,18 +346,18 @@ gen_expr(Env, #alpaca_apply{expr={symbol, L, Name}=FExpr, args=Args}) ->
                     {symbol, L, "carg_" ++ integer_to_list(A)}
                end,
                lists:seq(DesiredArity+1, Arity)),
-           CurryExpr = #alpaca_fun_def{
-                             name={symbol, L, CurryFunName},
-                             arity=Arity-DesiredArity,
-                             versions=[#alpaca_fun_version{
-                                          args=CArgs,
-                                          body=#alpaca_apply{
-                                            line=L,
-                                            expr=FExpr,
-                                            args=Args ++ CArgs}}]},
-           Binding = #fun_binding{
-                        expr={symbol, L, CurryFunName},
-                        def=CurryExpr},
+           CurryExpr = #alpaca_fun{
+                          arity=Arity-DesiredArity,
+                          versions=[#alpaca_fun_version{
+                                       args=CArgs,
+                                       body=#alpaca_apply{
+                                               line=L,
+                                               expr=FExpr,
+                                               args=Args ++ CArgs}}]},
+           Binding = #alpaca_binding{
+                        name={symbol, L, CurryFunName},
+                        body={symbol, L, CurryFunName},
+                        bound_expr=CurryExpr},
 
            gen_expr(Env2, Binding);
 
@@ -374,8 +384,7 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                     {symbol, L, "carg_" ++ integer_to_list(A)}
                end,
                lists:seq(length(Args)+1, Arity)),
-               CurryExpr = #alpaca_fun_def{
-                             name={symbol, L, FunName},
+               CurryExpr = #alpaca_fun{
                              arity=length(Args),
                              versions=[#alpaca_fun_version{
                                           args=CArgs,
@@ -383,9 +392,10 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                                             line=L,
                                             expr=Expr,
                                             args=Args ++ CArgs}}]},
-               Binding = #fun_binding{
-                        expr={symbol, L, FunName},
-                        def=CurryExpr},
+               Binding = #alpaca_binding{
+                            name={symbol, L, FunName},
+                            body={symbol, L, FunName},
+                            bound_expr=CurryExpr},
                gen_expr(Env2, Binding);
         _ ->
             SynthBinding = #var_binding{
@@ -508,15 +518,30 @@ gen_expr(Env, #alpaca_send{message=M, pid=P}) ->
     {_, MExp} = gen_expr(Env, M),
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
-gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
-    #alpaca_fun_def{name={symbol, _, N}, arity=Arity} = F,
-    NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
-    {_, Exp} = gen_expr(NewEnv, E),
-    {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};
-gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    {_, E1Exp} = gen_expr(Env, E1),
-    {_, E2Exp} = gen_expr(Env, E2),
-    {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}.
+gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
+    #alpaca_binding{name={symbol, _, N}, bound_expr=BE, body=Body} = AB,
+    case BE of
+        #alpaca_fun{arity=Arity} ->
+            io:format("Arity ~w~n", [Arity]),
+            NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
+            case Body of
+                undefined ->
+                    io:format("No body~n", []),
+                    {Env, gen_fun(NewEnv, AB)};
+                _ ->
+                    {_, Exp} = gen_expr(NewEnv, Body),
+                    {Env, cerl:c_letrec([gen_fun(NewEnv, AB)], Exp)}
+            end;
+        NotFunction ->
+            case Body of
+                undefined ->
+                    {Env, gen_fun(Env, AB)};
+                _ ->
+                    {_, E1Exp} = gen_expr(Env, BE),
+                    {_, E2Exp} = gen_expr(Env, Body),
+                    {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}
+            end
+    end.
 
 module_info0(ModuleName) ->
     gen_module_info(ModuleName, []).
