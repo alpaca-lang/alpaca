@@ -396,12 +396,12 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                             bound_expr=CurryExpr},
                gen_expr(Env2, Binding);
         _ ->
-            SynthBinding = #var_binding{
+            SynthBinding = #alpaca_binding{
                               name={symbol, L, FunName},
-                              to_bind=Expr,
-                              expr=#alpaca_apply{
-                                        line=L, expr={symbol, L, FunName},
-                                        args=Args}},
+                              bound_expr=Expr,
+                              body=#alpaca_apply{
+                                      line=L, expr={symbol, L, FunName},
+                                      args=Args}},
 
             gen_expr(Env2, SynthBinding)
     end;

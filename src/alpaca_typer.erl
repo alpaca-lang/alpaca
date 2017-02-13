@@ -1572,11 +1572,13 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
     Env2 = Env#env{current_module=Module,
                    entered_modules=EnteredModules},
     {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
-    [Typ] = [Typ ||
-                #alpaca_binding{name={symbol, _, X}, bound_expr=#alpaca_fun{arity=Arity, type=Typ}} <- Funs,
-                N =:= X,
-                A =:= Arity
-            ],
+
+    [Typ] = [Typ || #alpaca_binding{
+                       name={symbol, _, X},
+                       type=Typ,
+                       bound_expr=#alpaca_fun{arity=Arity}} <- Funs,
+                    N =:= X,
+                    A =:= Arity],
 
     Err = fun() ->
                   [CurrMod|_] = Env#env.entered_modules,
