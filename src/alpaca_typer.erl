@@ -5302,6 +5302,25 @@ records_and_type_constructors_test_() ->
       end
     ].
 
+literal_fun_test_() ->
+    [?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                   top_typ_of("fn x -> x + 1"))
+    , ?_assertMatch({{t_arrow, [t_int], t_int}, _},
+                    top_typ_of("let f = fn x -> x + 1"))
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "let f () = \n"
+                  "  let g = fn x -> x + 1 in \n"
+                  "  g 2",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow, [t_unit], t_int}}]}},
+                 module_typ_and_parse(Code))
+      end
+    ].
+
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
   {ok, Mods} = alpaca_ast_gen:make_modules(NamedSources),

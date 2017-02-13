@@ -51,6 +51,7 @@ Rules.
 %% Reserved words
 let         : {token, {'let', TokenLine}}.
 in          : {token, {in, TokenLine}}.
+fn          : {token, {fn, TokenLine}}.
 match       : {token, {match, TokenLine}}.
 with        : {token, {with, TokenLine}}.
 beam        : {token, {beam, TokenLine}}.

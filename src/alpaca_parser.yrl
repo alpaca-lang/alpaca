@@ -44,6 +44,8 @@ import_export_fun
 export_def export_list fun_and_arity
 import_def import_fun_items import_fun_item
 
+literal_fun
+
 fun_list_items fun_subset
 
 match_clause match_clauses match_with match_pattern
@@ -89,6 +91,7 @@ beam
 type_check_tok
 
 let in '(' ')' '/' ','
+fn
 
 eq neq gt lt gte lte.
 
@@ -449,11 +452,20 @@ tuple -> '(' tuple_list ')' :
 
 infix -> term op term : make_infix('$2', '$1', '$3').
 
+literal_fun -> fn terms '->' simple_expr:
+  {_, L} = '$1',
+  #alpaca_fun{line=L,
+              arity=length('$2'),
+              versions=[#alpaca_fun_version{
+                           args='$2',
+                           body='$4'}]}.
+
 %% ----- Errors (including throw, exit) --------------
 error -> raise_error term:
   {_, L, Kind} = '$1',
   {raise_error, L, list_to_atom(Kind), '$2'}.
 
+term -> literal_fun : '$1'.
 term -> const : '$1'.
 term -> tuple : '$1'.
 term -> infix : '$1'.
@@ -522,6 +534,7 @@ spawn_pid -> spawn symbol terms:
               args='$3'}.
 
 defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
+
 definfix -> let '(' infixable ')' terms assign simple_expr : 
   {infixable, L, C} = '$3',
   make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$5', '$7', 'top').
@@ -738,6 +751,7 @@ validate_args(L, [A|T], Memo) ->
 is_literal({int, _, _}) -> true;
 is_literal({string, _, _}) -> true;
 is_literal({float, _, _}) -> true;
+is_literal(#alpaca_fun{}) -> true;
 is_literal({alpaca_record, _, _, _, Members}) ->
     MemberExprs = lists:map(
         fun({alpaca_record_member, _, _, _, M}) -> 

@@ -337,6 +337,7 @@ extract_type_name({type, Name, _, _}) -> Name.
 keywords() ->
     [<<"let">>,
      <<"in">>,
+     <<"fn">>,
      <<"match">>,
      <<"with">>,
      <<"beam">>,

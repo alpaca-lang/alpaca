@@ -441,4 +441,12 @@ option_map_test() ->
     ?assertEqual('None', M:map(fun(X) -> X + 1 end, 'None')),
     code:delete(M).
 
+lambdas_test() ->
+    Files = ["test_files/lambda_examples.alp"],
+    [M] = compile_and_load(Files, []),
+    ?assertEqual([2, 3, 4], M:map_lambda({})),
+    ?assertEqual(3, M:no_sugar_internal_binding({})),
+    ?assertEqual(2, M:no_sugar_top_binding(1)),
+    code:delete(M).
+
 -endif.

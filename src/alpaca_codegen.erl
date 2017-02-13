@@ -80,6 +80,74 @@ gen(#alpaca_module{}=Mod, Opts) ->
                CompiledFuns ++ CompiledTests)
     }.
 
+%% Each top-level binding has to be rewritten so that lambdas (anonymous
+%% functions) occurring within the body bound expression (function body)
+%% get replaced by variables that are synthesized local functions.  We do
+%% this in the code generation stage to ensure that the user cannot refer
+%% to them nor that they are assigned to names that can conflict with ones
+%% a user could define.
+rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=undefined}=TopBinding) ->
+    {Bindings, BE2} = case BE of
+                          #alpaca_fun{versions=Vs}=Fun ->
+                              {_, Vs2, X} = rewrite_seq_lambdas(Vs, 0),
+                              {X, Fun#alpaca_fun{versions=Vs2}};
+                          _ ->
+                              {_, B, X} = rewrite_lambdas(BE, 0, []),
+                              {X, B}
+                      end,
+
+    TopBinding#alpaca_binding{bound_expr=BE2}.
+
+%% Rewriting a sequence of function versions or a sequence of function arguments
+%% is basically the same so let's just use one function for both.
+rewrite_seq_lambdas(FVs, NextFun) ->
+    F = fun(FV, {NF, VMemo, Bindings}) ->
+                {NF2, FV2, Bs} = rewrite_lambdas(FV, NF, []),
+                {NF2, [FV2|VMemo], Bs ++ Bindings}
+        end,
+    {NF2, FVs2, Bindings} = lists:foldl(F, {NextFun, [], []}, FVs),
+    {NF2, lists:reverse(FVs2), Bindings}.
+
+rewrite_lambdas(#alpaca_fun_version{body=B}=FV, NextFun, Memo) ->
+    {NF2, B2, NewBinds} = rewrite_lambdas(B, NextFun, []),
+
+    F = fun({Name, Exp}, Chain) ->
+                {symbol, L, _} = Name,
+                #alpaca_binding{name=Name,
+                                line=L,
+                                bound_expr=Exp,
+                                body=Chain}
+        end,
+    Rebound = lists:foldl(F, B2, lists:flatten(NewBinds)),
+
+    {NF2, FV#alpaca_fun_version{body=Rebound}, []};
+rewrite_lambdas(#alpaca_fun{line=L, versions=Vs}=Fun, NextFun, Memo) ->
+    F = fun(#alpaca_fun_version{body=B}=FV, {NF, VMemo, BMemo}) ->
+                {NF2, B2, NewBinds} = rewrite_lambdas(B, NF, []),
+                {NF2, [FV#alpaca_fun_version{body=B2}|VMemo], NewBinds ++ BMemo}
+        end,
+    {NextFun2, VMemo, BMemo} = rewrite_seq_lambdas(Vs, NextFun),
+    FunName = {symbol, L, ":synth_lambda_" ++ integer_to_list(NextFun2)},
+    Fun2 = Fun#alpaca_fun{versions=VMemo},
+    {NextFun2, FunName, [{FunName, Fun2} | [BMemo | Memo]]};
+rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=Body}=AB, NextFun, Memo) ->
+    {NextFun2, BE2, Binds} = case BE of
+                                 #alpaca_fun{versions=Vs}=Fun ->
+                                     {NF, Vs2, X} = rewrite_seq_lambdas(Vs, NextFun),
+                                     {NF, Fun#alpaca_fun{versions=Vs2}, X};
+                                 _ ->
+                                     rewrite_lambdas(BE, 0, [])
+                             end,
+
+    {NF3, Body2, BodyBinds} = rewrite_lambdas(Body, NextFun2, []),
+    AB2 = AB#alpaca_binding{bound_expr=BE2, body=Body2},
+    {NF3, AB2, Binds ++ BodyBinds ++ Memo};
+rewrite_lambdas(#alpaca_apply{args=As}=Apply, NextFun, Memo) ->
+    {NF, Args2, BMemo} = rewrite_seq_lambdas(As, NextFun),
+    {NF, Apply#alpaca_apply{args=Args2}, [BMemo ++ Memo]};
+rewrite_lambdas(X, NextFun, Memo) ->
+    {NextFun, X, Memo}.
+
 gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
@@ -97,7 +165,7 @@ gen_test_exports(Tests, [_|Rem], Memo) ->
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
 gen_funs(Env, Funs, [#alpaca_binding{}=F|T]) ->
-    NewF = gen_fun(Env, F),
+    NewF = gen_fun(Env, rewrite_lambdas(F)),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env,
