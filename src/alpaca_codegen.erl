@@ -145,6 +145,9 @@ rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=Body}=AB, NextFun, Memo) ->
 rewrite_lambdas(#alpaca_apply{args=As}=Apply, NextFun, Memo) ->
     {NF, Args2, BMemo} = rewrite_seq_lambdas(As, NextFun),
     {NF, Apply#alpaca_apply{args=Args2}, [BMemo ++ Memo]};
+rewrite_lambdas(#alpaca_type_apply{arg=Arg}=Apply, NextFun, Memo) ->
+    {NF, Arg2, Bindings} = rewrite_lambdas(Arg, NextFun, []),
+    {NF, Apply#alpaca_type_apply{arg=Arg2}, Bindings ++ Memo};
 rewrite_lambdas(X, NextFun, Memo) ->
     {NextFun, X, Memo}.
 

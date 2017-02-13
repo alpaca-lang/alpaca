@@ -447,6 +447,7 @@ lambdas_test() ->
     ?assertEqual([2, 3, 4], M:map_lambda({})),
     ?assertEqual(3, M:no_sugar_internal_binding({})),
     ?assertEqual(2, M:no_sugar_top_binding(1)),
+    ?assertEqual({'T', [2, 3, 4]}, M:map_to_make_t([1, 2, 3])),
     code:delete(M).
 
 -endif.
