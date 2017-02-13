@@ -113,10 +113,8 @@ gen_fun(Env,
 gen_fun(Env, #alpaca_binding{name={symbol, _, N}, bound_expr=Bound}) ->
     case Bound of
         #alpaca_fun{versions=[#alpaca_fun_version{args=Args, body=Body}]}=Def ->
-            io:format("Single version~n", []),
             case needs_pattern(Args) of
                 false ->
-                    io:format("No patterns~n", []),
                     FName = cerl:c_fname(list_to_atom(N), length(Args)),
                     A = [cerl:c_var(list_to_atom(X)) || {symbol, _, X} <- Args],
                     {_, B} = gen_expr(Env, Body),
@@ -522,11 +520,9 @@ gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
     #alpaca_binding{name={symbol, _, N}, bound_expr=BE, body=Body} = AB,
     case BE of
         #alpaca_fun{arity=Arity} ->
-            io:format("Arity ~w~n", [Arity]),
             NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
             case Body of
                 undefined ->
-                    io:format("No body~n", []),
                     {Env, gen_fun(NewEnv, AB)};
                 _ ->
                     {_, Exp} = gen_expr(NewEnv, Body),
