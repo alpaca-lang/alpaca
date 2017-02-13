@@ -403,7 +403,7 @@ next_batch([Token|Tail], Memo) ->
 
 -spec rename_bindings(
         Env::#env{},
-        TopLevel::alpaca_fun_def()) -> {#env{}, map(), alpaca_fun_def()}.
+        TopLevel::alpaca_binding()) -> {#env{}, map(), alpaca_binding()}.
 rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
     #alpaca_binding{name={symbol, _, _}, bound_expr=Expr} = TopLevel,
     case Expr of
@@ -491,23 +491,6 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                            name={symbol, L, NewName},
                            bound_expr=Expr2,
                            body=Body2}}
-    end;
-
-rename_bindings(#env{next_var=NextVar}=Env, Map, #var_binding{}=VB) ->
-    #var_binding{name={symbol, L, N}, to_bind=TB, expr=E} = VB,
-    case maps:get(N, Map, undefined) of
-        undefined ->
-            Synth = next_var(NextVar),
-            M2 = maps:put(N, Synth, Map),
-            {Env2, M3, TB2} = rename_bindings(Env#env{next_var=NextVar+1}, M2, TB),
-            {Env3, M4, E2} = rename_bindings(Env2, M3, E),
-            VB2 = #var_binding{
-                     name={symbol, L, Synth},
-                     to_bind=TB2,
-                     expr=E2},
-            {Env3, M4, VB2};
-        _ ->
-            parse_error(Env#env.current_module, L, {duplicate_definition, N})
     end;
 
 rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->

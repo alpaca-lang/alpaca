@@ -430,20 +430,6 @@
                          | alpaca_type_export()
                          | alpaca_error().
 
--record(fun_binding, {def :: alpaca_fun_def(),
-                      expr :: alpaca_expression()
-                     }).
-
--record(var_binding, {type=undefined :: typ(),
-                      name=undefined :: undefined|alpaca_symbol(),
-                      to_bind=undefined :: undefined|alpaca_expression(),
-                      expr=undefined :: undefined|alpaca_expression()
-                     }).
-
--type fun_binding() :: #fun_binding{}.
--type var_binding() :: #var_binding{}.
--type alpaca_binding() :: fun_binding()|var_binding().
-
 %% When calling BIFs like erlang:'+' it seems core erlang doesn't want
 %% the arity specified as part of the function name.  alpaca_bif_name()
 %% is a way to indicate what the ALPACA function name is and the corresponding
@@ -511,6 +497,7 @@
           bound_expr=undefined :: undefined | alpaca_expression(),
           body=undefined :: undefined | alpaca_expression()
          }).
+-type alpaca_binding() :: #alpaca_binding{}.
 
 -record (alpaca_fun_def, {
            type=undefined :: typ(),

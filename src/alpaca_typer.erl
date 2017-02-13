@@ -2411,7 +2411,7 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
         Env::env(),
         ModuleName::atom(),
         FunName::string(),
-        Arity::integer()) -> {ok, alpaca_module(), alpaca_fun_def()} |
+        Arity::integer()) -> {ok, alpaca_module(), alpaca_binding()} |
                              {error,
                               {no_module, atom()} |
                               {not_exported, string(), integer()} |
@@ -2452,7 +2452,7 @@ extract_module_bindings(Env, ModuleName, BindingName) ->
 -spec get_fun(
         Module::alpaca_module(),
         FunName::string(),
-        Arity::integer()) -> {ok, alpaca_module(), alpaca_fun_def()} |
+        Arity::integer()) -> {ok, alpaca_module(), alpaca_binding()} |
                              {error, {not_found, atom(), string, integer()}}.
 get_fun(Module, FunName, Arity) ->
     case filter_to_fun(Module#alpaca_module.functions, FunName, Arity) of
