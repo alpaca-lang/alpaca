@@ -73,30 +73,31 @@ fmt_parse_error({wrong_type_arity, t_string, _A}, Locale) ->
 fmt_parse_error(Unknown, ?EN_US=Locale) ->
     fmt_unknown_error(Unknown, Locale);
 fmt_parse_error(Unknown, Locale) ->
-    [locale_fallback_msg(Locale), fmt_parse_error(Unknown, ?EN_US)].
+    [fmt_parse_error(Unknown, ?EN_US), $\n, locale_fallback_msg(Locale)].
 
 simple_type_arity_error(LiteralType, ?EN_US) ->
     io_lib:format("Type parameter provided for builtin type ~p, "
                   "but none was expected.", [LiteralType]);
 simple_type_arity_error(LiteralType, Locale) ->
-    [locale_fallback_msg(Locale), simple_type_arity_error(LiteralType, ?EN_US)].
+    [simple_type_arity_error(LiteralType, ?EN_US), $\n,
+     locale_fallback_msg(Locale)].
 
 poly_type_arity_error(LiteralType, ExpectedArity, ActualArity, ?EN_US) ->
     io_lib:format("Wrong number of type parameters provided for "
                   "builtin type ~p.~nExpected ~p, but got ~p.",
                   [LiteralType, ExpectedArity, ActualArity]);
 poly_type_arity_error(LiteralType, ExpectedArity, ActualArity, Locale) ->
-    [locale_fallback_msg(Locale),
-     poly_type_arity_error(LiteralType, ExpectedArity, ActualArity, ?EN_US)].
+    [poly_type_arity_error(LiteralType, ExpectedArity, ActualArity, ?EN_US),
+     $\n, locale_fallback_msg(Locale)].
 
 fmt_unknown_error(Err, ?EN_US) ->
-    ["Sorry, we do not have a proper message for this error yet.",
-     $\n, "Please consider filing an issue at ",
-     "https://www.github.com/alpaca-lang/alpaca.",
-     $\n, io_lib:format("~p", [Err]), $\n];
+    [io_lib:format("~p~n", [Err]),
+     "Sorry, we do not have a proper message for this error yet.\n",
+     "Please consider filing an issue at ",
+     "https://www.github.com/alpaca-lang/alpaca.\n"];
 fmt_unknown_error(Err, Locale) ->
-    [locale_fallback_msg(Locale), fmt_unknown_error(Err, ?EN_US)].
+    [fmt_unknown_error(Err, ?EN_US), $\n, locale_fallback_msg(Locale)].
 
 locale_fallback_msg(Locale) ->
-    ["Error messages are not available in your locale (", Locale, ").",
-     "Falling back to ", ?EN_US, $\., $\n].
+    ["Error messages are not available in your locale (", Locale, "). ",
+     "Falling back to ", ?EN_US, ".\n"].
