@@ -488,7 +488,7 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
         _ ->
             {Env3, Map2, Expr2} = rename_bindings(En2, M2, Expr),
             {Env4, Map3, Body2} = rename_bindings(Env3, Map2, Body),
-            {Env3, Map2, Binding#alpaca_binding{
+            {Env4, Map3, Binding#alpaca_binding{
                            name={symbol, L, NewName},
                            bound_expr=Expr2,
                            body=Body2}}
@@ -1144,9 +1144,6 @@ import_test_() ->
                  "module two_lines_of_imports\n\n"
                  "import foo.bar/2\n\n"
                  "import math.[add/2, sub/2, mult]",
-             Code2 =
-                 "module foo\n\nexport bar/2",
-             Code3 = "module math\n\nexport add/2, sub/2, mult/1",
 
              ?assertMatch(
                 #alpaca_module{

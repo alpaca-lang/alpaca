@@ -1150,7 +1150,7 @@ inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types, Env) ->
     {Env3, new_cell({t_map, KElem, VElem})};
 inst_constructor_arg({t_pid, MsgType}, Vs, Types, Env) ->
     {Env2, PidElem} = inst_constructor_arg(MsgType, Vs, Types, Env),
-    {Env, new_cell({t_pid, PidElem})};
+    {Env2, new_cell({t_pid, PidElem})};
 inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},
                      Vs, Types, Env) ->
     #alpaca_type{vars = V2, members=M2, module=Mod} = find_type(N, Types),
@@ -1195,7 +1195,7 @@ inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types, Env) ->
         end,
     {Env2, InstantiatedArgs} = lists:foldl(F, {Env, []}, ArgTypes),
     {Env3, InstantiatedRet} = inst_constructor_arg(RetType, Vs, Types, Env2),
-    {Env, new_cell({t_arrow, lists:reverse(InstantiatedArgs), InstantiatedRet})};
+    {Env3, new_cell({t_arrow, lists:reverse(InstantiatedArgs), InstantiatedRet})};
 
 inst_constructor_arg(Arg, _, _, _) ->
     throw({error, {bad_constructor_arg, Arg}}).
@@ -1750,7 +1750,7 @@ typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists}) ->
 
     RecMems = [#t_record_member{name=N, type=T} || {N, T} <- maps:to_list(Deduped)],
     Rec = #t_record{members=RecMems, row_var=FlatVar},
-    {new_cell(Rec), NV2};
+    {new_cell(Rec), NV3};
 
 typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of

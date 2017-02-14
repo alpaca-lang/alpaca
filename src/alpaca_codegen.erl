@@ -87,14 +87,14 @@ gen(#alpaca_module{}=Mod, Opts) ->
 %% to them nor that they are assigned to names that can conflict with ones
 %% a user could define.
 rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=undefined}=TopBinding) ->
-    {Bindings, BE2} = case BE of
-                          #alpaca_fun{versions=Vs}=Fun ->
-                              {_, Vs2, X} = rewrite_seq_lambdas(Vs, 0),
-                              {X, Fun#alpaca_fun{versions=Vs2}};
-                          _ ->
-                              {_, B, X} = rewrite_lambdas(BE, 0, []),
-                              {X, B}
-                      end,
+    BE2 = case BE of
+              #alpaca_fun{versions=Vs}=Fun ->
+                  {_, Vs2, _} = rewrite_seq_lambdas(Vs, 0),
+                  Fun#alpaca_fun{versions=Vs2};
+              _ ->
+                  {_, B, _} = rewrite_lambdas(BE, 0, []),
+                  B
+          end,
 
     TopBinding#alpaca_binding{bound_expr=BE2}.
 
@@ -108,7 +108,7 @@ rewrite_seq_lambdas(FVs, NextFun) ->
     {NF2, FVs2, Bindings} = lists:foldl(F, {NextFun, [], []}, FVs),
     {NF2, lists:reverse(FVs2), Bindings}.
 
-rewrite_lambdas(#alpaca_fun_version{body=B}=FV, NextFun, Memo) ->
+rewrite_lambdas(#alpaca_fun_version{body=B}=FV, NextFun, _) ->
     {NF2, B2, NewBinds} = rewrite_lambdas(B, NextFun, []),
 
     F = fun({Name, Exp}, Chain) ->
@@ -122,10 +122,6 @@ rewrite_lambdas(#alpaca_fun_version{body=B}=FV, NextFun, Memo) ->
 
     {NF2, FV#alpaca_fun_version{body=Rebound}, []};
 rewrite_lambdas(#alpaca_fun{line=L, versions=Vs}=Fun, NextFun, Memo) ->
-    F = fun(#alpaca_fun_version{body=B}=FV, {NF, VMemo, BMemo}) ->
-                {NF2, B2, NewBinds} = rewrite_lambdas(B, NF, []),
-                {NF2, [FV#alpaca_fun_version{body=B2}|VMemo], NewBinds ++ BMemo}
-        end,
     {NextFun2, VMemo, BMemo} = rewrite_seq_lambdas(Vs, NextFun),
     FunName = {symbol, L, ":synth_lambda_" ++ integer_to_list(NextFun2)},
     Fun2 = Fun#alpaca_fun{versions=VMemo},
@@ -599,7 +595,7 @@ gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
                     {_, Exp} = gen_expr(NewEnv, Body),
                     {Env, cerl:c_letrec([gen_fun(NewEnv, AB)], Exp)}
             end;
-        NotFunction ->
+        _NotFunction ->
             case Body of
                 undefined ->
                     {Env, gen_fun(Env, AB)};
@@ -709,7 +705,7 @@ module_with_internal_apply_test() ->
         "let adder x y = x + y\n\n"
         "let add x y = adder x y\n\n"
         "let eq x y = x == y",
-    {ok, _, Bin} = parse_and_gen(Code).
+    {ok, _, _Bin} = parse_and_gen(Code).
 
 infix_fun_test() ->
     Name = alpaca_infix_fun,
@@ -778,7 +774,7 @@ parser_nested_letrec_test() ->
         "  let adder1 a b = a + b in\n"
         "  let adder2 c d = adder1 c d in\n"
         "  adder2 x y",
-    {ok, _, Bin} = parse_and_gen(Code).
+    {ok, _, _Bin} = parse_and_gen(Code).
 
 %% This test will fail until I have implemented equality guards:
 module_with_match_test() ->
