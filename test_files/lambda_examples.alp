@@ -1,0 +1,28 @@
+module lambda_examples
+
+export map_lambda, no_sugar_internal_binding, no_sugar_top_binding
+export map_to_make_t, nested_fun, use_lambda
+
+let map f [] = []
+let map f (h :: t) = (f h) :: (map f t)
+
+-- Use a literal lambda/anonymous function:
+let map_lambda () = map (fn x -> x + 1) [1, 2, 3]
+
+-- Skip function binding syntax sugar for internal functions.
+let no_sugar_internal_binding () =
+  let f = fn x -> x + 1 in
+  f 2
+
+-- Skip the syntax sugar for function bindings at the top level.
+let no_sugar_top_binding = fn x -> x + 1
+
+type t 'a = T 'a
+
+let map_to_make_t list =
+  T (map (fn x -> x + 1) list)
+
+let nested_fun () =
+    map (fn x -> (fn y -> y + 1) x) [1, 2, 3]
+
+let use_lambda = λ x → x + 1

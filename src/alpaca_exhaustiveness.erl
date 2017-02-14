@@ -48,24 +48,30 @@ check_exhaustiveness(Mods) ->
 check_exhaustiveness(#alpaca_module{functions=Funs}=M, AllMods) ->
     lists:flatmap(fun(F) -> check_exhaustiveness(M, F, AllMods) end, Funs).
 
-check_exhaustiveness(Mod, #alpaca_fun_def{type=Type}=F, AllMods) ->
-    case Type of
-        {t_arrow, FunArgTypes, _}                  ->
-          check_exhaustiveness(Mod, F, FunArgTypes, AllMods);
-        {t_receiver, _, {t_arrow, FunArgTypes, _}} ->
-          check_exhaustiveness(Mod, F, FunArgTypes, AllMods);
-         _                                         -> % Top level value
+check_exhaustiveness(Mod, #alpaca_binding{type=Type, bound_expr=Bound}=F, AllMods) ->
+    case Bound of
+        #alpaca_fun{} ->
+            case Type of
+                {t_arrow, FunArgTypes, _}                  ->
+                    check_exhaustiveness(Mod, F, FunArgTypes, AllMods);
+                {t_receiver, _, {t_arrow, FunArgTypes, _}} ->
+                    check_exhaustiveness(Mod, F, FunArgTypes, AllMods);
+                _                                         -> % Top level value
+                    []
+            end;
+        _ ->
             []
     end.
 
-check_exhaustiveness(Mod, #alpaca_fun_def{versions=FunArgPatterns}=F,
+check_exhaustiveness(Mod, #alpaca_binding{
+                             name={symbol, _, Name},
+                             bound_expr=#alpaca_fun{}=F},
                      FunArgTypes, AllMods) ->
+    #alpaca_fun{arity=Arity, versions=FunArgPatterns} = F,
     case missing_patterns(Mod, FunArgTypes, FunArgPatterns, AllMods) of
         []              ->
             [];
         MissingPatterns ->
-            {symbol, _,  Name} = F#alpaca_fun_def.name,
-            Arity = F#alpaca_fun_def.arity,
             MFA = {Mod#alpaca_module.name, Name, Arity},
             [{partial_function, MFA, MissingPatterns}]
     end.

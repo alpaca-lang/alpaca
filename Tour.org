@@ -379,6 +379,43 @@ let filtered_list () =
   filter (eq 3) [1, 2, 3]
 
 #+END_SRC
+
+** Lambdas
+Lambdas (AKA anonymous functions) can be defined with the ~fn~ keyword:
+#+BEGIN_SRC
+fn x -> x + 1
+#+END_SRC
+They can also be bound to variable names, e.g. these two versions of ~double~ will produce the exact same output binary:
+#+BEGIN_SRC
+let double = fn x -> x + x
+
+let double x = x + x
+#+END_SRC
+
+We can also use lambdas as arguments to other functions, here's an example of passing a function that adds 1 to each element of an integer list:
+#+BEGIN_SRC
+let example () =
+  map (fn x -> x + 1) [1, 2, 3]
+
+test "example should result in [2, 3, 4]" =
+  assert_equal (example ()) [2, 3, 4]
+
+-- here's a simple definition of the map function:
+let map f [] = []
+let map f (h :: t) = (f h) :: (map f t)
+#+END_SRC
+
+Finally, we can use the unicode lambda and right-arrow characters if we want to.  These two functions are identical:
+#+BEGIN_SRC
+λ x → x + 1
+
+fn x -> x + 1
+#+END_SRC
+So the following would work the same as our ~example~ function above:
+#+BEGIN_SRC
+let example () =
+  map (λ x → x + 1) [1, 2, 3]
+#+END_SRC
 * User Defined Types:  ADTs
 We can currently specify new types by combining existing ones, creating [[https://en.wikipedia.org/wiki/Algebraic_data_type][algebraic data types (ADTs)]].  These new types will also be inferred correctly, here's a simple example of a broad "number" type that combines integers and floats:
 

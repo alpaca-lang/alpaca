@@ -41,8 +41,13 @@
           synthetic_fun_num=0 :: integer()
          }).
 
+name_and_arity(#alpaca_binding{name={_, _, N}, bound_expr=#alpaca_fun{arity=A}}) ->
+    {N, A};
+name_and_arity(#alpaca_binding{name={_, _, N}}) ->
+    {N, 0}.
+
 make_env(#alpaca_module{functions=Funs}=_Mod) ->
-    TopLevelFuns = [{N, A} || #alpaca_fun_def{name={symbol, _, N}, arity=A} <- Funs],
+    TopLevelFuns = [name_and_arity(F) || F <- Funs],
     #env{module_funs=TopLevelFuns, wildcard_num=0}.
 
 prefix_modulename(Name) ->
@@ -75,6 +80,73 @@ gen(#alpaca_module{}=Mod, Opts) ->
                CompiledFuns ++ CompiledTests)
     }.
 
+%% Each top-level binding has to be rewritten so that lambdas (anonymous
+%% functions) occurring within the body bound expression (function body)
+%% get replaced by variables that are synthesized local functions.  We do
+%% this in the code generation stage to ensure that the user cannot refer
+%% to them nor that they are assigned to names that can conflict with ones
+%% a user could define.
+rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=undefined}=TopBinding) ->
+    BE2 = case BE of
+              #alpaca_fun{versions=Vs}=Fun ->
+                  {_, Vs2, _} = rewrite_seq_lambdas(Vs, 0),
+                  Fun#alpaca_fun{versions=Vs2};
+              _ ->
+                  {_, B, _} = rewrite_lambdas(BE, 0, []),
+                  B
+          end,
+
+    TopBinding#alpaca_binding{bound_expr=BE2}.
+
+%% Rewriting a sequence of function versions or a sequence of function arguments
+%% is basically the same so let's just use one function for both.
+rewrite_seq_lambdas(FVs, NextFun) ->
+    F = fun(FV, {NF, VMemo, Bindings}) ->
+                {NF2, FV2, Bs} = rewrite_lambdas(FV, NF, []),
+                {NF2, [FV2|VMemo], Bs ++ Bindings}
+        end,
+    {NF2, FVs2, Bindings} = lists:foldl(F, {NextFun, [], []}, FVs),
+    {NF2, lists:reverse(FVs2), Bindings}.
+
+rewrite_lambdas(#alpaca_fun_version{body=B}=FV, NextFun, _) ->
+    {NF2, B2, NewBinds} = rewrite_lambdas(B, NextFun, []),
+
+    F = fun({Name, Exp}, Chain) ->
+                {symbol, L, _} = Name,
+                #alpaca_binding{name=Name,
+                                line=L,
+                                bound_expr=Exp,
+                                body=Chain}
+        end,
+    Rebound = lists:foldl(F, B2, lists:flatten(NewBinds)),
+
+    {NF2, FV#alpaca_fun_version{body=Rebound}, []};
+rewrite_lambdas(#alpaca_fun{line=L, versions=Vs}=Fun, NextFun, Memo) ->
+    {NextFun2, VMemo, BMemo} = rewrite_seq_lambdas(Vs, NextFun),
+    FunName = {symbol, L, ":synth_lambda_" ++ integer_to_list(NextFun2)},
+    Fun2 = Fun#alpaca_fun{versions=VMemo},
+    {NextFun2, FunName, [{FunName, Fun2} | [BMemo | Memo]]};
+rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=Body}=AB, NextFun, Memo) ->
+    {NextFun2, BE2, Binds} = case BE of
+                                 #alpaca_fun{versions=Vs}=Fun ->
+                                     {NF, Vs2, X} = rewrite_seq_lambdas(Vs, NextFun),
+                                     {NF, Fun#alpaca_fun{versions=Vs2}, X};
+                                 _ ->
+                                     rewrite_lambdas(BE, 0, [])
+                             end,
+
+    {NF3, Body2, BodyBinds} = rewrite_lambdas(Body, NextFun2, []),
+    AB2 = AB#alpaca_binding{bound_expr=BE2, body=Body2},
+    {NF3, AB2, Binds ++ BodyBinds ++ Memo};
+rewrite_lambdas(#alpaca_apply{args=As}=Apply, NextFun, Memo) ->
+    {NF, Args2, BMemo} = rewrite_seq_lambdas(As, NextFun),
+    {NF, Apply#alpaca_apply{args=Args2}, [BMemo ++ Memo]};
+rewrite_lambdas(#alpaca_type_apply{arg=Arg}=Apply, NextFun, Memo) ->
+    {NF, Arg2, Bindings} = rewrite_lambdas(Arg, NextFun, []),
+    {NF, Apply#alpaca_type_apply{arg=Arg2}, Bindings ++ Memo};
+rewrite_lambdas(X, NextFun, Memo) ->
+    {NextFun, X, Memo}.
+
 gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
@@ -91,24 +163,23 @@ gen_test_exports(Tests, [_|Rem], Memo) ->
 
 gen_funs(Env, Funs, []) ->
     {Env, lists:reverse(Funs)};
-gen_funs(Env, Funs, [#alpaca_fun_def{}=F|T]) ->
-    NewF = gen_fun(Env, F),
+gen_funs(Env, Funs, [#alpaca_binding{}=F|T]) ->
+    NewF = gen_fun(Env, rewrite_lambdas(F)),
     gen_funs(Env, [NewF|Funs], T).
 
 gen_fun(Env,
-        #alpaca_fun_def{
+        #alpaca_binding{
            name={symbol, _, N},
-           versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}) ->
+           bound_expr=#alpaca_fun{
+                         versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}}) ->
 
     FName = cerl:c_fname(list_to_atom(N), 1),
     A = [cerl:c_var('_unit')],
     {_, B} = gen_expr(Env, Body),
     {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #alpaca_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
-    case Vs of
-        %% If there's a single version with only symbol and/or unit
-        %% args, don't compile a pattern match:
-        [#alpaca_fun_version{args=Args, body=Body}] ->
+gen_fun(Env, #alpaca_binding{name={symbol, _, N}, bound_expr=Bound}) ->
+    case Bound of
+        #alpaca_fun{versions=[#alpaca_fun_version{args=Args, body=Body}]}=Def ->
             case needs_pattern(Args) of
                 false ->
                     FName = cerl:c_fname(list_to_atom(N), length(Args)),
@@ -117,11 +188,15 @@ gen_fun(Env, #alpaca_fun_def{name={symbol, _, N}, versions=Vs}=Def) ->
                     {FName, cerl:c_fun(A, B)};
                 true ->
                     %% our single version has more than symbols and unit:
-                    gen_fun_patterns(Env, Def)
+                    gen_fun_patterns(Env, N, Def)
             end;
-        _ ->
+        #alpaca_fun{}=Def ->
             %% more than one version:
-            gen_fun_patterns(Env, Def)
+            gen_fun_patterns(Env, N, Def);
+        NotFunction ->
+            FName = cerl:c_fname(list_to_atom(N), 0),
+            {_, B} = gen_expr(Env, NotFunction),
+            {FName, cerl:c_fun([], B)}
     end.
 
 needs_pattern(Args) ->
@@ -133,12 +208,12 @@ needs_pattern(Args) ->
         _  -> true
     end.
 
-gen_fun_patterns(Env, #alpaca_fun_def{name={symbol, _, N}, arity=A, versions=Vs}) ->
+gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
     %% We need to manufacture variable names that we'll use in the
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
     %% Nest matches:
-    FName = cerl:c_fname(list_to_atom(N), A),
+    FName = cerl:c_fname(list_to_atom(Name), A),
     Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
     [_TopVar|_] = VarNames,
     B = cerl:c_case(
@@ -336,18 +411,18 @@ gen_expr(Env, #alpaca_apply{expr={symbol, L, Name}=FExpr, args=Args}) ->
                     {symbol, L, "carg_" ++ integer_to_list(A)}
                end,
                lists:seq(DesiredArity+1, Arity)),
-           CurryExpr = #alpaca_fun_def{
-                             name={symbol, L, CurryFunName},
-                             arity=Arity-DesiredArity,
-                             versions=[#alpaca_fun_version{
-                                          args=CArgs,
-                                          body=#alpaca_apply{
-                                            line=L,
-                                            expr=FExpr,
-                                            args=Args ++ CArgs}}]},
-           Binding = #fun_binding{
-                        expr={symbol, L, CurryFunName},
-                        def=CurryExpr},
+           CurryExpr = #alpaca_fun{
+                          arity=Arity-DesiredArity,
+                          versions=[#alpaca_fun_version{
+                                       args=CArgs,
+                                       body=#alpaca_apply{
+                                               line=L,
+                                               expr=FExpr,
+                                               args=Args ++ CArgs}}]},
+           Binding = #alpaca_binding{
+                        name={symbol, L, CurryFunName},
+                        body={symbol, L, CurryFunName},
+                        bound_expr=CurryExpr},
 
            gen_expr(Env2, Binding);
 
@@ -374,8 +449,7 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                     {symbol, L, "carg_" ++ integer_to_list(A)}
                end,
                lists:seq(length(Args)+1, Arity)),
-               CurryExpr = #alpaca_fun_def{
-                             name={symbol, L, FunName},
+               CurryExpr = #alpaca_fun{
                              arity=length(Args),
                              versions=[#alpaca_fun_version{
                                           args=CArgs,
@@ -383,17 +457,18 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                                             line=L,
                                             expr=Expr,
                                             args=Args ++ CArgs}}]},
-               Binding = #fun_binding{
-                        expr={symbol, L, FunName},
-                        def=CurryExpr},
+               Binding = #alpaca_binding{
+                            name={symbol, L, FunName},
+                            body={symbol, L, FunName},
+                            bound_expr=CurryExpr},
                gen_expr(Env2, Binding);
         _ ->
-            SynthBinding = #var_binding{
+            SynthBinding = #alpaca_binding{
                               name={symbol, L, FunName},
-                              to_bind=Expr,
-                              expr=#alpaca_apply{
-                                        line=L, expr={symbol, L, FunName},
-                                        args=Args}},
+                              bound_expr=Expr,
+                              body=#alpaca_apply{
+                                      line=L, expr={symbol, L, FunName},
+                                      args=Args}},
 
             gen_expr(Env2, SynthBinding)
     end;
@@ -508,15 +583,28 @@ gen_expr(Env, #alpaca_send{message=M, pid=P}) ->
     {_, MExp} = gen_expr(Env, M),
     {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
 
-gen_expr(#env{module_funs=Funs}=Env, #fun_binding{def=F, expr=E}) ->
-    #alpaca_fun_def{name={symbol, _, N}, arity=Arity} = F,
-    NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
-    {_, Exp} = gen_expr(NewEnv, E),
-    {Env, cerl:c_letrec([gen_fun(NewEnv, F)], Exp)};
-gen_expr(Env, #var_binding{name={symbol, _, N}, to_bind=E1, expr=E2}) ->
-    {_, E1Exp} = gen_expr(Env, E1),
-    {_, E2Exp} = gen_expr(Env, E2),
-    {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}.
+gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
+    #alpaca_binding{name={symbol, _, N}, bound_expr=BE, body=Body} = AB,
+    case BE of
+        #alpaca_fun{arity=Arity} ->
+            NewEnv = Env#env{module_funs=[{N, Arity}|Funs]},
+            case Body of
+                undefined ->
+                    {Env, gen_fun(NewEnv, AB)};
+                _ ->
+                    {_, Exp} = gen_expr(NewEnv, Body),
+                    {Env, cerl:c_letrec([gen_fun(NewEnv, AB)], Exp)}
+            end;
+        _NotFunction ->
+            case Body of
+                undefined ->
+                    {Env, gen_fun(Env, AB)};
+                _ ->
+                    {_, E1Exp} = gen_expr(Env, BE),
+                    {_, E2Exp} = gen_expr(Env, Body),
+                    {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}
+            end
+    end.
 
 module_info0(ModuleName) ->
     gen_module_info(ModuleName, []).
@@ -617,7 +705,7 @@ module_with_internal_apply_test() ->
         "let adder x y = x + y\n\n"
         "let add x y = adder x y\n\n"
         "let eq x y = x == y",
-    {ok, _, Bin} = parse_and_gen(Code).
+    {ok, _, _Bin} = parse_and_gen(Code).
 
 infix_fun_test() ->
     Name = alpaca_infix_fun,
@@ -686,7 +774,7 @@ parser_nested_letrec_test() ->
         "  let adder1 a b = a + b in\n"
         "  let adder2 c d = adder1 c d in\n"
         "  adder2 x y",
-    {ok, _, Bin} = parse_and_gen(Code).
+    {ok, _, _Bin} = parse_and_gen(Code).
 
 %% This test will fail until I have implemented equality guards:
 module_with_match_test() ->

@@ -40,6 +40,7 @@
 <li><a href="#sec-4-1">4.1. The Foreign Function Interface</a></li>
 <li><a href="#sec-4-2">4.2. Built-In Functions</a></li>
 <li><a href="#sec-4-3">4.3. Currying</a></li>
+<li><a href="#sec-4-4">4.4. Lambdas</a></li>
 </ul>
 </li>
 <li><a href="#sec-5">5. User Defined Types:  ADTs</a></li>
@@ -442,6 +443,41 @@ Some examples:
     -- assuming a filter/2 function that takens a predicate function and a list 'a
     let filtered_list () =
       filter (eq 3) [1, 2, 3]
+
+## Lambdas<a id="sec-4-4" name="sec-4-4"></a>
+
+Lambdas (AKA anonymous functions) can be defined with the `fn` keyword:
+
+    fn x -> x + 1
+
+They can also be bound to variable names, e.g. these two versions of `double` will produce the exact same output binary:
+
+    let double = fn x -> x + x
+    
+    let double x = x + x
+
+We can also use lambdas as arguments to other functions, here's an example of passing a function that adds 1 to each element of an integer list:
+
+    let example () =
+      map (fn x -> x + 1) [1, 2, 3]
+    
+    test "example should result in [2, 3, 4]" =
+      assert_equal (example ()) [2, 3, 4]
+    
+    -- here's a simple definition of the map function:
+    let map f [] = []
+    let map f (h :: t) = (f h) :: (map f t)
+
+Finally, we can use the unicode lambda and right-arrow characters if we want to.  These two functions are identical:
+
+    λ x → x + 1
+    
+    fn x -> x + 1
+
+So the following would work the same as our `example` function above:
+
+    let example () =
+      map (λ x → x + 1) [1, 2, 3]
 
 # User Defined Types:  ADTs<a id="sec-5" name="sec-5"></a>
 
