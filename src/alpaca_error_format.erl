@@ -9,7 +9,7 @@
 %%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
--module(alpaca_error_fmt).
+-module(alpaca_error_format).
 
 -export([fmt/2]).
 
