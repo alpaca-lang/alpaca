@@ -13,6 +13,8 @@
 
 -export([fmt/2]).
 
+-ignore_xref([ fmt/2 ]).
+
 -define(EN_US, "en-US").
 
 fmt({error, {parse_error, F, L, E}}, Locale) ->
