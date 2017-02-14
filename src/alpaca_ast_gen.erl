@@ -1806,6 +1806,17 @@ invalid_base_type_parameters_test_() ->
                    test_make_modules([Code]))
     end, Types).
 
+invalid_fun_parameter_test_() ->
+    P = fun(Code) -> parse(alpaca_scanner:scan(Code)) end,
+
+    [?_assertMatch({error, {1, _, {invalid_fun_parameter, _}}},
+                   P("fn (fn x -> x + 1) -> 2"))
+     , ?_assertMatch({error, {1, _, {invalid_fun_parameter, _}}},
+                     P("let f (fn x -> x + 1) = 2"))
+     , ?_assertMatch({error, {1, _, {invalid_fun_parameter, _}}},
+                     P("let f = fn (fn x -> x + 1) -> 2"))
+    ].
+
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
     make_modules(NamedSources).

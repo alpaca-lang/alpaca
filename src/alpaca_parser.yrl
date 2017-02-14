@@ -454,10 +454,11 @@ infix -> term op term : make_infix('$2', '$1', '$3').
 
 literal_fun -> fn terms '->' simple_expr:
   {_, L} = '$1',
+  {ok, Args} = validate_args(L, '$2'),
   #alpaca_fun{line=L,
               arity=length('$2'),
               versions=[#alpaca_fun_version{
-                           args='$2',
+                           args=Args,
                            body='$4'}]}.
 
 %% ----- Errors (including throw, exit) --------------
@@ -740,6 +741,8 @@ validate_args(L, Args) ->
 
 validate_args(_L, [], GoodArgs) ->
     {ok, lists:reverse(GoodArgs)};
+validate_args(L, [#alpaca_fun{}=F|_], _) ->
+    return_error(L, {invalid_fun_parameter, F});
 validate_args(L, [#alpaca_match{}=E|_], _) ->
     return_error(L, {invalid_fun_parameter, E});
 validate_args(L, [#alpaca_spawn{}=E|_], _) ->
