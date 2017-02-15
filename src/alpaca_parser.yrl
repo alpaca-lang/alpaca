@@ -18,7 +18,7 @@ comment
 op infix
 const module_fun
 type poly_type poly_type_decl type_vars type_member type_members type_expr
-sub_type_expr type_expressions type_tuple comma_separated_type_list type_list
+sub_type_expr type_expressions type_tuple comma_separated_type_list
 module_qualified_type module_qualified_type_name
 type_apply module_qualified_type_constructor
 type_import type_export types_to_export
@@ -228,13 +228,10 @@ sub_type_expr -> symbol :
 
 sub_type_expr -> type_tuple : '$1'.
 sub_type_expr -> '(' type_expr ')': '$2'.
-sub_type_expr -> '[' type_list ']' '->' type_expr :
+sub_type_expr -> fn type_expressions '->' type_expr :
 
-    {t_arrow, '$2', '$5'}.
+    {t_arrow, '$2', '$4'}.
 sub_type_expr -> unit : t_unit.
-
-type_list -> comma_separated_type_list : '$1'.
-type_list -> type_expr: ['$1'].
 
 comma_separated_type_list -> type_expr ',' type_expr:
     ['$1', '$3'].

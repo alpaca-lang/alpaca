@@ -3392,7 +3392,7 @@ type_constructor_with_pid_arg_test() ->
 
 type_constructor_with_arrow_arg_test() ->
     Base = "module constructor\n\n"
-           "type t = Constructor ([int,int] -> bool)\n\n",
+           "type t = Constructor (fn int int -> bool)\n\n",
     Valid = Base ++
             "let p x y = x > y\n\n"
             "let make () = Constructor p",
@@ -3406,7 +3406,7 @@ type_constructor_with_arrow_arg_test() ->
 
 type_constructor_with_aliased_arrow_arg_test() ->
     Base = "module constructor\n\n"
-           "type binop 'a = ['a,'a] -> 'a\n"
+           "type binop 'a = fn 'a 'a -> 'a\n"
            "type intbinop = binop int\n"
            "type wrapper = W intbinop\n\n",
     Valid = Base ++ "let f (W b) = b 1 1\n\n",
