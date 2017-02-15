@@ -2,7 +2,7 @@ module dictionary
 
 type option 'a  = Some 'a | None
 
-type dictionary 'k 'v = Dictionary (['k] -> option 'v)
+type dictionary 'k 'v = Dictionary (fn 'k -> option 'v)
 
 export new/1, lookup/2, insert/3, test_int_dict
 
