@@ -1,0 +1,13 @@
+module different_clause_styles
+
+export leading_pipe/1, or_pipe/1
+
+-- test a match where every clause leads with a pipe.
+let leading_pipe x = match x with
+  | 0 -> :zero
+  | _ -> :not_zero
+
+-- test a match where pipes are treated strictly as "or".
+let or_pipe x = match x with
+    0 -> :zero
+  | _ -> :not_zero
