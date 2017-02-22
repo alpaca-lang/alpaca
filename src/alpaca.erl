@@ -452,4 +452,15 @@ lambdas_test() ->
     ?assertEqual(4, M:use_lambda(3)),
     code:delete(M).
 
+%% Tests that we can use both leading `|` for every clause or treat it strictly
+%% as "or" when defining clauses.
+clause_style_test() ->
+    Files = ["test_files/different_clause_styles.alp"],
+    [M] = compile_and_load(Files, []),
+    ?assertEqual(zero, M:leading_pipe(0)),
+    ?assertEqual(not_zero, M:leading_pipe(42)),
+    ?assertEqual(not_zero, M:or_pipe(1)),
+    ?assertEqual(zero, M:or_pipe(0)),
+    code:delete(M).
+
 -endif.
