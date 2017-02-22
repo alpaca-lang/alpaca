@@ -221,10 +221,14 @@ gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
           [gen_fun_version(Env, Version) || Version <- Vs]),
     {FName, cerl:c_fun(Args, B)}.
 
-gen_fun_version(Env, #alpaca_fun_version{args=Args, body=Body}) ->
+gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
     Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
     {_, BodyExp} = gen_expr(Env, Body),
-    cerl:c_clause(Patt, BodyExp).
+
+    case gen_guards(Env, Gs) of
+        [] ->     cerl:c_clause(Patt, BodyExp);
+        Guards -> cerl:c_clause(Patt, gen_guards(Env, Gs), BodyExp)
+    end.
 
 gen_tests(Env, Tests) ->
     gen_tests(Env, Tests, []).
@@ -504,19 +508,7 @@ gen_expr(Env, #alpaca_clause{pattern=P, guards=[], result=E}) ->
     {Env3, EExp} = gen_expr(Env2, E),
     {Env3, cerl:c_clause([PExp], EExp)};
 gen_expr(Env, #alpaca_clause{pattern=P, guards=Gs, result=E}) ->
-    NestG = fun(G, Acc) ->
-                    {_, GExp} = gen_expr(Env, G),
-                    cerl:c_call(
-                      cerl:c_atom('erlang'),
-                      cerl:c_atom('and'),
-                      [GExp, Acc])
-            end,
-    F = fun([], G) -> G;
-           (G, Acc) -> NestG(G, Acc)
-        end,
-    [H|T] = lists:reverse(Gs),
-    {_, HExp} = gen_expr(Env, H),
-    G = lists:foldl(F, HExp, T),
+    G = gen_guards(Env, Gs),
 
     {Env2, PExp} = gen_expr(Env, P),
     {Env3, EExp} = gen_expr(Env2, E),
@@ -604,6 +596,26 @@ gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
                     {_, E2Exp} = gen_expr(Env, Body),
                     {Env, cerl:c_let([cerl:c_var(list_to_atom(N))], E1Exp, E2Exp)}
             end
+    end.
+
+gen_guards(Env, Gs) ->
+    NestG = fun(G, Acc) ->
+                    {_, GExp} = gen_expr(Env, G),
+                    cerl:c_call(
+                      cerl:c_atom('erlang'),
+                      cerl:c_atom('and'),
+                      [GExp, Acc])
+            end,
+    F = fun([], G) -> G;
+           (G, Acc) -> NestG(G, Acc)
+        end,
+
+    case lists:reverse(Gs) of
+        [H|T] ->
+            {_, HExp} = gen_expr(Env, H),
+            lists:foldl(F, HExp, T);
+        _ ->
+            []
     end.
 
 module_info0(ModuleName) ->

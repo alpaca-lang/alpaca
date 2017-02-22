@@ -2,6 +2,7 @@ module lambda_examples
 
 export map_lambda, no_sugar_internal_binding, no_sugar_top_binding
 export map_to_make_t, nested_fun, use_lambda
+export use_literal_fun_with_patterns, literal_fun_and_guards
 
 let map f [] = []
 let map f (h :: t) = (f h) :: (map f t)
@@ -26,3 +27,15 @@ let nested_fun () =
     map (fn x -> (fn y -> y + 1) x) [1, 2, 3]
 
 let use_lambda = λ x → x + 1
+
+let use_literal_fun_with_patterns () =
+  map (fn | 0 -> :zero | _ -> :not_zero) [0, 1, 0, 2]
+
+type int_and_float = int | float
+
+let literal_fun_and_guards () =
+  let f =
+    fn
+      | x, is_integer x -> :int
+      | _               -> :not_int
+  in map f [1, 1.0, 2, 2.0]

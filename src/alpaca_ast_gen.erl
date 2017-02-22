@@ -409,11 +409,16 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
     #alpaca_binding{name={symbol, _, _}, bound_expr=Expr} = TopLevel,
     case Expr of
         #alpaca_fun{versions=Vs} ->
-            F = fun(#alpaca_fun_version{args=As, body=Body}=FV, {Env, Map, Versions}) ->
+            F = fun(#alpaca_fun_version{
+                       args=As,
+                       body=Body,
+                       guards=Gs}=FV, {Env, Map, Versions}) ->
                         {Env2, M2, Args} = make_bindings(Env, Map, As),
-                        {Env3, _M3, E} =  rename_bindings(Env2, M2, Body),
+                        {Env3, M3, E} =  rename_bindings(Env2, M2, Body),
+                        {Env4, _M4, Gs2} = rename_binding_list(Env3, M3, Gs),
                         FV2 = FV#alpaca_fun_version{
                                 args=Args,
+                                guards=Gs2,
                                 body=E},
                         %% As with patterns and clauses we deliberately
                         %% throw away the rename map here so that the
@@ -463,17 +468,19 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                           end,
 
     F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
-                #alpaca_fun_version{args=Args, body=FunBody} = FV,
+                #alpaca_fun_version{args=Args, body=FunBody, guards=Gs} = FV,
                 {Env2, M3, Args2} = rebind_args(Env, Map, Args),
-                {Env3, _M4, FunBody2} = rename_bindings(Env2, M3, FunBody),
+                {Env3, M4, FunBody2} = rename_bindings(Env2, M3, FunBody),
+                {Env4, _M5, Gs2} = rename_binding_list(Env3, M4, Gs),
                 FV2 = FV#alpaca_fun_version{
                         args=Args2,
+                        guards=Gs2,
                         body=FunBody2},
                 %% As with patterns and clauses we deliberately
                 %% throw away the rename map here so that the
                 %% same symbols can be reused by distinctly
                 %% different function definitions.
-                {Env3, Map, [FV2|NewVersions]}
+                {Env4, Map, [FV2|NewVersions]}
            end,
     case Expr of
         #alpaca_fun{versions=Vs}=Def ->

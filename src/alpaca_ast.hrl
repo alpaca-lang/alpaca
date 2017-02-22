@@ -471,6 +471,7 @@
 -record(alpaca_fun_version, {
           line=0 :: integer(),
           args=[] :: list(alpaca_value_expression()),
+          guards=[] :: list(alpaca_expression()),
           body=undefined :: undefined|alpaca_expression()
          }).
 

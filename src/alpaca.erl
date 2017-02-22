@@ -450,6 +450,10 @@ lambdas_test() ->
     ?assertEqual({'T', [2, 3, 4]}, M:map_to_make_t([1, 2, 3])),
     ?assertEqual([2, 3, 4], M:nested_fun({})),
     ?assertEqual(4, M:use_lambda(3)),
+    ?assertEqual([zero, not_zero, zero, not_zero],
+                 M:use_literal_fun_with_patterns({})),
+    ?assertEqual([int, not_int, int, not_int],
+                 M:literal_fun_and_guards({})),
     code:delete(M).
 
 %% Tests that we can use both leading `|` for every clause or treat it strictly
