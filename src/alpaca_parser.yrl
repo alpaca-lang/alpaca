@@ -45,6 +45,7 @@ export_def export_list fun_and_arity
 import_def import_fun_items import_fun_item
 
 literal_fun
+literal_fun_clause literal_fun_clauses
 
 fun_list_items fun_subset
 
@@ -458,6 +459,23 @@ literal_fun -> fn terms '->' simple_expr:
                            args=Args,
                            body='$4'}]}.
 
+literal_fun_clause -> '|' match_clause:
+  '$2'.
+literal_fun_clauses -> literal_fun_clause: ['$1'].
+literal_fun_clauses -> literal_fun_clause literal_fun_clauses: ['$1'|'$2'].
+
+literal_fun -> fn literal_fun_clauses:
+  {_, L} = '$1',
+  F = fun(#alpaca_clause{pattern=P, guards=Gs, result=R, line=CL}) ->
+              #alpaca_fun_version{line=CL,
+                                  args=[P],
+                                  guards=Gs,
+                                  body=R}
+      end,
+  #alpaca_fun{line=L,
+              arity=1,
+              versions=lists:map(F, '$2')}.
+
 %% ----- Errors (including throw, exit) --------------
 error -> raise_error term:
   {_, L, Kind} = '$1',
@@ -504,8 +522,11 @@ match_clause -> match_pattern '->' simple_expr :
   #alpaca_clause{pattern='$1', result='$3', line=term_line('$1')}.
 match_clause -> match_pattern ',' guards '->' simple_expr :
   #alpaca_clause{pattern='$1', guards='$3', result='$5', line=term_line('$1')}.
+
 match_clauses -> match_clause : ['$1'].
+match_clauses -> '|' match_clause : ['$2'].
 match_clauses -> match_clause '|' match_clauses : ['$1'|'$3'].
+match_clauses -> '|' match_clause '|' match_clauses : ['$2'|'$4'].
 
 match_with  -> match simple_expr with match_clauses :
   {match, L} = '$1',

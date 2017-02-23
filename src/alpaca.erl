@@ -450,6 +450,21 @@ lambdas_test() ->
     ?assertEqual({'T', [2, 3, 4]}, M:map_to_make_t([1, 2, 3])),
     ?assertEqual([2, 3, 4], M:nested_fun({})),
     ?assertEqual(4, M:use_lambda(3)),
+    ?assertEqual([zero, not_zero, zero, not_zero],
+                 M:use_literal_fun_with_patterns({})),
+    ?assertEqual([int, not_int, int, not_int],
+                 M:literal_fun_and_guards({})),
+    code:delete(M).
+
+%% Tests that we can use both leading `|` for every clause or treat it strictly
+%% as "or" when defining clauses.
+clause_style_test() ->
+    Files = ["test_files/different_clause_styles.alp"],
+    [M] = compile_and_load(Files, []),
+    ?assertEqual(zero, M:leading_pipe(0)),
+    ?assertEqual(not_zero, M:leading_pipe(42)),
+    ?assertEqual(not_zero, M:or_pipe(1)),
+    ?assertEqual(zero, M:or_pipe(0)),
     code:delete(M).
 
 -endif.
