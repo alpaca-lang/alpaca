@@ -1,3 +1,20 @@
+* v0.2.7
+** New
+- parser and AST generation errors report in a uniform manner and are specified, https://github.com/danabr
+- lambdas (anonymous functions), https://github.com/j14159
+- function type specs have same syntax as lambdas, https://github.com/danabr
+- generation ~test/0~ for EUnit, https://github.com/j14159
+
+** Fixes
+- correct arity for curried versions of functions, https://github.com/lepoetemaudit
+- built-in types are no longer reserved words, https://github.com/danabr
+- type arity errors unified, https://github.com/danabr
+- bad variables in errors (throw, error, exit) are errors, https://github.com/j14159
+- all parser and AST generation errors include line numbers, https://github.com/danabr
+- line numbers for module definitions, https://github.com/danabr
+- line numbers for unexported functions, https://github.com/danabr
+- all clauses can lead with a ~|~, https://github.com/j14159
+
 * v0.2.6
 ** New
 - top-level ~let~ deprecates all significant whitespace, https://github.com/lepoetemaudit
