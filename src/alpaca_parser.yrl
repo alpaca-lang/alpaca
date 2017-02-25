@@ -137,19 +137,22 @@ poly_type -> symbol type_expressions :
   Members = '$2',
 
   case {N, Members} of
-      {"atom", Params}   -> type_arity_error(L, t_atom, Params);
-      {"binary", Params} -> type_arity_error(L, t_binary, Params);
-      {"bool", Params}   -> type_arity_error(L, t_bool, Params);
-      {"chars", Params}  -> type_arity_error(L, t_chars, Params);
-      {"float", Params}  -> type_arity_error(L, t_float, Params);
-      {"int", Params}    -> type_arity_error(L, t_int, Params);
-      {"list", [E]}      -> {t_list, E};
-      {"list", Params}   -> type_arity_error(L, t_list, Params);
-      {"map", [K, V]}    -> {t_map, K, V};
-      {"map", Params}    -> type_arity_error(L, t_map, Params);
-      {"pid", [T]}       -> {t_pid, T};
-      {"pid", Params}    -> type_arity_error(L, t_pid, Params);
-      {"string", Params} -> type_arity_error(L, t_string, Params);
+      {"atom", Params}           -> type_arity_error(L, t_atom, Params);
+      {"binary", Params}         -> type_arity_error(L, t_binary, Params);
+      {"bool", Params}           -> type_arity_error(L, t_bool, Params);
+      {"chars", Params}          -> type_arity_error(L, t_chars, Params);
+      {"float", Params}          -> type_arity_error(L, t_float, Params);
+      {"int", Params}            -> type_arity_error(L, t_int, Params);
+      {"list", [E]}              -> {t_list, E};
+      {"list", Params}           -> type_arity_error(L, t_list, Params);
+      {"map", [K, V]}            -> {t_map, K, V};
+      {"map", Params}            -> type_arity_error(L, t_map, Params);
+      {"receiver", [MsgT, ExpT]} -> {t_receiver, MsgT, ExpT};
+      {"receiver", Params}       -> type_arity_error(L, t_receiver, Params);
+      {"pid", [T]}               -> {t_pid, T};
+      {"pid", Params}            -> type_arity_error(L, t_pid, Params);
+      {"string", Params}         -> type_arity_error(L, t_string, Params);
+      {"rec", Params}            -> type_arity_error(L, t_rec, Params);
       _ ->
           %% Any concrete type in the type_expressions gets a synthesized variable name:
           Vars = make_vars_for_concrete_types('$2', L),
@@ -223,6 +226,8 @@ sub_type_expr -> symbol :
           return_error(L, {wrong_type_arity, t_pid, 0});
       "string" ->
           t_string;
+      "rec" ->
+          t_rec;
       _ ->
           #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
   end.

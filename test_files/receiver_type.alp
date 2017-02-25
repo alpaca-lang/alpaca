@@ -1,0 +1,21 @@
+module receiver_type
+
+{- The `rec` type here doesn't properly constrain types assigned to `R` to only
+   be infinitely recursive as so far we simply let `rec` unify with everything.
+   I think we might want to consider treating `rec` in some positions to unify/4
+   as a particular bound.
+ -}
+type r = R receiver int (fn int -> rec)
+type s = S receiver int (fn int -> int)
+
+let adder_cell x =
+  receive with
+    y -> adder_cell (y + x)
+
+let main () = R adder_cell
+
+let one_receive x =
+  receive with
+    y -> x + y
+
+let use_s () = S one_receive
