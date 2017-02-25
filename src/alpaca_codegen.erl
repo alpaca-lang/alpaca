@@ -37,6 +37,7 @@
 %% the 'cerl' module.
 -record(env, {
           module_funs=[] :: list({string(), integer()}),
+          prefixed_module=undefined :: atom(),
           wildcard_num=0 :: integer(),
           synthetic_fun_num=0 :: integer()
          }).
@@ -62,8 +63,10 @@ gen(#alpaca_module{}=Mod, Opts) ->
        function_exports=Exports,
        functions=Funs,
        tests=Tests} = Mod,
-    Env = make_env(Mod),
+    BaseEnv = make_env(Mod),
     PrefixModuleName = prefix_modulename(ModuleName),
+    Env = BaseEnv#env{prefixed_module=PrefixModuleName},
+
     {Env2, CompiledFuns} = gen_funs(Env, [], Funs),
     CompiledTests = gen_tests(Env2, Tests),
 
@@ -151,9 +154,9 @@ gen_export({N, A}) ->
     cerl:c_fname(list_to_atom(N), A).
 
 gen_test_exports([], _, Memo) ->
-    Memo;
+    [gen_export({"test", 0})|Memo];
 gen_test_exports(_, [], Memo) ->
-    Memo;
+    [gen_export({"test", 0})|Memo];
 gen_test_exports([#alpaca_test{name={string, _, N}}|RemTests], [test|_]=Opts,
                  Memo) ->
     gen_test_exports(
@@ -233,8 +236,12 @@ gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
 gen_tests(Env, Tests) ->
     gen_tests(Env, Tests, []).
 
-gen_tests(_Env, [], Memo) ->
-    Memo;
+gen_tests(#env{prefixed_module=PM}, [], Memo) ->
+    FName = cerl:c_fname(test, 0),
+    Body = cerl:c_call(cerl:c_atom(eunit), cerl:c_atom(test), [cerl:c_atom(PM)]),
+    TopTests = {FName, cerl:c_fun([], Body)},
+
+    [TopTests|Memo];
 gen_tests(Env, [#alpaca_test{name={_, _, N}, expression=E}|Rem], Memo) ->
     FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
     {_, Body} = gen_expr(Env, E),
