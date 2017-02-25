@@ -473,4 +473,10 @@ receiver_type_test() ->
     [M] = compile_and_load(Files, []),
     code:delete(M).
 
+failing_test_test() ->
+    Files = ["test_files/failing_test.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(error, M:test()),
+    code:delete(M).
+
 -endif.

@@ -1,0 +1,13 @@
+module failing_test
+
+export double
+
+let double x = x + x
+
+let assert_equal x y =
+  match x == y with
+    | true -> true
+    | false -> throw (:not_equal, x, y)
+
+test "fails" =
+  assert_equal (double 2) 5
