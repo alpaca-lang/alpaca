@@ -163,6 +163,10 @@ copy_cell(Cell, RefMap) ->
                               members=lists:reverse(NewMembers)}), Map3};
         {t_adt_cons, _}=Constructor ->
             {Constructor, RefMap};
+        {t_receiver, MsgT, BodyT} ->
+            {MsgT2, Map2} = copy_cell(MsgT, RefMap),
+            {BodyT2, Map3} = copy_cell(BodyT, Map2),
+            {new_cell({t_receiver, MsgT2, BodyT2}), Map3};
         P when is_pid(P) ->
             copy_cell(P, RefMap);
         V ->
@@ -960,6 +964,17 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
     NewT = new_cell(#t_record{members=lists:reverse(NewMems), row_var=RVC}),
     inst_type_members(ADT, Rem, Env3, [NewT|Memo]);
 
+inst_type_members(ADT, [{t_receiver, MExp, BExp}|Rem], Env, Memo) ->
+    case inst_type_members(ADT, [MExp], Env, []) of
+        {error, _}=Err -> Err;
+        {ok, Env2, _, [InstM]} ->
+            case inst_type_members(ADT, [BExp], Env2, []) of
+                {error, _}=Err -> Err;
+                {ok, Env3, _, [InstB]} ->
+                    NewT = new_cell({t_receiver, InstM, InstB}),
+                    inst_type_members(ADT, Rem, Env3, [NewT|Memo])
+            end
+    end;
 inst_type_members(ADT, [{t_pid, TExp}|Rem], Env, Memo) ->
     case inst_type_members(ADT, [TExp], Env, []) of
         {error, _}=Err ->
@@ -974,6 +989,16 @@ inst_type_members(#adt{vars=Vs}=ADT, [{type_var, L, N}|T], Env, Memo) ->
     case proplists:get_value(N, Vs, Default) of
         {error, _}=Err -> Err;
         Typ -> inst_type_members(ADT, T, Env, [Typ|Memo])
+    end;
+
+inst_type_members(ADT, [{t_arrow, Args, Ret}|T], Env, Memo) ->
+    case inst_type_members(ADT, Args, Env, []) of
+        {error, _}=Err ->
+            Err;
+        {ok, Env2, _, InstArgs} ->
+            {ok, Env3, _, [InstRet]} = inst_type_members(ADT, [Ret], Env2, []),
+            Arrow = new_cell({t_arrow, InstArgs, InstRet}),
+            inst_type_members(ADT, T, Env3, [Arrow|Memo])
     end;
 
 inst_type_members(ADT, [#alpaca_type_tuple{members=Ms}|T], Env, Memo) ->
@@ -1006,7 +1031,7 @@ inst_type_members(ADT, [#alpaca_constructor{}=C|T], Env, Memo) ->
 
 %% Everything else gets discared.  Type constructors are not types in their
 %% own right and thus not eligible for unification so we just discard them here:
-inst_type_members(ADT, [_|T], Env, Memo) ->
+inst_type_members(ADT, [_H|T], Env, Memo) ->
     inst_type_members(ADT, T, Env, Memo).
 
 %%% When the typer encounters the application of a type constructor, we can
@@ -1148,6 +1173,10 @@ inst_constructor_arg({t_map, KeyType, ValType}, Vs, Types, Env) ->
     {Env2, KElem} = inst_constructor_arg(KeyType, Vs, Types, Env),
     {Env3, VElem} = inst_constructor_arg(ValType, Vs, Types, Env2),
     {Env3, new_cell({t_map, KElem, VElem})};
+inst_constructor_arg({t_receiver, MsgT, BodyT}, Vs, Types, Env) ->
+    {Env2, MElem} = inst_constructor_arg(MsgT, Vs, Types, Env),
+    {Env3, BElem} = inst_constructor_arg(BodyT, Vs, Types, Env2),
+    {Env3, new_cell({t_receiver, MElem, BElem})};
 inst_constructor_arg({t_pid, MsgType}, Vs, Types, Env) ->
     {Env2, PidElem} = inst_constructor_arg(MsgType, Vs, Types, Env),
     {Env2, new_cell({t_pid, PidElem})};
@@ -1273,7 +1302,8 @@ inst({t_arrow, Params, ResTyp}, Lvl, Env, CachedMap) ->
              end,
     {_, NewEnv, M, PTs} = lists:foldr(Folder, {Lvl, Env, CachedMap, []}, Params),
     {RT, NewEnv2, M2} = inst(ResTyp, Lvl, NewEnv, M),
-    {{t_arrow, PTs, RT}, NewEnv2, M2};
+    Arrow = {t_arrow, PTs, RT},
+    {Arrow, NewEnv2, M2};
 inst({t_receiver, Recv, Body}=_R, Lvl, Env, CachedMap) ->
     {Body2, Env2, Map2} = inst(Body, Lvl, Env, CachedMap),
     {Recv2, Env3, Map3} = inst(Recv, Lvl, Env2, Map2),
@@ -1759,6 +1789,16 @@ typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
             {RTyp, Env2#env.next_var}
     end;
 typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
+    %% Some things come back from typing without being properly contained in a
+    %% reference cell, specifically those bound to symbols.  This can be a
+    %% problem when typing this kind of application because we jump straight
+    %% to unify/4 which requires both arguments to be in cells while other parts
+    %% of the typer balk at things being immediately celled.  An overhaul of the
+    %% inferencer is in order pretty soon I think.
+    EnsureCelled = fun(X) when is_pid(X) -> X;
+                      (X) -> new_cell(X)
+                   end,
+
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, CTyp, RTyp}} ->
@@ -1766,7 +1806,10 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
                 {error, _}=Err -> Err;
                 {ATyp, NVNum} ->
                     #type_constructor{line=L} = N,
-                    case unify(CTyp, ATyp, update_counter(NVNum, Env2), L) of
+                    case unify(CTyp,
+                               EnsureCelled(ATyp),
+                               update_counter(NVNum, Env2), L)
+                    of
                         ok             -> {RTyp, NVNum};
                         {error, _}=Err -> Err
                     end

@@ -467,4 +467,10 @@ clause_style_test() ->
     ?assertEqual(zero, M:or_pipe(0)),
     code:delete(M).
 
+%% Check that we can use the receiver and rec types directly in an ADT.
+receiver_type_test() ->
+    Files = ["test_files/receiver_type.alp"],
+    [M] = compile_and_load(Files, []),
+    code:delete(M).
+
 -endif.
