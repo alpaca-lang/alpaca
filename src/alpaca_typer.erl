@@ -581,19 +581,12 @@ unify(T1, T2, Env, Line) ->
         {_A, {t_receiver, _Recv, _ResB}} ->
             unify(T2, T1, Env, Line);
         {_T1, _T2} ->
-            io:format("Find covering for ~w ~w~n", [T1, T2]),
             case find_covering_type(_T1, _T2, Env, Line) of
                 {error, _}=Err ->
-                    io:format("UNIFY FAIL:  ~w AND ~w~n",
-                              [unwrap(T1), unwrap(T2)]),
-                    io:format("LINE ~w~n", [Line]),
                     Err;
                 {ok, _EnvOut, Union} ->
-                    io:format("UNIFIED ~w AND ~w on ~w~n",
-                              [unwrap(_T1), unwrap(_T2), unwrap(Union)]),
                     set_cell(T1, Union),
                     set_cell(T2, Union),
-                    %% TODO:  output environment.
                     ok
             end
     end.
@@ -2018,7 +2011,17 @@ typ_of(Env, Lvl, #alpaca_type_check{type=T, expr=E, line=L}) ->
     case typ_of(Env, Lvl, E) of
         {error, _}=Err -> Err;
         {ETyp, NV} ->
-            case unify(new_cell(Typ), ETyp, Env, L) of
+            %% polymorphic built-in types like PIDs need to be instantiated
+            %% with appropriate type variables before getting unified.
+            {Env2, ToUnify} = case Typ of
+                                  t_pid ->
+                                      {Var, E2} = new_var(Lvl, Env),
+                                      PidT = new_cell(Var),
+                                      {E2, new_cell({t_pid, PidT})};
+                                  _ ->
+                                      {Env, new_cell(Typ)}
+                              end,
+            case unify(ToUnify, ETyp, Env2, L) of
                 {error, _}=Err -> Err;
                 ok -> {t_bool, NV}
             end
@@ -3182,7 +3185,9 @@ type_guard_test_() ->
           "let f x = match x with\n"
           "   (msg, _), msg == :error -> :error\n"
           " | (msg, _) -> :ok"))
-
+    , ?_assertMatch(
+         {{t_pid, _}, _},
+         top_typ_of("beam :erlang :self [] with p, is_pid p -> p"))
     ].
 
 %%% ### ADT Tests
