@@ -4,7 +4,7 @@ otp_release:
 
 env:
   global:
-    - REBAR_VSN=3.2.0
+    - REBAR_VSN=3.3.5
     - PATH=./rebar3-$REBAR_VSN:$PATH
 
 cache:
