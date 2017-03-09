@@ -104,7 +104,7 @@
 -type alpaca_far_ref() :: #alpaca_far_ref{}.
 
 -type alpaca_unit() :: {unit, integer()}.
--type alpaca_int() :: {int, integer(), integer()}.
+-type alpaca_int() :: {'Int', #{line := integer(), val := integer()}}.
 -type alpaca_float() :: {float, integer(), float()}.
 -type alpaca_number() :: alpaca_int()|alpaca_float().
 -type alpaca_bool() :: {bool, integer(), boolean()}.
