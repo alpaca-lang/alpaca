@@ -316,9 +316,15 @@ op -> minus : '$1'.
 op -> plus : '$1'.
 
 const -> boolean : '$1'.
-const -> minus int : {int, L, Val} = '$2', {int, L, 0-Val}.
-const -> plus int : '$2'.
-const -> int : '$1'.
+const -> minus int :
+  {int, L, Val} = '$2',
+  alpaca_ast:int(L, 0-Val).
+const -> plus int :
+  {int, L, Val} = '$2',
+  alpaca_ast:int(L, Val).
+const -> int :
+  {int, L, Val} = '$1',
+  alpaca_ast:int(L, Val).
 const -> minus float : {float, L, Val} = '$2', {float, L, 0-Val}.
 const -> float : '$1'.
 const -> plus float : '$2'.
@@ -393,7 +399,9 @@ bin_qualifiers -> bin_qualifier : ['$1'].
 bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
 
 bin_segment -> float : #alpaca_bits{value='$1', type=float, line=term_line('$1')}.
-bin_segment -> int : #alpaca_bits{value='$1', type=int, line=term_line('$1')}.
+bin_segment -> int :
+  {int, L, V} = '$1',
+  #alpaca_bits{value=alpaca_ast:int(L, V), type=int, line=term_line('$1')}.
 bin_segment -> symbol : #alpaca_bits{value='$1', line=term_line('$1')}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
 bin_segment -> string : #alpaca_bits{value='$1', line=term_line('$1'), type=utf8}.
@@ -774,7 +782,7 @@ validate_args(L, [A|T], Memo) ->
     validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
-is_literal({int, _, _}) -> true;
+is_literal({'Int', _}) -> true;
 is_literal({string, _, _}) -> true;
 is_literal({float, _, _}) -> true;
 is_literal(#alpaca_fun{}) -> true;

@@ -1,0 +1,28 @@
+module ast
+
+export_type ast
+
+export int, int_val
+export float
+export string
+
+type ast = Int {line: int, val: int}
+         | Float {line: int, val: float}
+         | String {line: int, val: string}
+
+let int line val =
+  Int {line=line, val=val}
+
+let int_val (Int {line=_, val=v}) = v
+
+test "int_val should return the right line" =
+  let res = int_val (int 2 4) in
+  match res with
+  | 4 -> true
+  | x -> throw (:not_equal, 4, x)
+
+let float line val =
+  Float {line=line, val=val}
+
+let string line val =
+  String {line=line, val=val}
