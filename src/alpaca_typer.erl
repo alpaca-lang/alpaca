@@ -1572,7 +1572,7 @@ validate_types(M, Ts, Mods, [_H|T]) ->
 %% of unions they may need to be reset.
 typ_of(#env{next_var=VarNum}, _Lvl, {'Int', _}) ->
     {new_cell(t_int), VarNum};
-typ_of(#env{next_var=VarNum}, _Lvl, {float, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, {'Float', _}) ->
     {new_cell(t_float), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {boolean, _, _}) ->
     {new_cell(t_bool), VarNum};

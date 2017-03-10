@@ -224,6 +224,7 @@ term_line(Term) ->
         {_, L} when is_integer(L) -> L;
         {_, L, _} when is_integer(L) -> L;
         {'Int', #{line := L}} -> L;
+        {'Float', #{line := L}} -> L;
         {bif, _, L, _, _} -> L;
         #alpaca_apply{line=L} -> L;
         #alpaca_cons{line=L} -> L;
