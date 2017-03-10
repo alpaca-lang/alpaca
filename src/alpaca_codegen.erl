@@ -258,10 +258,10 @@ gen_expr(Env, {add, _}) ->
     {Env, cerl:c_atom('+')};
 gen_expr(Env, {minus, _}) ->
     {Env, cerl:c_atom('-')};
-gen_expr(Env, {int, _, I}) ->
-    {Env, cerl:c_int(I)};
-gen_expr(Env, {float, _, F}) ->
-    {Env, cerl:c_float(F)};
+gen_expr(Env, {'Int', _}=I) ->
+    {Env, cerl:c_int(alpaca_ast:int_val(I))};
+gen_expr(Env, {'Float', _} =F) ->
+    {Env, cerl:c_float(alpaca_ast:float_val(F))};
 gen_expr(Env, {boolean, _, B}) ->
     {Env, cerl:c_atom(B)};
 gen_expr(Env, {atom, _, A}) ->
@@ -295,7 +295,7 @@ gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
                  expr={'erlang', {symbol, 0, "make_fun"}, 3},
                  args=[{atom, 0, "alpaca_" ++ atom_to_list(M)},
                        {atom, 0, N},
-                       {int, 0, A}]},
+                       alpaca_ast:int(0, A)]},
     gen_expr(Env, MakeFun);
 gen_expr(Env, {raise_error, _, Kind, Expr}) ->
     {Env2, ExprAST} = gen_expr(Env, Expr),

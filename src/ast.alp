@@ -1,0 +1,25 @@
+module ast
+
+export_type ast
+
+export int, int_val
+export float, float_val
+export string
+
+type ast = Int {line: int, val: int}
+         | Float {line: int, val: float}
+         | String {line: int, val: string}
+
+let line Int {line=l} = l
+let line Float {line=l} = l
+let line String {line=l} = l
+
+let int line val = Int {line=line, val=val}
+
+let int_val Int {line=_, val=v} = v
+
+let float line val = Float {line=line, val=val}
+
+let float_val Float {line=_, val=v} = v
+
+let string line val = String {line=line, val=val}

@@ -1,10 +1,11 @@
 language: erlang
+install: 'true'
 otp_release:
-  - 19.1
+  - 19.2
 
 env:
   global:
-    - REBAR_VSN=3.2.0
+    - REBAR_VSN=3.3.5
     - PATH=./rebar3-$REBAR_VSN:$PATH
 
 cache:
@@ -22,7 +23,8 @@ before_install:
 before_script: [] # Need to do this, or travis will use rebar2!
 
 script:
-  - if [ "$TRAVIS_OTP_RELEASE" != "19.2" ]; then echo  "dialyzer disabled on OTP < 19.1"; else rebar3 dialyzer; fi
   - rebar3 xref
   - rebar3 eunit
+  - rebar3 eunit
   - rebar3 ct
+
