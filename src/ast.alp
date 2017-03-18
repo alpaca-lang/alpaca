@@ -1,18 +1,55 @@
 module ast
 
-export_type ast
+export_type binding, module_ast, expr, symbol, opt
 
+export line
+
+export mod
 export int, int_val
 export float, float_val
 export string
+export bind, bind_body, bind_expr
+export symbol, symbol_name, symbol_rename
 
-type ast = Int {line: int, val: int}
-         | Float {line: int, val: float}
-         | String {line: int, val: string}
+type opt 'a = Some 'a | None
 
-let line Int {line=l} = l
-let line Float {line=l} = l
+type typ = TInt
+         | TFloat
+         | TString
+         | Arrow (list typ, typ)
+
+type binding = Binding {  line: int
+                        , name: symbol
+                        , typ: opt typ
+                        , bound: expr
+                        , body: opt expr
+                       }
+
+{- These are the top-level AST nodes that modules are built from.
+ -}
+type module_ast = Module {line: int, name: atom}
+                | binding
+
+let mod line name = Module {line=line, name=name}
+
+type symbol = Symbol {line: int, name: string, original: opt string}
+
+type int_exp = Int {line: int, val: int}
+type float_exp = Float {line: int, val: float}
+
+{- Expressions are only permitted inside of top-level bindings.
+ -}
+type expr = int_exp
+          | float_exp
+          | String {line: int, val: string}
+          | symbol
+          | binding
+
 let line String {line=l} = l
+let line Float {line=l} = l
+let line Int {line=l} = l
+let line Symbol {line=l} = l
+let line Binding {line=l} = l
 
 let int line val = Int {line=line, val=val}
 
@@ -23,3 +60,31 @@ let float line val = Float {line=line, val=val}
 let float_val Float {line=_, val=v} = v
 
 let string line val = String {line=line, val=val}
+
+let bind name line bound =
+  Binding {  line=line
+           , name=name
+           , bound=bound
+           , body=None
+           , typ=None
+          }
+
+let bind name line bound body =
+  Binding {  line=line
+           , name=name
+           , bound=bound
+           , body=Some body
+           , typ=None
+          }
+
+let bind_body Binding b_rec body = Binding {body=Some body | b_rec}
+
+let bind_expr Binding b_rec expr = Binding {bound=expr | b_rec}
+
+let symbol line name = Symbol {line=line, name=name, original=None}
+
+let symbol_name Symbol {name=n} = n
+
+let symbol_rename Symbol {line=l, name=n} new_name =
+  let orig = Some n in
+  Symbol {line=l, name=new_name, original=orig}
