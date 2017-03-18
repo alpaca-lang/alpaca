@@ -92,7 +92,9 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 >> : {token, {bin_close, TokenLine}}.
 
 %% Symbol
-{SYM}  : {token, {symbol, TokenLine, TokenChars}}.
+{SYM}  :
+  Chars = unicode:characters_to_binary(TokenChars, utf8),
+  {token, {symbol, alpaca_ast:symbol(TokenLine, Chars)}}.
 
 %% Atom
 {ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.

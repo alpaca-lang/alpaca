@@ -117,42 +117,43 @@ comment -> comment_lines :
                 text=Chars}.
 
 type_import -> import_type symbol '.' symbol:
-  {symbol, _, Mod} = '$2',
-  {symbol, _, Type} = '$4',
-  #alpaca_type_import{module=list_to_atom(Mod), type=Type}.
+  Mod = symbol_name('$2'),
+  Type = symbol_name('$4'),
+  #alpaca_type_import{module=binary_to_atom(Mod, utf8), type=Type}.
 
-types_to_export -> symbol : ['$1'].
-types_to_export -> symbol ',' types_to_export : ['$1'|'$3'].
+types_to_export -> symbol : [unwrap('$1')].
+types_to_export -> symbol ',' types_to_export : [unwrap('$1')|'$3'].
 
 type_export -> export_type types_to_export :
   {_, L}  = '$1',
-  Names = [N || {symbol, _, N} <- '$2'],
+  Names = [symbol_name(S) || S <- '$2'],
   #alpaca_type_export{line=L, names=Names}.
 
 type_expressions -> sub_type_expr : ['$1'].
 type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
 
 poly_type -> symbol type_expressions :
-  {symbol, L, N} = '$1',
+  {L, N} = symbol_line_name('$1'),
+
   Members = '$2',
 
   case {N, Members} of
-      {"atom", Params}           -> type_arity_error(L, t_atom, Params);
-      {"binary", Params}         -> type_arity_error(L, t_binary, Params);
-      {"bool", Params}           -> type_arity_error(L, t_bool, Params);
-      {"chars", Params}          -> type_arity_error(L, t_chars, Params);
-      {"float", Params}          -> type_arity_error(L, t_float, Params);
-      {"int", Params}            -> type_arity_error(L, t_int, Params);
-      {"list", [E]}              -> {t_list, E};
-      {"list", Params}           -> type_arity_error(L, t_list, Params);
-      {"map", [K, V]}            -> {t_map, K, V};
-      {"map", Params}            -> type_arity_error(L, t_map, Params);
-      {"receiver", [MsgT, ExpT]} -> {t_receiver, MsgT, ExpT};
-      {"receiver", Params}       -> type_arity_error(L, t_receiver, Params);
-      {"pid", [T]}               -> {t_pid, T};
-      {"pid", Params}            -> type_arity_error(L, t_pid, Params);
-      {"string", Params}         -> type_arity_error(L, t_string, Params);
-      {"rec", Params}            -> type_arity_error(L, t_rec, Params);
+      {<<"atom">>, Params}           -> type_arity_error(L, t_atom, Params);
+      {<<"binary">>, Params}         -> type_arity_error(L, t_binary, Params);
+      {<<"bool">>, Params}           -> type_arity_error(L, t_bool, Params);
+      {<<"chars">>, Params}          -> type_arity_error(L, t_chars, Params);
+      {<<"float">>, Params}          -> type_arity_error(L, t_float, Params);
+      {<<"int">>, Params}            -> type_arity_error(L, t_int, Params);
+      {<<"list">>, [E]}              -> {t_list, E};
+      {<<"list">>, Params}           -> type_arity_error(L, t_list, Params);
+      {<<"map">>, [K, V]}            -> {t_map, K, V};
+      {<<"map">>, Params}            -> type_arity_error(L, t_map, Params);
+      {<<"receiver">>, [MsgT, ExpT]} -> {t_receiver, MsgT, ExpT};
+      {<<"receiver">>, Params}       -> type_arity_error(L, t_receiver, Params);
+      {<<"pid">>, [T]}               -> {t_pid, T};
+      {<<"pid">>, Params}            -> type_arity_error(L, t_pid, Params);
+      {<<"string">>, Params}         -> type_arity_error(L, t_string, Params);
+      {<<"rec">>, Params}            -> type_arity_error(L, t_rec, Params);
       _ ->
           %% Any concrete type in the type_expressions gets a synthesized variable name:
           Vars = make_vars_for_concrete_types('$2', L),
@@ -164,9 +165,9 @@ poly_type -> symbol type_expressions :
              vars = Vars}
   end.
 
-record_type_member -> symbol ':' type_expr : 
-  {symbol, _L, N} = '$1',
-  #t_record_member{name=list_to_atom(N), type='$3'}.
+record_type_member -> symbol ':' type_expr :
+  N = symbol_name('$1'),
+  #t_record_member{name=binary_to_atom(N, utf8), type='$3'}.
 
 record_type_members -> record_type_member : ['$1'].
 record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'].
@@ -175,15 +176,15 @@ record_type -> open_brace record_type_members close_brace :
   #t_record{members='$2'}.
 
 module_qualified_type_name -> symbol '.' symbol:
-  {symbol, L, Mod} = '$1',
-  {symbol, _, Name} = '$3',
+  {L, Mod} = symbol_line_name('$1'),
+  Name = symbol_name('$3'),
   {module_qualified_type_name, L, Mod, Name}.
 
 module_qualified_type -> module_qualified_type_name :
   {module_qualified_type_name, L, Mod, Name} = '$1',
   #alpaca_type{
      line = L,
-     module = list_to_atom(Mod),
+     module = binary_to_atom(Mod, utf8),
      name = {type_name, L, Name}}.
 
 module_qualified_type -> module_qualified_type_name type_expressions:
@@ -193,7 +194,7 @@ module_qualified_type -> module_qualified_type_name type_expressions:
 
   #alpaca_type{
      line = L,
-     module = list_to_atom(Mod),
+     module = binary_to_atom(Mod, utf8),
      name = {type_name, L, Name},
      vars = Vars}.
 
@@ -204,29 +205,30 @@ type_expr -> sub_type_expr : '$1'.
 sub_type_expr -> type_var : '$1'.
 sub_type_expr -> record_type : '$1'.
 sub_type_expr -> symbol :
-  {symbol, L, N} = '$1',
+  {L, N} = symbol_line_name('$1'),
+
   case N of
-      "atom" ->
+      <<"atom">> ->
           t_atom;
-      "binary" ->
+      <<"binary">> ->
           t_binary;
-      "bool" ->
+      <<"bool">> ->
           t_bool;
-      "chars" ->
+      <<"chars">> ->
           t_chars;
-      "float" ->
+      <<"float">> ->
           t_float;
-      "int" ->
+      <<"int">> ->
           t_int;
-      "list" ->
+      <<"list">> ->
           return_error(L, {wrong_type_arity, t_list, 0});
-      "map" ->
+      <<"map">> ->
           return_error(L, {wrong_type_arity, t_map, 0});
-      "pid" ->
+      <<"pid">> ->
           return_error(L, {wrong_type_arity, t_pid, 0});
-      "string" ->
+      <<"string">> ->
           t_string;
-      "rec" ->
+      <<"rec">> ->
           t_rec;
       _ ->
           #alpaca_type{name={type_name, L, N}, vars=[]} % not polymorphic
@@ -273,7 +275,7 @@ type_members -> type_member '|' type_members : ['$1'|'$3'].
 type -> type_declare poly_type_decl assign type_members :
   '$2'#alpaca_type{members='$4'}.
 type -> type_declare symbol assign type_members :
-  {symbol, L, N} = '$2',
+  {L, N} = symbol_line_name('$2'),
   #alpaca_type{
      line=L,
      name={type_name, L, N},
@@ -281,7 +283,7 @@ type -> type_declare symbol assign type_members :
      members='$4'}.
 
 poly_type_decl -> symbol type_vars :
-  {symbol, L, N} = '$1',
+  {L, N} = symbol_line_name('$1'),
   #alpaca_type{
      line=L,
      name={type_name, L, N},
@@ -291,9 +293,9 @@ type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
 
 module_qualified_type_constructor -> symbol '.' type_constructor :
-  {symbol, _, Mod} = '$1',
+  Mod = symbol_name('$1'),
   {type_constructor, L, N} = '$3',
-  #type_constructor{line=L, module=list_to_atom(Mod), name=N}.
+  #type_constructor{line=L, module=binary_to_atom(Mod, utf8), name=N}.
 
 type_apply -> module_qualified_type_constructor term :
   #alpaca_type_apply{name='$1', arg='$2'}.
@@ -344,14 +346,18 @@ const -> '_' : '$1'.
 const -> unit : '$1'.
 
 module_fun -> symbol '.' symbol '/' int :
-  {symbol, L, Mod} = '$1',
-  {symbol, _, Fun} = '$3',
+  {L, Mod} = symbol_line_name('$1'),
+  Fun = symbol_name('$3'),
   {int, _, Arity} = '$5',
-  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun, arity=Arity}.
+  #alpaca_far_ref{
+     line=L,
+     module=binary_to_atom(Mod, utf8),
+     name=Fun,
+     arity=Arity}.
 module_fun -> symbol '.' symbol :
-  {symbol, L, Mod} = '$1',
-  {symbol, _, Fun} = '$3',
-  #alpaca_far_ref{line=L, module=list_to_atom(Mod), name=Fun}.
+  {L, Mod} = symbol_line_name('$1'),
+  Fun = symbol_name('$3'),
+  #alpaca_far_ref{line=L, module=binary_to_atom(Mod, utf8), name=Fun}.
 
 %% ----- Lists  ------------------------
 literal_cons_items -> term : ['$1'].
@@ -370,38 +376,38 @@ cons -> '[' literal_cons_items ']':
 
 %% -----  Binaries  --------------------
 bin_qualifier -> type_declare assign symbol :
-    {symbol, L, S} = '$3',
+    {L, S} = symbol_line_name('$3'),
     case S of
-        "binary" -> {bin_type, S};
-        "float" -> {bin_type, S};
-        "int" -> {bin_type, S};
-        "utf8" -> {bin_type, S};
+        <<"binary">> -> {bin_type, S};
+        <<"float">> -> {bin_type, S};
+        <<"int">> -> {bin_type, S};
+        <<"utf8">> -> {bin_type, S};
         _      -> return_error(L, {invalid_bin_type, S})
     end.
 bin_qualifier -> symbol assign int :
-    {symbol, L, S} = '$1',
+    {L, S} = symbol_line_name('$1'),
     case S of
-        "size" -> {size, '$3'};
-        "unit" -> {unit, '$3'};
-        _      -> return_error(L, {invalid_bin_qualifier, S})
+        <<"size">> -> {size, '$3'};
+        <<"unit">> -> {unit, '$3'};
+        _          -> return_error(L, {invalid_bin_qualifier, S})
     end.
 bin_qualifier -> symbol assign boolean :
-    {symbol, L, S} = '$1',
+    {L, S} = symbol_line_name('$1'),
     case {S, '$3'} of
-        {"sign", {boolean, L, true}}  -> {bin_sign, L, "signed"};
-        {"sign", {boolean, L, false}} -> {bin_sign, L, "unsigned"};
+        {<<"sign">>, {boolean, L, true}}  -> {bin_sign, L, <<"signed">>};
+        {<<"sign">>, {boolean, L, false}} -> {bin_sign, L, <<"unsigned">>};
         {_, _}                        ->
             return_error(L, {invalid_bin_qualifier, S})
     end.
 bin_qualifier -> symbol assign symbol :
-    {symbol, _, K} = '$1',
-    {symbol, L, V} = '$3',
+    K = symbol_name('$1'),
+    {L, V} = symbol_line_name('$3'),
     case {K, V} of
-        {"end", "big"}    -> {bin_endian, L, V};
-        {"end", "little"} -> {bin_endian, L, V};
-        {"end", "native"} -> {bin_endian, L, V};
-        {"end", _}        -> return_error(L, {invalid_endianness, V});
-        {_, _}            -> return_error(L, {invalid_bin_qualifier, K})
+        {<<"end">>, <<"big">>}    -> {bin_endian, L, V};
+        {<<"end">>, <<"little">>} -> {bin_endian, L, V};
+        {<<"end">>, <<"native">>} -> {bin_endian, L, V};
+        {<<"end">>, _}            -> return_error(L, {invalid_endianness, V});
+        {_, _}                    -> return_error(L, {invalid_bin_qualifier, V})
     end.
 
 bin_qualifiers -> bin_qualifier : ['$1'].
@@ -413,7 +419,8 @@ bin_segment -> float :
 bin_segment -> int :
   {int, L, V} = '$1',
   #alpaca_bits{value=alpaca_ast:int(L, V), type=int, line=term_line('$1')}.
-bin_segment -> symbol : #alpaca_bits{value='$1', line=term_line('$1')}.
+bin_segment -> symbol :
+  #alpaca_bits{value=unwrap('$1'), line=line(unwrap('$1'))}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
 bin_segment -> string : #alpaca_bits{value='$1', line=term_line('$1'), type=utf8}.
 %% TODO:  string bin_segment
@@ -444,8 +451,8 @@ map_add -> map_open map_pair '|' term close_brace:
   #alpaca_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
 
 record_member -> symbol assign simple_expr:
-  {symbol, L, N} = '$1',
-  #alpaca_record_member{line=L, name=list_to_atom(N), val='$3'}.
+  {L, N} = symbol_line_name('$1'),
+  #alpaca_record_member{line=L, name=binary_to_atom(N, utf8), val='$3'}.
 
 record_members -> record_member: ['$1'].
 record_members -> record_member ',' record_members: ['$1' | '$3'].
@@ -509,7 +516,7 @@ term -> literal_fun : '$1'.
 term -> const : '$1'.
 term -> tuple : '$1'.
 term -> infix : '$1'.
-term -> symbol : '$1'.
+term -> symbol : unwrap('$1').
 term -> cons : '$1'.
 term -> binary : '$1'.
 term -> map_literal : '$1'.
@@ -526,7 +533,7 @@ terms -> term terms : ['$1'|'$2'].
 
 type_check -> type_check_tok symbol :
   {_, Check, L} = '$1',
-  #alpaca_type_check{type=Check, line=L, expr='$2'}.
+  #alpaca_type_check{type=Check, line=L, expr=unwrap('$2')}.
 
 compare -> eq : '$1'.
 compare -> neq : '$1'.
@@ -573,14 +580,19 @@ spawn_pid -> spawn symbol terms:
   {_, L} = '$1',
   #alpaca_spawn{line=L,
               module=undefined,
-              function='$2',
+              function=unwrap('$2'),
               args='$3'}.
 
 defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
 
 definfix -> let '(' infixable ')' terms assign simple_expr : 
   {infixable, L, C} = '$3',
-  make_define([{symbol, L, "(" ++ C ++ ")"}] ++ '$5', '$7', 'top').
+  %% This conversion may seem excessive but note that the purpose of the Alpaca
+  %% native AST is to let Alpaca code work with the AST.  This means that symbol
+  %% names do need to be legitimate Alpaca strings in UTF-8, not Erlang strings.
+  BinC = unicode:characters_to_binary(C, utf8),
+  InfixName = <<"("/utf8, BinC/binary, ")"/utf8>>,
+  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -595,8 +607,8 @@ ffi_call -> beam atom atom cons with match_clauses:
             clauses='$6'}.
 
 module_def -> module symbol :
-{symbol, L, Name} = '$2',
-{module, list_to_atom(Name), L}.
+{L, Name} = symbol_line_name('$2'),
+{module, binary_to_atom(Name, utf8), L}.
 
 export_def -> export export_list : {export, '$2'}.
 %% Imported functions come out of the parser in the following tuple format:
@@ -614,11 +626,11 @@ import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 %% fun_list_items get turned into the correct tuple format above when they
 %% become a fun_subset (see a bit further below).
 fun_list_items -> import_export_fun :
-  {symbol, _, F} = '$1',
+  F = symbol_name('$1'),
   [F].
 fun_list_items -> fun_and_arity : ['$1'].
 fun_list_items -> import_export_fun ',' fun_list_items :
-  {symbol, _, F} = '$1',
+  F = symbol_name('$1'),
   [F | '$3'].
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 
@@ -626,9 +638,9 @@ fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 %% We do this so we can deal with a flat proplist later on when resolving 
 %% functions that aren't defined in the module importing these functions.
 fun_subset -> symbol '.' '[' fun_list_items ']' : 
-  {symbol, _, Mod} = '$1',
-  F = fun({Name, Arity}) -> {Name, {list_to_atom(Mod), Arity}};
-         (Name)          -> {Name, list_to_atom(Mod)}
+  Mod = binary_to_atom(symbol_name('$1'), utf8),
+  F = fun({Name, Arity}) -> {Name, {Mod, Arity}};
+         (Name)          -> {Name, Mod}
   end,
   lists:map(F, '$4').
 
@@ -636,41 +648,42 @@ fun_subset -> symbol '.' '[' fun_list_items ']' :
 
 %% module.foo means import all arities for foo:
 import_fun_item -> symbol '.' import_export_fun :
-  {symbol, _, Mod} = '$1',
-  {symbol, _, Fun} = '$3',
-  {Fun, list_to_atom(Mod)}.
+  Mod = symbol_name('$1'),
+  Fun = symbol_name('$3'),
+  {Fun, binary_to_atom(Mod, utf8)}.
 %% module.foo/1 means only import foo/1:
 import_fun_item -> symbol '.' import_export_fun '/' int:
-  {symbol, _, Mod} = '$1',
-  {symbol, _, Fun} = '$3',
+  Mod = symbol_name('$1'),
+  Fun = symbol_name('$3'),
   {int, _, Arity} = '$5',  
-  {Fun, {list_to_atom(Mod), Arity}}.
+  {Fun, {binary_to_atom(Mod, utf8), Arity}}.
 import_fun_item -> fun_subset : '$1'.
 
 import_fun_items -> import_fun_item : ['$1'].
 import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
 
-import_export_fun -> symbol : '$1'.
+import_export_fun -> symbol : unwrap('$1').
 import_export_fun -> '(' infixable ')' :
   {infixable, L, C} = '$2',
-  {symbol, L, "(" ++ C ++ ")"}.
+  BinC = unicode:characters_to_binary(C, utf8),
+  alpaca_ast:symbol(L, <<"("/utf8, BinC/binary, ")"/utf8>>).
 
 fun_and_arity -> import_export_fun '/' int :
-  {symbol, _, Name} = '$1',
+  Name = symbol_name('$1'),
   {int, _, Arity} = '$3',
   {Name, Arity}.
 fun_and_arity -> symbol '/' int :
-{symbol, _, Name} = '$1',
+Name = symbol_name('$1'),
 {int, _, Arity} = '$3',
 {Name, Arity}.
 
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
-  {_, _, Name} = '$1',
+  Name = symbol_name('$1'),
   [Name].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
 export_list -> symbol ',' export_list :
-  {_, _, Name} = '$1',
+  Name = symbol_name('$1'),
   [Name | '$3'].
 
 %% TODO:  we should be able to apply the tail to the result of
@@ -680,10 +693,11 @@ simple_expr -> terms :
 case '$1' of
     [T] ->
         T;
-    [{symbol, L, _} = S | T] ->
-        #alpaca_apply{line=L, expr=S, args=T};
+    [{symbol, S} | T] ->
+        #alpaca_apply{line=line(S), expr=S, args=T};
     [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
-        Name = {Mod, {symbol, L, Fun}, length(T)},
+        FunName = unicode:characters_to_binary(Fun, utf8),
+        Name = {Mod, alpaca_ast:symbol(L, FunName), length(T)},
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
@@ -721,7 +735,9 @@ Erlang code.
 
 make_infix(Op, A, B) ->
     Name = case Op of
-      {infixable, L, C} -> {symbol, L, "(" ++ C ++ ")"};
+      {infixable, L, C} ->
+                   BinC = unicode:characters_to_binary(C, utf8),
+                   alpaca_ast:symbol(L, <<"("/utf8, BinC/binary, ")"/utf8>>);
       {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
@@ -744,7 +760,8 @@ make_infix(Op, A, B) ->
                   expr=Name,
                   args=[A, B]}.
 
-make_define([{symbol, L, _} = Name|A], Expr, Level) ->
+make_define([{'Symbol', _}=Name|A], Expr, Level) ->
+    L = line(Name),
     case validate_args(L, A) of
         {ok, []} ->
             %% If this is a zero-arg function, at the toplevel, it's a value
@@ -833,26 +850,25 @@ all_literals([M|Rest]) ->
         false -> false
     end.
 
-%% Convert a nullary def into a variable binding:
-make_binding(#alpaca_fun_def{name=N, versions=[#alpaca_fun_version{args=[], body=B}]}, Expr) ->
-    #alpaca_binding{name=N, bound_expr=B, body=Expr};
-%    #var_binding{name=N, to_bind=B, expr=Expr};
 make_binding(Def, Expr) ->
     Def#alpaca_binding{body=Expr}.
 
 term_line(Term) ->
     alpaca_ast_gen:term_line(Term).
 
+bin_to_atom(B) when is_binary(B) ->
+    binary_to_atom(B, utf8).
+
 add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->
     B#alpaca_bits{size=I, default_sizes=false};
 add_qualifier(#alpaca_bits{}=B, {unit, {int, _, I}}) ->
     B#alpaca_bits{unit=I, default_sizes=false};
 add_qualifier(#alpaca_bits{}=B, {bin_endian, _, E}) ->
-    B#alpaca_bits{endian=list_to_atom(E)};
+    B#alpaca_bits{endian=bin_to_atom(E)};
 add_qualifier(#alpaca_bits{}=B, {bin_type, Enc}) ->
-    B#alpaca_bits{type=list_to_atom(Enc)};
+    B#alpaca_bits{type=bin_to_atom(Enc)};
 add_qualifier(#alpaca_bits{}=B, {bin_sign, _, S}) ->
-    B#alpaca_bits{sign=list_to_atom(S)}.
+    B#alpaca_bits{sign=bin_to_atom(S)}.
 
 make_vars_for_concrete_types(Vars, Line) ->
     F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
@@ -866,4 +882,25 @@ make_vars_for_concrete_types(Vars, Line) ->
 
 type_arity_error(L, Typ, Params) ->
     return_error(L, {wrong_type_arity, Typ, length(Params)}).
+
+symbol_name({symbol, S}) ->
+    alpaca_ast:symbol_name(S);
+symbol_name({'Symbol', _}=S) ->
+    alpaca_ast:symbol_name(S).
+
+symbol_line_name({symbol, S}) ->
+    {alpaca_ast:line(S), alpaca_ast:symbol_name(S)}.
+
+line({symbol, S}) ->
+    alpaca_ast:line(S);
+line(X) ->
+    alpaca_ast:line(X).
+
+%% Yecc requires tuples to start with a token name it can recognize so we can't
+%% actually product and use Alpaca AST nodes straight from Leex.
+unwrap({symbol, S}) ->
+    S;
+unwrap(X) ->
+    X.
+
 
