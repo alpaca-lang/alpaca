@@ -42,7 +42,7 @@ msgstr ""
 "Los tipos válidos son \"binary\", \"float\", \"int\" y \"utf8\"."
 
 msgid "invalid_endianness %(endianness)"
-msgstr "Endianidad no válido \"%{endianness}\". Quiso decir \"big\", \"little\", o \"native\"?"
+msgstr "Endianidad inválida \"%{endianness}\". Quiso decir \"big\", \"little\", o \"native\"?"
 
 msgid "invalid_fun_parameter"
 msgstr "Patrón inválido para el argumento de la función."
@@ -51,12 +51,12 @@ msgid "invalid_top_level_construct"
 msgstr "Esta construcción no puede aparecer en el nivel superior."
 
 msgid "module_rename %(old) %(new)."
-msgstr "Renombración del nombre del módulo de \"%(old)\" a \"%(new)\"."
+msgstr "Renombre de módulo de \"%(old)\" a \"%(new)\"."
 
 msgid "no_module"
 msgstr ""
 "El módulo no tiene nombre.\n"
-"Se puede definirlo así: \"module foo\"."
+"Se puede definir así: \"module foo\"."
 
 msgid "no_module %(mod)"
 msgstr "No se puede encontrar ningún módulo llamado \"%(mod)\"."
