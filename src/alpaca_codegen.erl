@@ -151,8 +151,10 @@ rewrite_lambdas(#alpaca_type_apply{arg=Arg}=Apply, NextFun, Memo) ->
 rewrite_lambdas(X, NextFun, Memo) ->
     {NextFun, X, Memo}.
 
-gen_export({N, A}) ->
-    cerl:c_fname(binary_to_atom(N, utf8), A).
+gen_export({N, A}) when is_binary(N) ->
+    cerl:c_fname(binary_to_atom(N, utf8), A);
+gen_export({N, A}) when is_atom(N) ->
+    cerl:c_fname(N, A).
 
 gen_test_exports([], _, Memo) ->
     [gen_export({<<"test">>, 0})|Memo];
@@ -220,8 +222,8 @@ gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
     %% Nest matches:
-    FName = cerl:c_fname(list_to_atom(Name), A),
-    Args = [cerl:c_var(list_to_atom(X)) || X <- VarNames],
+    FName = cerl:c_fname(binary_to_atom(Name, utf8), A),
+    Args = [cerl:c_var(utf8_bin(X)) || X <- VarNames],
     [_TopVar|_] = VarNames,
     B = cerl:c_case(
           cerl:c_values(Args),
@@ -247,16 +249,16 @@ gen_tests(#env{prefixed_module=PM}, [], Memo) ->
 
     [TopTests|Memo];
 gen_tests(Env, [#alpaca_test{name={_, _, N}, expression=E}|Rem], Memo) ->
-    FName = cerl:c_fname(list_to_atom(clean_test_name(N)), 0),
+    FName = cerl:c_fname(clean_test_name(N), 0),
     {_, Body} = gen_expr(Env, E),
-    TestFun = {utf8_bin(FName), cerl:c_fun([], Body)},
+    TestFun = {FName, cerl:c_fun([], Body)},
     gen_tests(Env, Rem, [TestFun|Memo]).
 
 %% eunit will skip tests with spaces in the name, this may not be the best
 %% way to handle it though:
 clean_test_name(N) ->
     Base = lists:map(fun(32) -> 95; (C) -> C end, N),
-    Base ++ "_test".
+    list_to_atom(Base ++ "_test").
 
 utf8_bin(S) when is_list(S) ->
     unicode:characters_to_binary(S, utf8).
@@ -271,8 +273,10 @@ gen_expr(Env, {'Float', _} =F) ->
     {Env, cerl:c_float(alpaca_ast:float_val(F))};
 gen_expr(Env, {boolean, _, B}) ->
     {Env, cerl:c_atom(B)};
-gen_expr(Env, {atom, _, A}) ->
+gen_expr(Env, {atom, _, A}) when is_list(A) ->
     {Env, cerl:c_atom(list_to_atom(A))};
+gen_expr(Env, {atom, _, A}) when is_binary(A) ->
+    {Env, cerl:c_atom(binary_to_atom(A, utf8))};
 gen_expr(Env, {chars, _, Cs}) ->
     {Env, cerl:c_string(Cs)};
 gen_expr(Env, {string, _, S}) ->
