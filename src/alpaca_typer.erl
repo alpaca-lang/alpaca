@@ -1600,7 +1600,7 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
     {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
 
     [Typ] = [Typ || #alpaca_binding{
-                       name={symbol, _, X},
+                       name={'Symbol', #{name := X}},
                        type=Typ,
                        bound_expr=#alpaca_fun{arity=Arity}} <- Funs,
                     N =:= X,
