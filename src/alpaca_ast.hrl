@@ -425,7 +425,6 @@
                          | alpaca_binding()
                          | alpaca_type_check()
                          | alpaca_binding()
-                         | alpaca_fun_def()
                          | alpaca_type_import()
                          | alpaca_type_export()
                          | alpaca_error().
@@ -499,15 +498,6 @@
           body=undefined :: undefined | alpaca_expression()
          }).
 -type alpaca_binding() :: #alpaca_binding{}.
-
--record (alpaca_fun_def, {
-           type=undefined :: typ(),
-           name=undefined :: undefined|alpaca_symbol(),
-           arity=0 :: integer(),
-           versions=[] :: list(#alpaca_fun_version{})
-          }).
-
--type alpaca_fun_def() :: #alpaca_fun_def{}.
 
 -record(alpaca_type_import, {module=undefined :: atom(),
                            type=undefined :: string()}).
