@@ -1478,7 +1478,8 @@ type_module(#alpaca_module{functions=Fs,
 
 typ_module_funs([], Env, Memo) ->
     {Env, lists:reverse(Memo)};
-typ_module_funs([#alpaca_binding{name={symbol, _, Name}}=F|Rem], Env, Memo) ->
+typ_module_funs([#alpaca_binding{name={'Symbol', _}=N}=F|Rem], Env, Memo) ->
+    Name = alpaca_ast:symbol_name(N),
     case typ_of(Env, 0, F) of
         {error, _} = E ->
             E;
@@ -1582,7 +1583,9 @@ typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->
     {new_cell(t_string), VN};
 typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
     {new_cell(t_chars), VN};
-typ_of(Env, Lvl, {symbol, L, N}) ->
+typ_of(Env, Lvl, {'Symbol', _}=S) ->
+    N = alpaca_ast:symbol_name(S),
+    L = alpaca_ast:line(S),
     case inst_binding(N, L, Lvl, Env) of
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
@@ -1658,7 +1661,8 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
             #alpaca_cons{}=Cons ->
                 typ_of(update_counter(NV1, Env), Lvl, Cons);
-            {symbol, L, _} = S ->
+            {'Symbol', _} = S ->
+                L = alpaca_ast:line(S),
                 {STyp, Next} =
                     typ_of(update_counter(NV1, Env), Lvl, S),
                 {TL, #env{next_var=Next2}} =
@@ -1818,7 +1822,9 @@ typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
             {T, VarNum}
     end;
 
-typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {'Symbol', _}=Sym, Arity}, args=Args}) ->
+    X = alpaca_ast:symbol_name(Sym),
+    L = alpaca_ast:line(Sym),
     Satisfy =
         fun() ->
                 %% Naively assume a single call to the same function for now.
@@ -1834,7 +1840,7 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {symbol, L, X}, Arity}, args=Args}) ->
                             {ok, #alpaca_module{functions=Funs}} ->
                                 [T] = [Typ ||
                                           #alpaca_binding{
-                                             name={symbol, _, N},
+                                             name={'Symbol', #{name := N}},
                                              type=Typ,
                                              bound_expr=#alpaca_fun{
                                                            arity=A}} <- Funs,
@@ -1875,7 +1881,8 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
         fun(OriginalErr) ->
             %% Attempt to find a curryable version
             {Mod, FN, Env2} = case Expr of
-                {symbol, _Line, FunName} ->
+                {'Symbol', _}=Sym ->
+                    FunName = alpaca_ast:symbol_name(Sym),
                     {Env#env.current_module, FunName, Env};
 
                 {bif, FunName, _, _, _} ->
@@ -1907,7 +1914,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     ForwardFun =
         fun() ->
                 FN = case Expr of
-                         {symbol, _Line, FunName}    -> FunName;
+                         {'Symbol', _}=Sym       -> alpaca_ast:symbol_name(Sym);
                          {bif, FunName, _, _, _} -> FunName
                      end,
                 Mod = Env#env.current_module,
@@ -2149,9 +2156,10 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
 
 %% A function binding inside a function:
 typ_of(Env, Lvl, #alpaca_binding{
-                    name={symbol, _, N},
+                    name={'Symbol', _}=Sym,
                     bound_expr=#alpaca_fun{}=E,
                     body=E2}) ->
+    N = alpaca_ast:symbol_name(Sym),
     {TypE, NextVar} = typ_of(Env, Lvl, E#alpaca_fun{name=N}),
     Env2 = update_counter(NextVar, Env),
     case E2 of
@@ -2162,7 +2170,8 @@ typ_of(Env, Lvl, #alpaca_binding{
     end;
 
 %% A var binding inside a function:
-typ_of(Env, Lvl, #alpaca_binding{name={symbol, _, N}, bound_expr=E1, body=E2}) ->
+typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}) ->
+    N = alpaca_ast:symbol_name(Sym),
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
             Err;
@@ -2511,16 +2520,17 @@ get_curryable_funs(Module, FN, MinArity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#alpaca_binding{name={symbol, _, N}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
+filter_to_fun([#alpaca_binding{name={'Symbol', #{name := N}}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
-filter_to_fun([#alpaca_binding{name={symbol, _, N}}=Fun|_], FN, 0) when N =:= FN ->
+filter_to_fun([#alpaca_binding{name={'Symbol', #{name :=  N}}}=Fun|_], FN, 0) when N =:= FN ->
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
 filter_to_curryable_funs(Funs, FN, MinArity) ->
-    Pred = fun(#alpaca_binding{name={_Symbol, _, N}, bound_expr=#alpaca_fun{arity=Arity}}) ->
+    Pred = fun(#alpaca_binding{name={'Symbol', _}=Sym, bound_expr=#alpaca_fun{arity=Arity}}) ->
+               N = alpaca_ast:symbol_name(Sym),
                case {Arity >= MinArity, N =:= FN} of
                     {true, true} -> true;
                     _ -> false
@@ -2545,7 +2555,8 @@ filter_to_curryable_funs(Funs, FN, MinArity) ->
         Lvl::integer(),
         NameNum::integer()) -> {typ(), alpaca_expression(), env(), integer()} |
                                {error, term()}.
-add_bindings({symbol, _, Name}=S, Env, Lvl, NameNum) ->
+add_bindings({'Symbol', _}=S, Env, Lvl, NameNum) ->
+    Name = alpaca_ast:symbol_name(S),
     {Typ, Env2} = new_var(Lvl, Env),
     {Typ, S, update_binding(Name, Typ, Env2), NameNum};
 
@@ -2711,7 +2722,9 @@ rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     {Renamed, NN} = lists:foldl(Folder, {[], NameNum}, Vs),
     {lists:reverse(Renamed), NN};
 rename_wildcards({'_', L}, N) ->
-    {{symbol, L, integer_to_list(N)++"_"}, N+1};
+    Name = unicode:characters_to_binary(integer_to_list(N)++"_", utf8),
+    Sym = alpaca_ast:symbol(L, Name),
+    {Sym, N+1};
 rename_wildcards(O, N) ->
     {O, N}.
 
@@ -2818,16 +2831,18 @@ clause_test_() ->
      ?_assertMatch({{t_clause, {unbound, t0, 0}, none, t_atom}, _},
                    typ_of(
                      new_env(),
-                     #alpaca_clause{pattern={symbol, 1, "x"},
-                                  result={atom, 1, true}})),
+                     #alpaca_clause{
+                        pattern=alpaca_ast:symbol(1, <<"x">>),
+                        result={atom, 1, true}})),
      ?_assertMatch({{t_clause, t_int, none, t_int}, _},
                    typ_of(
                      new_env(),
-                     #alpaca_clause{pattern={symbol, 1, "x"},
-                                  result=#alpaca_apply{
-                                            expr={bif, '+', 1, erlang, '+'},
-                                            args=[{symbol, 1, "x"},
-                                                  alpaca_ast:int(1, 2)]}}))
+                     #alpaca_clause{
+                        pattern=alpaca_ast:symbol(1, <<"x">>),
+                        result=#alpaca_apply{
+                                  expr={bif, '+', 1, erlang, '+'},
+                                  args=[alpaca_ast:symbol(1, <<"x">>),
+                                        alpaca_ast:int(1, 2)]}}))
     ].
 
 match_test_() ->
@@ -2973,12 +2988,14 @@ module_typing_test() ->
     ?assertMatch({ok, #alpaca_module{
                          functions=[
                                     #alpaca_binding{
-                                       name={symbol, 5, "add"},
+                                       name={'Symbol',
+                                             #{line := 5, name := <<"add">>}},
                                        type={t_arrow,
                                              [t_int, t_int],
                                              t_int}},
                                     #alpaca_binding{
-                                       name={symbol, 7, "head"},
+                                       name={'Symbol',
+                                             #{line := 7, name := <<"head">>}},
                                        type={t_arrow,
                                              [{t_list, {unbound, A, _}}],
                                              {unbound, A, _}}}
@@ -2998,10 +3015,10 @@ module_with_forward_reference_test() ->
        {ok, #alpaca_module{
                functions=[
                           #alpaca_binding{
-                             name={symbol, 5, "add"},
+                             name={'Symbol', #{line := 5, name := <<"add">>}},
                              type={t_arrow, [t_int, t_int], t_int}},
                           #alpaca_binding{
-                             name={symbol, 7, "adder"},
+                             name={'Symbol', #{line := 7, name := <<"adder">>}},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M, Env#env{current_module=M, modules=[M]})).
 
@@ -3024,7 +3041,7 @@ simple_inter_module_test() ->
                function_exports=[],
                functions=[
                           #alpaca_binding{
-                             name={symbol, 3, "add"},
+                             name={'Symbol', #{line := 3, name := <<"add">>}},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M1, Env)).
 
@@ -3088,10 +3105,12 @@ infinite_mutual_recursion_test() ->
                          name=mutual_rec_test,
                          functions=[
                                     #alpaca_binding{
-                                       name={symbol, 3, "a"},
+                                       name={'Symbol',
+                                             #{line := 3, name := <<"a">>}},
                                        type={t_arrow, [t_int], t_rec}},
                                     #alpaca_binding{
-                                       name={symbol, 5, "b"},
+                                       name={'Symbol',
+                                             #{line := 5, name := <<"b">>}},
                                        type={t_arrow, [t_int], t_rec}}]}},
                  type_module(M, E)).
 
@@ -3108,10 +3127,12 @@ terminating_mutual_recursion_test() ->
                          name=terminating_mutual_rec_test,
                          functions=[
                                     #alpaca_binding{
-                                       name={symbol, 3, "a"},
+                                       name={'Symbol',
+                                             #{line := 3, name := <<"a">>}},
                                        type={t_arrow, [t_int], t_atom}},
                                     #alpaca_binding{
-                                       name={symbol, 5, "b"},
+                                       name={'Symbol',
+                                             #{line := 5, name := <<"b">>}},
                                        type={t_arrow, [t_int], t_atom}}]}},
                  type_module(M, E)).
 
@@ -3130,7 +3151,7 @@ ffi_test_() ->
                      "let f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
                      "| _ -> :not_one")),
-     ?_assertMatch({error,{bad_variable_name, undefined, 1, "x"}},
+     ?_assertMatch({error,{bad_variable_name, undefined, 1, <<"x">>}},
                    top_typ_of(
                      "let f () = beam :a :b [x] with\n"
                      "  1 -> :one\n"
@@ -3461,9 +3482,9 @@ type_constructor_with_aliased_arrow_arg_test() ->
     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
     ?assertMatch({error, {cannot_unify,constructor,7,
-                         #adt{name="intbinop",
+                         #adt{name = <<"intbinop">>,
                               vars=[],
-                              members=[#adt{name="binop",
+                              members=[#adt{name = <<"binop">>,
                                             vars=[{_, t_int}],
                                             members=[{t_arrow,[t_int,t_int],t_int}]}]},
                           {t_arrow,[t_int,t_atom],t_rec}}},
@@ -3541,10 +3562,10 @@ rename_constructor_wildcard_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name={symbol, 5, "a"},
+                             name={'Symbol', #{line := 5, name := <<"a">>}},
                              type={t_arrow,
                                    [#adt{
-                                       name="t",
+                                       name = <<"t">>,
                                        vars=[],
                                        members=[{t_adt_cons, "Pair"},
                                                 t_float,
@@ -3593,17 +3614,17 @@ json_union_type_test() ->
         #alpaca_module{
            types=[#alpaca_type{
                      module='json_union_type_test',
-                     name={type_name, 3, "json"}}],
+                     name={type_name, 3, <<"json">>}}],
            functions=[#alpaca_binding{
-                         name={symbol, _, "json_to_atom"},
+                         name={'Symbol', #{name := <<"json_to_atom">>}},
                          type={t_arrow,
-                               [#adt{name="json",
+                               [#adt{name = <<"json">>,
                                      members=[{t_list,
                                                {t_tuple,
                                                 [t_string,
-                                                 #adt{name="json"}]}},
+                                                 #adt{name = <<"json">>}]}},
                                               {t_list,
-                                               #adt{name="json"}},
+                                               #adt{name = <<"json">>}},
                                               t_bool,
                                               t_string,
                                               t_float,
@@ -3626,14 +3647,14 @@ module_with_types_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name={symbol, 5, "a"},
+                             name={'Symbol', #{line := 5, name := <<"a">>}},
                              type={t_arrow,
                                    [#adt{
-                                       name="t",
+                                       name = <<"t">>,
                                        vars=[],
                                        members=[{t_tuple,
                                                  [t_string,
-                                                  #adt{name="t",
+                                                  #adt{name = <<"t">>,
                                                        vars=[],
                                                        members=[]}]},
                                                 t_float,
@@ -3657,11 +3678,11 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     [M] = make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({error,
-                   {cannot_unify,tree,15,
-                       #adt{name="tree",
-                            vars=[{"a",_}],
-                            members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
-                       t_int}},
+                  {cannot_unify,tree,15,
+                   #adt{name = <<"tree">>,
+                        vars=[{"a",_}],
+                        members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
+                   t_int}},
                  Res).
 
 polymorphic_tree_code() ->
@@ -3699,10 +3720,11 @@ module_matching_lists_test() ->
     Res = type_module(M, Env),
     ?assertMatch({ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name={symbol, 5, "a"},
+                                       name={'Symbol',
+                                             #{line := 5, name := <<"a">>}},
                                        type={t_arrow,
                                              [#adt{
-                                                 name="my_list",
+                                                 name = <<"my_list">>,
                                                  vars=[{"x", t_int}]}],
                                              t_atom}}]}},
                  Res).
@@ -3733,29 +3755,29 @@ type_var_protection_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name={symbol, 5, "a"},
+                             name={'Symbol', #{line := 5, name := <<"a">>}},
                              type={t_arrow,
                                    [#adt{
-                                       name="my_list",
+                                       name = <<"my_list">>,
                                        vars=[{"x", t_int}]}],
                                    t_atom}},
                           #alpaca_binding{
-                             name={symbol, 7, "b"},
+                             name={'Symbol', #{line := 7, name := <<"b">>}},
                              type={t_arrow,
                                    [#adt{
-                                       name="my_list",
+                                       name = <<"my_list">>,
                                        vars=[{"x", t_float}]}],
                                    t_atom}},
                           #alpaca_binding{
-                             name={symbol, 9, "c"},
+                             name={'Symbol', #{line := 9, name := <<"c">>}},
                              type={t_arrow,
                                    [t_unit],
                                    {t_tuple,
                                     [#adt{
-                                        name="my_list",
+                                        name = <<"my_list">>,
                                         vars=[{"x", t_float}]},
                                      #adt{
-                                        name="my_list",
+                                        name = <<"my_list">>,
                                         vars=[{"x", t_int}]}]}}}]}},
        Res).
 
@@ -3916,7 +3938,7 @@ polymorphic_spawn_test() ->
                      {unbound,t0,0}}],
                    t_rec}},
                  FunType),
-    NewBindings = [{"behaviour", FunType}|BaseEnv#env.bindings],
+    NewBindings = [{<<"behaviour">>, FunType}|BaseEnv#env.bindings],
     NewModule = #alpaca_module{functions=[FunExp#alpaca_binding{type=FunType}]},
     EnvWithFun = BaseEnv#env{bindings=NewBindings, current_module=NewModule},
     SpawnCode = "let f x y = x +. y in spawn behaviour 1.0 f",
@@ -3957,9 +3979,11 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name={symbol, 5, "a"},
+                                      name={'Symbol',
+                                            #{line := 5,
+                                              name := <<"a">>}},
                                       type={t_receiver,
-                                            #adt{name="my_union"},
+                                            #adt{name = <<"my_union">>},
                                             {t_arrow,
                                              [t_unit],
                                              t_atom}}
@@ -3977,14 +4001,18 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name={symbol, 3, "f"},
+                                      name={'Symbol',
+                                            #{line := 3,
+                                              name := <<"f">>}},
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
                                              [t_int],
                                              t_atom}}},
                                    #alpaca_binding{
-                                      name={symbol, 5, "g"},
+                                      name={'Symbol',
+                                            #{line := 5,
+                                              name := <<"g">>}},
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
@@ -4004,16 +4032,20 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name={symbol, 5, "a"},
+                                      name={'Symbol',
+                                            #{line := 5,
+                                              name := <<"a">>}},
                                       type={t_receiver,
-                                            #adt{name="t"},
+                                            #adt{name = <<"t">>},
                                             {t_arrow,
                                              [t_unit],
                                              t_rec}}},
                                    #alpaca_binding{
-                                      name={symbol, 7, "b"},
+                                      name={'Symbol',
+                                            #{line := 7,
+                                              name := <<"b">>}},
                                       type={t_receiver,
-                                            #adt{name="t"},
+                                            #adt{name = <<"t">>},
                                             {t_arrow,
                                              [t_unit],
                                              t_rec}}}
@@ -4065,14 +4097,18 @@ spawn_test_() ->
                  "let start_f init = spawn f init",
              ?assertMatch({ok, #alpaca_module{
                                   functions=[#alpaca_binding{
-                                                name={symbol, 5, "f"},
+                                                name={'Symbol',
+                                                      #{line := 5,
+                                                        name := <<"f">>}},
                                                 type={t_receiver,
                                                       t_int,
                                                       {t_arrow,
                                                        [t_int],
                                                        t_rec}}},
                                              #alpaca_binding{
-                                                name={symbol, 7, "start_f"},
+                                                name={'Symbol',
+                                                      #{line := 7,
+                                                        name := <<"start_f">>}},
                                                 type={t_arrow,
                                                       [t_int],
                                                       {t_pid, t_int}
@@ -4088,14 +4124,18 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name={symbol, 3, "recv"},
+                                       name={'Symbol',
+                                             #{line := 3,
+                                               name := <<"recv">>}},
                                        type={t_receiver,
                                              t_int,
                                              {t_arrow,
                                               [t_unit],
                                               t_int}}},
                                     #alpaca_binding{
-                                       name={symbol, 5, "not_recv"},
+                                       name={'Symbol',
+                                             #{line := 5,
+                                               name := <<"not_recv">>}},
                                        type={t_receiver,
                                              t_int,
                                              {t_arrow,
@@ -4118,24 +4158,24 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name={symbol, _, "a"},
+                                       name={'Symbol', #{name := <<"a">>}},
                                        type={t_receiver,
-                                             #adt{name="t"},
+                                             #adt{name = <<"t">>},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
                                     #alpaca_binding{
-                                       name={symbol, _, "b"},
+                                       name={'Symbol', #{name := <<"b">>}},
                                        type={t_receiver,
-                                             #adt{name="t"},
+                                             #adt{name = <<"t">>},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
                                     #alpaca_binding{
-                                       name={symbol, _, "start_a"},
+                                       name={'Symbol', #{name := <<"start_a">>}},
                                        type={t_arrow,
                                              [t_int],
-                                             {t_pid, #adt{name="t"}}}}]}},
+                                             {t_pid, #adt{name = <<"t">>}}}}]}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4152,7 +4192,9 @@ spawn_test_() ->
                   "  | B xx -> b (xx + x)\n\n"
                   "let start_a init = spawn a [init]",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{name="u"}, #adt{name="t"}}},
+                 {error, {cannot_unify, _, _,
+                          #adt{name = <<"u">>},
+                          #adt{name = <<"t">>}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4164,7 +4206,7 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name={symbol, _, "f"},
+                                       name={'Symbol', #{name := <<"f">>}},
                                        type={t_arrow, [t_int], t_rec}},
                                     #alpaca_binding{}]}},
                  module_typ_and_parse(Code))
@@ -4247,7 +4289,7 @@ record_inference_test_() ->
              ?assertMatch({ok,
                            #alpaca_module{
                               functions=[#alpaca_binding{
-                                            name={symbol, _, "f"},
+                                            name={'Symbol', #{name := <<"f">>}},
                                             type={t_arrow,
                                                   [#t_record{
                                                       members=[#t_record_member{
@@ -4262,7 +4304,7 @@ record_inference_test_() ->
                                                                    type=t_int}],
                                                        row_var={unbound, A, _}}]}}},
                                          #alpaca_binding{
-                                            name={symbol, _, "g"},
+                                            name={'Symbol', #{name := <<"g">>}},
                                             type={t_arrow,
                                                   [t_unit],
                                                   {t_tuple,
@@ -4297,7 +4339,7 @@ record_inference_test_() ->
                     functions=[#alpaca_binding{
                                   type={t_arrow,
                                         [#adt{
-                                            name="my_adt",
+                                            name = <<"my_adt">>,
                                             vars=[{"a", t_int}],
                                             members=[#t_record{
                                                         members=[#t_record_member{
@@ -4323,11 +4365,12 @@ record_inference_test_() ->
                  "                                city: string}}\n\n"
                  "let fname r = match r with\n"
                  "  Nested {address={street=s}}, is_string s ->  s",
-             ?assertMatch({ok, #alpaca_module{
-                                  functions=[#alpaca_binding{
-                                                type={t_arrow,
-                                                      [#adt{name="nested"}],
-                                                      t_string}}]}},
+             ?assertMatch({ok,
+                           #alpaca_module{
+                              functions=[#alpaca_binding{
+                                            type={t_arrow,
+                                                  [#adt{name = <<"nested">>}],
+                                                  t_string}}]}},
                           module_typ_and_parse(Code))
      end
     ].
@@ -4497,7 +4540,7 @@ unify_with_error_test_() ->
               Code =
                   "module m\n"
                   "let f () = throw (x, :a)",
-              ?assertMatch({error, {bad_variable_name, m, 2, "x"}},
+              ?assertMatch({error, {bad_variable_name, m, 2, <<"x">>}},
                            module_typ_and_parse(Code))
       end
     ].
@@ -4684,7 +4727,7 @@ different_arity_test_() ->
                   "let add x = x + x\n"
                   "let f x y = add x y",
               ?assertMatch(
-                 {error, {not_found, _, "add", 2}},
+                 {error, {not_found, _, <<"add">>, 2}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4821,7 +4864,7 @@ module_qualified_types_test_() ->
                        functions=[#alpaca_binding{
                                     type={t_arrow,
                                           [#adt{
-                                              name="a",
+                                              name = <<"a">>,
                                               vars=[{_, t_int}]}],
                                           _}}]},
                     #alpaca_module{}]},
@@ -4838,8 +4881,8 @@ module_qualified_types_test_() ->
               [M1, M2] = make_modules([Code1, Code2]),
               ?assertMatch({error,
                             {cannot_unify, _, _,
-                             #adt{name="a", module=n},
-                             #adt{name="a", module=m}}},
+                             #adt{name = <<"a">>, module=n},
+                             #adt{name = <<"a">>, module=m}}},
                            type_modules([M1, M2]))
       end
      , fun() ->
@@ -4982,7 +5025,7 @@ concrete_type_parameters_test_() ->
                                types=[#alpaca_type{
                                          members=[#alpaca_constructor{
                                                      arg=#alpaca_type{
-                                                            name={_, _, "option"},
+                                                            name={_, _, <<"option">>},
                                                             module=option,
                                                             vars=[{_, t_int}]
                                                            }}]}],
@@ -4990,7 +5033,7 @@ concrete_type_parameters_test_() ->
                                              type={t_arrow,
                                                    [t_int],
                                                    #adt{
-                                                      name="int_opt",
+                                                      name= <<"int_opt">>,
                                                       module=uses_option
                                                      }}
                                             }]
@@ -5003,14 +5046,14 @@ concrete_type_parameters_test_() ->
                                types=[#alpaca_type{
                                          members=[#alpaca_constructor{
                                                      arg=#alpaca_type{
-                                                            name={_, _, "option"},
+                                                            name={_, _, <<"option">>},
                                                             vars=[{_, t_int}]
                                                            }}]}],
                                functions=[#alpaca_binding{
                                              type={t_arrow,
                                                    [t_int],
                                                    #adt{
-                                                      name="int_opt",
+                                                      name= <<"int_opt">>,
                                                       module=imports_option
                                                      }}
                                             }]
@@ -5033,7 +5076,7 @@ concrete_type_parameters_test_() ->
                            #alpaca_module{
                               functions=[#alpaca_binding{
                                             type={t_arrow,
-                                                  [#adt{name="indirect"}],
+                                                  [#adt{name= <<"indirect">>}],
                                                   t_atom}
                                            }]
                              }},
@@ -5058,7 +5101,7 @@ ensure_private_types_cant_import_test_() ->
 
              Mods1 = make_modules([PrivateOptions, ImportOption]),
              Mods2 = make_modules([PrivateOptions, UsesOption]),
-             ?assertMatch({error, {unexported_type, _, _, "opt"}},
+             ?assertMatch({error, {unexported_type, _, _, <<"opt">>}},
                           type_modules(Mods1)),
              ?assertMatch({ok, [_, _]}, type_modules(Mods2))
      end
@@ -5102,7 +5145,7 @@ error_on_missing_types_test_() ->
              Code =
                  "module m \n"
                  "type t = b",
-             ?assertMatch({error, {unknown_type, m, 2, "b"}},
+             ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
                           module_typ_and_parse(Code))
      end
      , fun() ->
@@ -5110,42 +5153,42 @@ error_on_missing_types_test_() ->
                    "module m \n"
                    "type t 'a = A 'a \n"
                    "type u = t b",
-               ?assertMatch({error, {unknown_type, m, 3, "b"}},
+               ?assertMatch({error, {unknown_type, m, 3, <<"b">>}},
                             module_typ_and_parse(Code))
        end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T b",
-              ?assertMatch({error, {unknown_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = (int, b)",
-              ?assertMatch({error, {unknown_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = {x: b}",
-              ?assertMatch({error, {unknown_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T int | list b",
-              ?assertMatch({error, {unknown_type, m, 2, "b"}},
+              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = map atom c",
-              ?assertMatch({error, {unknown_type, m, 2, "c"}},
+              ?assertMatch({error, {unknown_type, m, 2, <<"c">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5180,7 +5223,7 @@ error_on_missing_types_test_() ->
               M1 = "module m",
               M2 = "module n \n type t = m.a",
               Mods = make_modules([M1, M2]),
-              ?assertMatch({error, {unknown_type, n, 2, "a"}},
+              ?assertMatch({error, {unknown_type, n, 2, <<"a">>}},
                             type_modules(Mods))
       end
     ].
