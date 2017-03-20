@@ -16,7 +16,7 @@ type opt 'a = Some 'a | None
 type typ = TInt
          | TFloat
          | TString
-         | Arrow (list typ, typ)
+         | TArrow (list typ, typ)
 
 type binding = Binding {  line: int
                         , name: symbol
@@ -77,14 +77,14 @@ let bind name line bound body =
            , typ=None
           }
 
-let bind_body Binding b_rec body = Binding {body=Some body | b_rec}
+let bind_body (Binding b_rec) body = Binding {body=Some body | b_rec}
 
-let bind_expr Binding b_rec expr = Binding {bound=expr | b_rec}
+let bind_expr (Binding b_rec) expr = Binding {bound=expr | b_rec}
 
 let symbol line name = Symbol {line=line, name=name, original=None}
 
 let symbol_name Symbol {name=n} = n
 
-let symbol_rename Symbol {line=l, name=n} new_name =
+let symbol_rename (Symbol {line=l, name=n}) new_name =
   let orig = Some n in
   Symbol {line=l, name=new_name, original=orig}

@@ -446,7 +446,7 @@ rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
                 L = alpaca_ast:line(S),
                 case maps:get(N, AccMap, undefined) of
                     undefined ->
-                        Synth = unicode:characters_to_binary(next_var(NV), utf8),
+                        Synth = next_var(NV),
                         { E#env{next_var=NV+1}
                         , maps:put(N, Synth, AccMap)
                         , [alpaca_ast:symbol(L, Synth)|Syms]
@@ -471,9 +471,7 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
     {NewName, En2, M2} = case maps:get(Name, M, undefined) of
                               undefined ->
                                  #env{next_var=NV} = StartEnv,
-                                 Synth = unicode:characters_to_binary(
-                                           next_var(NV),
-                                           utf8),
+                                 Synth = next_var(NV),
                                  E2 = StartEnv#env{next_var=NV+1},
                                  {Synth, E2, maps:put(Name, Synth, M)};
                              _ ->
@@ -816,7 +814,7 @@ make_bindings(#env{current_module=Mod}=Env, M, {'Symbol', _}=S) ->
     case maps:get(Name, M, undefined) of
         undefined ->
             #env{next_var=NV} = Env,
-            Synth = unicode:characters_to_binary(next_var(NV), utf8),
+            Synth = next_var(NV),
             Env2 = Env#env{next_var=NV+1},
             {Env2, maps:put(Name, Synth, M), alpaca_ast:symbol_rename(S, Synth)};
         _ ->
@@ -827,7 +825,7 @@ make_bindings(Env, M, Expression) ->
 
 -define(base_var_name, "svar_").
 next_var(X) ->
-    ?base_var_name ++ integer_to_list(X).
+    unicode:characters_to_binary(?base_var_name ++ integer_to_list(X), utf8).
 
 -ifdef(TEST).
 
