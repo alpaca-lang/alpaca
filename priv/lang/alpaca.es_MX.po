@@ -1,0 +1,76 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: alpaca\n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 1.8.12\n"
+"Last-Translator: Eric Bailey <eric@ericb.me>\n"
+"Language: es_MX\n"
+
+msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgstr ""
+"Número incorrecto de parámetros de tipo proporcionados\n"
+"para el tipo incorporado \"%(type)\".\n"
+"Se esperaba $(num_expected), pero se consiguió %(num_supplied)."
+
+msgid "duplicate_definition %(id)"
+msgstr "Definición duplicada de \"%(id)\"."
+
+msgid "duplicate_type_definition %(id)"
+msgstr "Tipo \"%(id)\" ya se ha definido."
+
+msgid "function_not_exported %(mod) %(name)"
+msgstr "No hay ninguna función \"%(fun)\" que se exporte desde el módulo \"%(mod)\"."
+
+msgid "incomplete_expression"
+msgstr "Final inesperado de la expresión."
+
+msgid "invalid_bin_qualifier %(qualifier)"
+msgstr ""
+"Calificador binario no válido \"%(qualifier)\".\n"
+"Los calificadores válidos son \"end\",\n"
+"\"sign\", \"size\", \"type\" y \"unit\"."
+
+msgid "invalid_bin_type %(type)"
+msgstr ""
+"Tipo de parte binaria no válido \"%(type).\"\n"
+"Los tipos válidos son \"binary\", \"float\", \"int\" y \"utf8\"."
+
+msgid "invalid_endianness %(endianness)"
+msgstr "Endianidad inválida \"%{endianness}\". Quiso decir \"big\", \"little\", o \"native\"?"
+
+msgid "invalid_fun_parameter"
+msgstr "Patrón inválido para el argumento de la función."
+
+msgid "invalid_top_level_construct"
+msgstr "Esta construcción no puede aparecer en el nivel superior."
+
+msgid "module_rename %(old) %(new)."
+msgstr "Renombre de módulo de \"%(old)\" a \"%(new)\"."
+
+msgid "no_module"
+msgstr ""
+"El módulo no tiene nombre.\n"
+"Se puede definir así: \"module foo\"."
+
+msgid "no_module %(mod)"
+msgstr "No se puede encontrar ningún módulo llamado \"%(mod)\"."
+
+msgid "type_parameter_given_to_primitive_builtin_type %(type)"
+msgstr ""
+"Parámetro de tipo proporcionado para el tipo incorporado \"%(type)\",\n"
+"pero no se esperaba ninguno."
+
+msgid "unexpected_token %(token)"
+msgstr "Error de sintaxis antes de \"%(token)\"."
+
+msgid "unknown_error %(raw_error_term)"
+msgstr ""
+"%(raw_error_term)\n"
+"Discúlpenos, aun no tenemos un mensaje apropiado para este error.\n"
+"Por favor, considere enviar un problema a https://www.github.com/alpaca-lang/alpaca."
