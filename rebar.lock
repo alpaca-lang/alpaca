@@ -1,1 +1,4 @@
-[].
+[{<<"epo_runtime">>,
+  {git,"git://github.com/brigadier/epo_runtime.git",
+       {ref,"a3e50e7cebb526f833757e867bbe914c1da7baa3"}},
+  0}].

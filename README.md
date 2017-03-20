@@ -432,6 +432,19 @@ in scope (union or otherwise).  Worth noting that the FFI assumes you
 know what you're doing and does _not_ check that the module and
 function you're calling exist.
 
+# Localization
+Compiler error messages may be localized by calling `alpaca_error_format:fmt/2`.
+If no translation is available in the specified locale, the translation for
+en_US will be used.
+
+Localization is performed using gettext ".po" files stored in priv/lang. To add
+a new language, say Swedish (sv_SE), create a new file priv/lang/alpaca.sv_SE.po.
+If you use Poedit, you may then import all messages to be translated by selecting
+"Catalog -> Update from POT file..." in the menu, and then pick priv/lang/alpaca.pot.
+The messages may be a bit cryptic. Use the en_US as an aid to understand them.
+
+The POT file is automatically updated whenever alpaca is compiled. Updates to
+po-files are also picked up at the compile phase.
 
 # Problems
 ## What's Missing
