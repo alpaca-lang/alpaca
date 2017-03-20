@@ -24,7 +24,8 @@
   {applications,
    [compiler,
     kernel,
-    stdlib
+    stdlib,
+    epo_runtime 
    ]},
   {env,[]},
   {modules, []},
