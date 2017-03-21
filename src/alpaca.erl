@@ -187,7 +187,7 @@ private_types_error_test() ->
     Code = load_files(Files),
     {ok, Mods} = alpaca_ast_gen:make_modules(Code),
     ?assertEqual(
-       {error, {unexported_type, list_opts, basic_adt, "my_list"}},
+       {error, {unexported_type, list_opts, basic_adt, <<"my_list">>}},
        type_modules(Mods)).
 
 basic_pid_test() ->
