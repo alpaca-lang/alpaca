@@ -274,7 +274,7 @@ rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
 %% All available modules required so that we can rewrite applications of
 %% functions not in Mod to inter-module calls.
 rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
-    #alpaca_module{name=_MN, functions=Funs}=Mod,
+    #alpaca_module{name=_MN, functions=Funs, tests=Tests}=Mod,
     BindingF = fun(#alpaca_binding{name=NSym, bound_expr=BE}) ->
                        N = alpaca_ast:symbol_name(NSym),
                        case BE of
@@ -300,13 +300,11 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                 M3 = maps:merge(M2, maps:from_list(Inverted)),
                 {Env#env{next_var=NV2, rename_map=M3}, [F2|Memo]}
         end,
-    {#env{next_var=NV2, rename_map=_M}, Funs2} = lists:foldl(F, {Env, []}, Funs),
-    %% TODO:  other parts of the compiler might care about the rename
-    %%        map but we do throw away some details deliberately
-    %%        when rewriting patterns and different function versions.
-    %%        Probably worth expanding the symbol AST node to track
-    %%        an original name.
-    {NV2, Mod#alpaca_module{functions=lists:reverse(Funs2)}}.
+    {#env{next_var=NV2, rename_map=_}, Funs2} = lists:foldl(F, {Env, []}, Funs),
+    {#env{next_var=NV3, rename_map=_}, Tests2} = lists:foldl(F, {Env, []}, Tests),
+    {NV2, Mod#alpaca_module{
+            functions=lists:reverse(Funs2),
+            tests=lists:reverse(Tests2)}}.
 
 validate_user_types(#alpaca_module{types=Ts}=Mod) ->
     unique_type_names(Mod, Ts),
@@ -438,7 +436,10 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
         _ ->
             {Env, _, E} =  rename_bindings(Environment, maps:new(), Expr),
             {Env, maps:new(), TopLevel#alpaca_binding{bound_expr=E}}
-    end.
+    end;
+rename_bindings(Env, #alpaca_test{expression=Expr}=Test) ->
+    {Env2, Map, Expr2} = rename_bindings(Env, maps:new(), Expr),
+    {Env2, Map, Test#alpaca_test{expression=Expr2}}.
 
 rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
     F = fun({'Symbol', _}=S, {#env{next_var=NV}=E, AccMap, Syms}) ->
