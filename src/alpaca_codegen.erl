@@ -251,9 +251,7 @@ gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
     end.
 
 gen_tests(Env, Tests) ->
-    io:format("~p~n", [Tests]),
     Rewritten = lists:reverse([rewrite_lambdas(T) || T <- Tests]),
-    io:format("~p~n", [Rewritten]),
     gen_tests(Env, Rewritten, []).
 
 gen_tests(#env{prefixed_module=PM}, [], Memo) ->
