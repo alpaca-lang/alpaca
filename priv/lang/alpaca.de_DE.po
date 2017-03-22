@@ -1,0 +1,78 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: alpaca\n"
+"POT-Creation-Date: 2017-03-21 21:14+0100\n"
+"PO-Revision-Date: \n"
+"Last-Translator: Tilman Holschuh <tilman.holschuh@gmail.com>\n"
+"Language-Team: \n"
+"Language: de_DE\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 1.8.7.1\n"
+
+msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgstr ""
+"Falsche Anzahl an Parametern für eingebauten Typ\"%(type)\".\n"
+"Erwartet %(num_expected), erhalten %(num_supplied)."
+
+msgid "duplicate_definition %(id)"
+msgstr "Mehrfache Definition von \"%(id)\"."
+
+msgid "duplicate_type_definition %(id)"
+msgstr "Der Typ \"%(id)\" wurde bereits definiert."
+
+msgid "function_not_exported %(mod) %(name)"
+msgstr "Das Modul \"%(mod)\" exportiert die Funktion \"%(fun)\" nicht."
+
+msgid "incomplete_expression"
+msgstr "Ausdruck endet unerwartet."
+
+msgid "invalid_bin_qualifier %(qualifier)"
+msgstr ""
+"Inkorrekte Binärqualifizierung für \"%(qualifier)\".\n"
+"Erlaubt sind \"end\", \"sign\", \"size\", \"type\" und \"unit.\""
+
+msgid "invalid_bin_type %(type)"
+msgstr ""
+"Inkorrekter Anteil in Binärtyp \"%(type)\".\n"
+"Erlaubt sind \"binary\", \"float\", \"int\" und \"utf8\"."
+
+msgid "invalid_endianness %(endianness)"
+msgstr ""
+"Inkorrekte Byte-Reihenfolge \"%(endianness)\".\n"
+"Erlaubt sind \"big\", \"little\" und \"native\"."
+
+msgid "invalid_fun_parameter"
+msgstr "Inkorrektes Funktionsargumentmuster."
+
+msgid "invalid_top_level_construct"
+msgstr "Dieses Konstrukt darf nicht auf oberster Ebene vorkommen."
+
+msgid "module_rename %(old) %(new)."
+msgstr "Erneute Definition des Modulnamens \"%(old)\" durch \"%(new)\"."
+
+msgid "no_module"
+msgstr ""
+"Kein Modul definiert.\n"
+"Module werden wie folgt definiert: \"module foo\"."
+
+msgid "no_module %(mod)"
+msgstr "Das Modul \"%(mod)\" wurde nicht gefunden."
+
+msgid "type_parameter_given_to_primitive_builtin_type %(type)"
+msgstr ""
+"Typparamter wurden dem eingebauten Typ \"%(type)\" gegeben, der aber keine "
+"Parameter erwartet."
+
+msgid "unexpected_token %(token)"
+msgstr "Syntaxfehler nahe \"%(token)\"."
+
+msgid "unknown_error %(raw_error_term)"
+msgstr ""
+"%(raw_error_term)\n"
+"Wir bitten um Verzeihung, bisweilen wurde noch keine geeignete Fehlermeldung "
+"für diesen Fehler erstellt.\n"
+"Wir würden uns freuen, wenn Sie uns Ihr Problem beschreiben, und helfen Ihnen "
+"gerne weiter unter: https://www.github.com/alpaca-lang/alpaca/issues."
