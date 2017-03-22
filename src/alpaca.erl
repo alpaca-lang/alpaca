@@ -479,4 +479,11 @@ failing_test_test() ->
     ?assertMatch(error, M:test()),
     code:delete(M).
 
+forward_symbol_reference_test() ->
+    Files = ["test_files/forward_symbol_reference.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(15, M:hof_fail({})),
+    ?assertMatch(15, M:val_fail({})),
+    code:delete(M).
+
 -endif.
