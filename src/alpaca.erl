@@ -486,4 +486,10 @@ forward_symbol_reference_test() ->
     ?assertMatch(15, M:val_fail({})),
     code:delete(M).
 
+lambda_in_test_test() ->
+    Files = ["test_files/lambda_in_test.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(2, M:lambda_test()),
+    code:delete(M).
+
 -endif.

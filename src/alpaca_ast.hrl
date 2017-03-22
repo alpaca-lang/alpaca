@@ -394,9 +394,9 @@
 %%% ### Module Building Blocks
 
 -record(alpaca_test, {type=undefined :: typ(),
-                    line=0 :: integer(),
-                    name={string, 0, ""} :: alpaca_string(),
-                    expression={unit, 0} :: alpaca_expression()}).
+                      line=0 :: integer(),
+                      name={string, 0, ""} :: alpaca_string(),
+                      expression={unit, 0} :: alpaca_expression()}).
 -type alpaca_test() :: #alpaca_test{}.
 
 %%% Expressions that result in values:

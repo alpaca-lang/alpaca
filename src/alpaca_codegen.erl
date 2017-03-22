@@ -99,7 +99,18 @@ rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=undefined}=TopBinding) ->
                   B
           end,
 
-    TopBinding#alpaca_binding{bound_expr=BE2}.
+    TopBinding#alpaca_binding{bound_expr=BE2};
+rewrite_lambdas(#alpaca_test{expression=Exp, line=L}=Test) ->
+    {_, Exp2, Bindings} = rewrite_lambdas(Exp, 0, []),
+    F = fun({Name, Exp}, Chain) ->
+                #alpaca_binding{name=Name,
+                                line=L,
+                                bound_expr=Exp,
+                                body=Chain}
+        end,
+
+    Rebound = lists:foldl(F, Exp2, lists:flatten(Bindings)),
+    Test#alpaca_test{expression=Rebound}.
 
 %% Rewriting a sequence of function versions or a sequence of function arguments
 %% is basically the same so let's just use one function for both.
@@ -240,7 +251,8 @@ gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
     end.
 
 gen_tests(Env, Tests) ->
-    gen_tests(Env, Tests, []).
+    Rewritten = lists:reverse([rewrite_lambdas(T) || T <- Tests]),
+    gen_tests(Env, Rewritten, []).
 
 gen_tests(#env{prefixed_module=PM}, [], Memo) ->
     FName = cerl:c_fname(test, 0),
