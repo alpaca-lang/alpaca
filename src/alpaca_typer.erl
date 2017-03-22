@@ -1261,9 +1261,38 @@ inst_binding(VarName, Line, Lvl, #env{bindings=Bs} = Env) ->
     Default = {error, {bad_variable_name, module_name(Env), Line, VarName}},
     case proplists:get_value(VarName, Bs, Default) of
         {error, _} = E ->
-            E;
+            case lookup_binding(VarName, Env, E) of
+                {ok, T} -> inst(T, Lvl, Env, maps:new());
+                Err     -> Err
+            end;
         T ->
             inst(T, Lvl, Env, maps:new())
+    end.
+
+%% If inst_binding/4 can't find a binding in the environment for the name it was
+%% given to look up, it uses this function to see if the name is a top-level
+%% binding later in the module:
+lookup_binding(VarName, Env, Default) ->
+    case Env of
+        #env{current_module=#alpaca_module{functions=Funs}} ->
+            MatchingFuns = [B || #alpaca_binding{
+                                    name={'Symbol', #{name := N}}}=B <- Funs,
+                                 N =:= VarName
+                           ],
+            case MatchingFuns of
+                [] ->
+                    Default;
+                %% There's no way to tell which arity version of a function is
+                %% intended from a symbol alone so we're defaulting to the
+                %% first one bound to the name we're looking for:
+                [F|_] ->
+                    case typ_of(Env, 0, F) of
+                        {error, _}=E                       -> E;
+                        {Typ, _}   -> {ok, Typ}
+                    end
+            end;
+        _ ->
+            Default
     end.
 
 %% This is modeled after instantiate/2 github.com/tomprimozic's example

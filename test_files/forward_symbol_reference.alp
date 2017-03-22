@@ -1,0 +1,17 @@
+module forward_symbol_reference
+
+export hof_fail, val_fail
+
+let apply f x = f x
+
+let hof_fail () =
+    apply add10 5
+
+let val_fail () =
+    10 + val
+
+-- As these are both declared AFTER their usage, neither
+-- of the above functions will compile
+
+let add10 x = x + 10
+let val = 5
