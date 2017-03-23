@@ -1,0 +1,6 @@
+module tests_and_imports
+
+import asserts.assert_equal
+
+test "example" =
+  assert_equal 2 2

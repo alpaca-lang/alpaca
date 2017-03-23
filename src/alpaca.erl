@@ -492,4 +492,11 @@ lambda_in_test_test() ->
     ?assertMatch(2, M:lambda_test()),
     code:delete(M).
 
+tests_in_imports_test() ->
+    Files = ["test_files/asserts.alp", "test_files/tests_and_imports.alp"],
+    [M1, M2] = compile_and_load(Files, [test]),
+    ?assertMatch(true, M2:example_test()),
+    code:delete(M1),
+    code:delete(M2).
+
 -endif.
