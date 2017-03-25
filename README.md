@@ -166,12 +166,12 @@ For a simple module, open `src/example.alp` and add the following:
 
 The above is just what it looks like:  a module named `example` with a
 function that adds two integers.  You can call the function directly
-from the Erlang shell after compiling like this:
+from the Erlang shell after compiling like this (note alpaca prepends `alpaca_` to the module name, so in the erlang shell you must explicitly add this):
 
     $ rebar3 shell
     ... compiler output skipped ...
-    1> example:add(2, 6).
-    6
+    1> alpaca_example:add(2, 6).
+    8
     2>
 
 Note that calling Alpaca from Erlang won't do any type checking but if
