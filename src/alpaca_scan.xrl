@@ -102,7 +102,7 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 %% String
 "(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 2, TokenLen - 2),
-  {token, {string, TokenLine, S}}.
+  unescape(S, TokenLine, TokenChars).
 
 %% Chars
 c"(\\"*|\\.|[^"\\])*" :
@@ -161,3 +161,31 @@ validate_comment(TokenLine, TokenChars) ->
         0 -> {token, {comment_lines, TokenLine, TokenChars}};
         _ -> {error, {nested_comment, TokenChars}}
     end.
+
+unescape(String, TokenLine, TokenChars) ->
+  case unescape(String, []) of
+    {ok, Res} -> {token, {string, TokenLine, lists:reverse(Res)}};
+    {error, _} = Err -> {error, {Err, TokenLine, TokenChars}}
+  end.
+unescape([], Acc) -> {ok, Acc};
+unescape([$\\, Char | Rest], Acc) ->
+  Res = case Char of
+    $n -> $\n;
+    $f -> $\f;
+    $r -> $\r;
+    $v -> $\v;
+    $" -> $\";
+    $e -> $\e;
+    $b -> $\b;
+    $t -> $\t;
+    $\\ -> $\\;
+    _ -> {error, "Bad control sequence"}
+  end,
+  case Res of
+    {error, _} = E -> E;
+    _ -> unescape(Rest, [Res | Acc])
+  end;
+unescape([C | Rest], Acc) -> unescape(Rest, [C | Acc]).
+
+
+
