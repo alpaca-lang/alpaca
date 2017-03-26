@@ -140,7 +140,7 @@ Alpaca has integers and floats which can't mix with each other at all.  They hav
 
 ### Atoms<a id="sec-3-1-3" name="sec-3-1-3"></a>
 
-Atoms in Alpaca are just text prefixed with `:`, e.g. `:this_is_an_atom` and `:soIsThis1`.
+Atoms in Alpaca are just text prefixed with `:`, e.g. `:this_is_an_atom` and `:soIsThis1`. Quotes may be used if spaces or symbols are required, e.g. `:"still an atom!"`.
 
 ### Strings<a id="sec-3-1-4" name="sec-3-1-4"></a>
 
