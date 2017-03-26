@@ -210,7 +210,7 @@ course you're using the aforementioned rebar3 plugin/
 Most of the basic Erlang data types are supported:
 
 - booleans, `true` or `false`
-- atoms, `:atom`
+- atoms, `:atom`, `:"Quoted Atom!"`
 - floats, `1.0`
 - integers, `1`
 - strings, `"A string"`.  These are encoded as UTF-8 binaries.

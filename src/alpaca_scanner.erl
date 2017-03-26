@@ -114,6 +114,10 @@ symbol_test_() ->
 atom_test_() ->
     [?_assertEqual({ok, [{atom, 1, "myAtom"}], 1}, scan(":myAtom"))].
 
+quoted_atom_test_() ->
+    [?_assertEqual({ok, [{atom, 1, "Quoted.Atom-Value"}], 1},
+                   scan(":\"Quoted.Atom-Value\""))].
+
 string_escape_test_() ->
     [?_assertEqual({ok, [{string, 1, "one\ntwo\n\tthree"}], 1}, 
                    scan("\"one\\ntwo\\n\\tthree\"")),
