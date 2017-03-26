@@ -98,6 +98,9 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 
 %% Atom
 {ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
+{ATOM}"(\\"*|\\.|[^"\\])*" : 
+  S = string:substr(TokenChars, 3, TokenLen - 3),
+  {token, {atom, TokenLine, S}}.
 
 %% String
 "(\\"*|\\.|[^"\\])*" :
