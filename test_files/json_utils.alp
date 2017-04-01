@@ -1,0 +1,41 @@
+module json_utils
+
+export_type result
+
+export (*>>=) 
+export (<*>)
+export (|>)
+export (<|)
+
+export hd, decons, bin_contains, bin_to_num, drop_ws, require, list_to_binary
+export reverse, bin_contains
+
+type result 'a 'b = 
+    Error 'a 
+  | Ok 'b
+
+-- Infixes for result type
+let (*>>=) v f =
+  match v with
+  | Ok val -> f val
+  | Error e -> Error e
+
+let (<*>) v f =
+  match v with
+  | Ok val -> Ok (f val)
+  | Error e -> Error e
+
+-- Function application
+let (|>) v f = f v
+let (<|) f v = f v
+
+-- Binary utilities
+let hd val =
+  match val with
+    <<h: type=binary unit=1, rest: type=binary>> = h
+    <<h: type=binary unit=1>> = h
+    other -> other
+
+
+
+

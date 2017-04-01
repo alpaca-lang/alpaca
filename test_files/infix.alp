@@ -1,0 +1,21 @@
+module example
+
+type result 'a 'b = 
+    Error 'a 
+  | Ok 'b
+
+-- Infixes for result type
+let (*>>=) v f =
+  match v with
+  | Ok val -> f val
+  | Error e -> Error e
+
+let do_something x =
+    Ok x
+
+let with_t t =
+    (Ok t) *>>= do_something
+
+let run () =
+    with_t <<"hello">>
+

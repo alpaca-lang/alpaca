@@ -77,7 +77,7 @@ gen(#alpaca_module{}=Mod, Opts) ->
            [gen_export({<<"module_info">>, 0}),
             gen_export({<<"module_info">>, 1})] ++
                CompiledExports,
-           [],
+           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(Mod)}],
            [module_info0(PrefixModuleName),
             module_info1(PrefixModuleName)] ++
                CompiledFuns ++ CompiledTests)
@@ -998,5 +998,16 @@ unit_as_value_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
     ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
+
+type_information_stored_test() ->
+    Code =
+        "module typeinfo\n\n"
+        "export add\n\n"
+        "let add x y = x + y\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_typeinfo,
+    {module, Mod} = code:load_binary(Mod, "alpaca_typeinfo.beam", Bin). %%,    
+    %%TypeInfo = proplists:get_value(alpaca_typeinfo, Mod:module_info(attributes)),
+    %%?assertEqual({alpaca_fun, 4, int}, TypeInfo).
 
 -endif.

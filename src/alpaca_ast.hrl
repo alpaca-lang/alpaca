@@ -519,6 +519,7 @@
           type_imports=[] :: list(alpaca_type_import()),
           type_exports=[] :: list(string()),
           functions=[] :: list(alpaca_binding()),
-          tests=[] :: list(alpaca_test())
+          tests=[] :: list(alpaca_test()),
+          typed=false :: boolean()
          }).
 -type alpaca_module() :: #alpaca_module{}.

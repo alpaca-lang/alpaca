@@ -1,7 +1,7 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, make_modules/1, term_line/1]).
+-export([parse/1, make_modules/1, make_modules/2, term_line/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module:
@@ -62,6 +62,15 @@ make_modules(Code) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
       {ok, rename_and_resolve(Modules)}
+    catch
+        throw:{parse_error, _, _, _}=Err -> {error, Err}
+    end.
+
+make_modules(Code, PrecompiledMods) ->
+    try
+      Modules = [parse_module(SourceCode) || SourceCode <- Code],
+      PCMods = [M || {_FN, M} <- PrecompiledMods],
+      {ok, rename_and_resolve(PCMods ++ Modules)}
     catch
         throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
