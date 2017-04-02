@@ -1448,7 +1448,6 @@ type_modules([M|Ms], Env, Acc) ->
 -spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
 type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
-    io:format("Module ~p already typed, skipping~n", ["blah"]),
     {ok, M};                                       
 type_module(#alpaca_module{functions=Fs,
                         name=Name,
@@ -1501,13 +1500,12 @@ type_module(#alpaca_module{functions=Fs,
                             case type_module_tests(Tests, Env4, ok, FunRes) of
                                 {error, _} = Err        ->
                                     Err;
-                                Funs when is_list(Funs) ->                                    
+                                Funs when is_list(Funs) ->
                                     {ok, M#alpaca_module{functions=Funs}}
                             end
                     end
             end
     end.
-
 
 typ_module_funs([], Env, Memo) ->
     {Env, lists:reverse(Memo)};
