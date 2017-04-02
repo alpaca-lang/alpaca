@@ -87,7 +87,9 @@ compile_phase_3(Mods, Opts) ->
     compile_phase_4(Mods, Opts).
 
 compile_phase_4(Mods, Opts) ->
-    {ok, lists:map(fun(M) -> compile_module(M, Opts) end, Mods)}.
+    %% Filter out precompiled modules
+    CompileMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
+    {ok, lists:map(fun(M) -> compile_module(M, Opts) end, CompileMods)}.
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of
@@ -109,7 +111,8 @@ load_files(Filenames) ->
                     ".beam" ->
                         io:format("Loading beam file: ~s~n", [FN]),
                         {ok,{_,[{attributes,A}]}} = beam_lib:chunks(FN,[attributes]),
-                        proplists:get_value(alpaca_typeinfo, A)
+                        TypeInfo = proplists:get_value(alpaca_typeinfo, A),
+                        TypeInfo#alpaca_module{precompiled=true}
                 end,
 
               [{FN, Res}|Acc]
@@ -520,11 +523,11 @@ compiling_from_beam_test() ->
     Files = ["test_files/asserts.alp"],
     {ok, [Compiled]} = alpaca:compile({files, Files}),
     {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
-    FP = filename:join("/tmp", FileName),
+    FP = filename:join("_build", FileName),
     file:write_file(FP, BeamBinary),
     Files2 = [FP, "test_files/tests_and_imports.alp"],
-    [M1, M2] = compile_and_load(Files2, [test]),
-    code:delete(M1),
-    code:delete(M2).
+    %% Only one new module should be compiled
+    [M] = compile_and_load(Files2, [test]),
+    code:delete(M).
 
 -endif.

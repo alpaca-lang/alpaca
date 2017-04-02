@@ -1447,7 +1447,7 @@ type_modules([M|Ms], Env, Acc) ->
 
 -spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
-type_module(#alpaca_module{typed=true}=M, _Env) -> 
+type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
     io:format("Module ~p already typed, skipping~n", ["blah"]),
     {ok, M};                                       
 type_module(#alpaca_module{functions=Fs,
@@ -1502,7 +1502,7 @@ type_module(#alpaca_module{functions=Fs,
                                 {error, _} = Err        ->
                                     Err;
                                 Funs when is_list(Funs) ->                                    
-                                    {ok, M#alpaca_module{functions=Funs, typed=true}}
+                                    {ok, M#alpaca_module{functions=Funs}}
                             end
                     end
             end
