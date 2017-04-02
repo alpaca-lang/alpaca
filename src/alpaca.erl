@@ -518,6 +518,23 @@ tests_in_imports_test() ->
     code:delete(M1),
     code:delete(M2).
 
+type_information_stored_test() ->
+    Code =
+        "module typeinfo\n\n"
+        "export add\n\n"
+        "let add x y = x + y\n",
+    {ok, Compiled} = alpaca:compile({text, Code}),
+    [#compiled_module{name=N, filename=FN, bytes=Bin}] = Compiled,
+    {module, _N} = code:load_binary(N, FN, Bin),
+
+    TypeInfo = proplists:get_value(alpaca_typeinfo, N:module_info(attributes)),
+
+    [#alpaca_binding{bound_expr=F, type=T}=B] = TypeInfo#alpaca_module.functions,
+    
+    %% We should have type information but the bodies should be stripped
+    ?assertMatch({t_arrow, [t_int, t_int], t_int}, T),
+    ?assertMatch(#alpaca_fun{versions=[]}, F).
+
 compiling_from_beam_test() ->
     %% Compile the initial beam file
     Files = ["test_files/asserts.alp"],

@@ -57,6 +57,18 @@ prefix_modulename(Name) ->
         _ -> list_to_atom("alpaca_" ++ atom_to_list(Name))
     end.
 
+strip_bodies(#alpaca_module{functions=Funs}=Mod) ->
+    StrippedFuns = 
+        lists:map(fun(#alpaca_binding{bound_expr=F}=B) -> 
+                      case F of
+                          #alpaca_fun{}=F -> 
+                              B#alpaca_binding{
+                                  bound_expr=F#alpaca_fun{versions=[]}};
+                          _ -> B
+                      end
+                  end, Funs),
+    Mod#alpaca_module{functions=StrippedFuns}.
+
 gen(#alpaca_module{}=Mod, Opts) ->
     #alpaca_module{
        name=ModuleName,
@@ -77,7 +89,7 @@ gen(#alpaca_module{}=Mod, Opts) ->
            [gen_export({<<"module_info">>, 0}),
             gen_export({<<"module_info">>, 1})] ++
                CompiledExports,
-           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(Mod)}],
+           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(strip_bodies(Mod))}],
            [module_info0(PrefixModuleName),
             module_info1(PrefixModuleName)] ++
                CompiledFuns ++ CompiledTests)
@@ -998,16 +1010,5 @@ unit_as_value_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
     ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
-
-type_information_stored_test() ->
-    Code =
-        "module typeinfo\n\n"
-        "export add\n\n"
-        "let add x y = x + y\n",
-    {ok, _, Bin} = parse_and_gen(Code),
-    Mod = alpaca_typeinfo,
-    {module, Mod} = code:load_binary(Mod, "alpaca_typeinfo.beam", Bin). %%,    
-    %%TypeInfo = proplists:get_value(alpaca_typeinfo, Mod:module_info(attributes)),
-    %%?assertEqual({alpaca_fun, 4, int}, TypeInfo).
 
 -endif.
