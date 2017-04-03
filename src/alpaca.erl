@@ -547,4 +547,16 @@ compiling_from_beam_test() ->
     [M] = compile_and_load(Files2, [test]),
     code:delete(M).
 
+hash_annotation_test() ->
+    F = "test_files/asserts.alp",
+    {ok, Device} = file:open(F, [read, {encoding, utf8}]),
+    R = read_file(Device, []),
+    ok = file:close(Device),
+    Hash = crypto:hash(md5, R),
+    {ok, [Compiled]} = alpaca:compile({files, [F]}),
+    {compiled_module, N, FN, Bin} = Compiled,
+    {module, N} = code:load_binary(N, FN, Bin),    
+    ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
+    code:delete(N).
+
 -endif.

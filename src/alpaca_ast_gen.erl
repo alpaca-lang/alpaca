@@ -87,7 +87,8 @@ parse_module({FileName, Text}) when is_binary(Text) ->
     parse_module({FileName, binary:bin_to_list(Text)});
 parse_module({FileName, Text}) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    StartMod = #alpaca_module{filename=FileName},
+    Hash = crypto:hash(md5, unicode:characters_to_binary(Text)),
+    StartMod = #alpaca_module{filename=FileName, hash=Hash},
     parse_module(Tokens, StartMod).
 
 parse_module([], #alpaca_module{name=no_module}=M) ->

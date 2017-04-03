@@ -520,6 +520,7 @@
           type_exports=[] :: list(string()),
           functions=[] :: list(alpaca_binding()),
           tests=[] :: list(alpaca_test()),
-          precompiled=false :: boolean()
+          precompiled=false :: boolean(),
+          hash=undefined :: binary() | undefined
          }).
 -type alpaca_module() :: #alpaca_module{}.

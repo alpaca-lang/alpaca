@@ -74,6 +74,7 @@ gen(#alpaca_module{}=Mod, Opts) ->
        name=ModuleName,
        function_exports=Exports,
        functions=Funs,
+       hash=Hash,
        tests=Tests} = Mod,
     BaseEnv = make_env(Mod),
     PrefixModuleName = prefix_modulename(ModuleName),
@@ -89,7 +90,8 @@ gen(#alpaca_module{}=Mod, Opts) ->
            [gen_export({<<"module_info">>, 0}),
             gen_export({<<"module_info">>, 1})] ++
                CompiledExports,
-           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(strip_bodies(Mod))}],
+           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(strip_bodies(Mod))},
+            {cerl:c_atom(alpaca_hash), cerl:abstract(Hash)}],
            [module_info0(PrefixModuleName),
             module_info1(PrefixModuleName)] ++
                CompiledFuns ++ CompiledTests)
