@@ -20,6 +20,8 @@
         , compile/2
         , file/1
         , file/2
+        , compiler_info/0
+        , hash_source/1
         ]).
 
 %% Can be safely ignored, it is meant to be called by external OTP-apps and part
@@ -28,6 +30,8 @@
              , compile/2
              , file/1
              , file/2
+             , compiler_info/0
+             , hash_source/1
              ]).
 
 -include("alpaca_ast.hrl").
@@ -36,12 +40,18 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-define(COMPILER_VERSION, "0.2.7").
+
 -record(compiled_module, {
           name :: atom(),
           filename :: string(),
           bytes :: binary()}).
 
 -type compile_res() :: {ok, list(#compiled_module{})} | {error, term()}.
+
+-spec compiler_info() -> list({atom(), term()}).
+compiler_info() ->
+    [{version, ?COMPILER_VERSION}].
 
 -spec file(file:filename()) -> compile_res().
 file(File) ->
@@ -90,6 +100,9 @@ compile_phase_4(Mods, Opts) ->
     %% Filter out precompiled modules
     CompileMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
     {ok, lists:map(fun(M) -> compile_module(M, Opts) end, CompileMods)}.
+
+hash_source(Src) ->
+    crypto:hash(md5, Src ++ ?COMPILER_VERSION).
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of
@@ -552,11 +565,14 @@ hash_annotation_test() ->
     {ok, Device} = file:open(F, [read, {encoding, utf8}]),
     R = read_file(Device, []),
     ok = file:close(Device),
-    Hash = crypto:hash(md5, R),
+    Version = proplists:get_value(version, alpaca:compiler_info()),    
+    Hash = crypto:hash(md5, R ++ Version),
+
     {ok, [Compiled]} = alpaca:compile({files, [F]}),
     {compiled_module, N, FN, Bin} = Compiled,
     {module, N} = code:load_binary(N, FN, Bin),    
     ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
+    ?assertEqual(Hash, hash_source(R)),
     code:delete(N).
 
 -endif.
