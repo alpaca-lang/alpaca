@@ -52,8 +52,14 @@
 %% `import m.foo` instead of `import m.foo/1, m.foo/2`) the pass can find out
 %% which specific function versions should be available.
 %%
-%% A single function make_modules/1 provides one entry point that can be used
-%% to cover all three steps for a list of code strings.
+%% make_modules/1 provides one entry point that can be used to cover all three 
+%% steps for a list of code strings.
+%%
+%% make_modules/2 takes an additional argument of a list of already compiled
+%% modules, i.e. the AST containing the type information. This can be
+%% retrieved from the module attributes of a BEAM file compiled by Alpaca.
+%% This allows the typer to verify against precompiled modules without
+%% having to recompile everything from scratch.
 
 -spec make_modules(Sources) -> {ok, [alpaca_module()]} | {error, Error} when
     Sources :: list(Source),
