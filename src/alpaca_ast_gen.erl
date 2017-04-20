@@ -4,8 +4,10 @@
 -export([parse/1, make_modules/1, make_modules/2, term_line/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
-%% from code that does not necessarily include a module:
--ignore_xref([parse/1]).
+%% from code that does not necessarily include a module;
+%% make_modules/1 is useful externally for a simple way of compiling
+%% multiple source files together
+-ignore_xref([parse/1, make_modules/1]).
 
 -include("alpaca_ast.hrl").
 
@@ -66,6 +68,13 @@ make_modules(Code) ->
         throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
 
+-spec make_modules(Sources, PrecompiledMods) -> {ok, [alpaca_module()]} | {error, Error} when
+    Sources :: list(Source),
+    Source :: {filename(), Code},
+    PrecompiledMods :: list(PrecompiledMod),
+    PrecompiledMod :: {filename(), alpaca_module()},
+    Code :: string() | binary(),
+    Error :: parse_error().
 make_modules(Code, PrecompiledMods) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
