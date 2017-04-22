@@ -563,7 +563,7 @@ compiling_from_beam_test() ->
     Files2 = [FP, "test_files/tests_and_imports.alp"],
     %% Only one new module should be compiled
     [M] = compile_and_load(Files2, [test]),
-code:delete(M).
+    code:delete(M).
 
 retrieve_hash_test() ->
     %% Compile and write out .beam file
