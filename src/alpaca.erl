@@ -32,6 +32,7 @@
              , file/2
              , compiler_info/0
              , hash_source/1
+             , retreve_hash/1
              ]).
 
 -include("alpaca_ast.hrl").
@@ -103,6 +104,10 @@ compile_phase_4(Mods, Opts) ->
 
 hash_source(Src) ->
     crypto:hash(md5, Src ++ ?COMPILER_VERSION).
+
+retrieve_hash(Filename) ->
+    {ok,{_,[{attributes,A}]}} = beam_lib:chunks(Filename,[attributes]),
+    proplists:get_value(alpaca_hash, A).
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of
@@ -558,7 +563,29 @@ compiling_from_beam_test() ->
     Files2 = [FP, "test_files/tests_and_imports.alp"],
     %% Only one new module should be compiled
     [M] = compile_and_load(Files2, [test]),
-    code:delete(M).
+code:delete(M).
+
+retrieve_hash_test() ->
+    %% Compile and write out .beam file
+    FN = "test_files/asserts.alp",
+    Files = [FN],
+    {ok, [Compiled]} = alpaca:compile({files, Files}),
+    {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
+    FP = filename:join("_build", FileName),
+    file:write_file(FP, BeamBinary),
+
+    %% Read in source
+    {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
+    R = read_file(Device, []),
+    ok = file:close(Device),
+
+    %% Retrieve hash from generated .beam file
+    BeamHash = retrieve_hash(FP),
+
+    %% If the source matches exactly what was compiled on the same version of
+    %% Alpaca, the hashes should be the same
+    ?assertEqual(hash_source(R), BeamHash),
+    ?assertNotEqual(hash_source(R ++ "dirty"), BeamHash).
 
 hash_annotation_test() ->
     F = "test_files/asserts.alp",
