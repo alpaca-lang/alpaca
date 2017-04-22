@@ -32,7 +32,7 @@
              , file/2
              , compiler_info/0
              , hash_source/1
-             , retreve_hash/1
+             , retrieve_hash/1
              ]).
 
 -include("alpaca_ast.hrl").
