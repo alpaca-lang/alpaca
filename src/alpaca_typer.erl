@@ -1447,6 +1447,8 @@ type_modules([M|Ms], Env, Acc) ->
 
 -spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
+type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
+    {ok, M};                                       
 type_module(#alpaca_module{functions=Fs,
                         name=Name,
                         types=Ts,

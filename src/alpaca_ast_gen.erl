@@ -1,11 +1,13 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, make_modules/1, term_line/1]).
+-export([parse/1, make_modules/1, make_modules/2, term_line/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
-%% from code that does not necessarily include a module:
--ignore_xref([parse/1]).
+%% from code that does not necessarily include a module;
+%% make_modules/1 is useful externally for a simple way of compiling
+%% multiple source files together
+-ignore_xref([parse/1, make_modules/1]).
 
 -include("alpaca_ast.hrl").
 
@@ -50,8 +52,14 @@
 %% `import m.foo` instead of `import m.foo/1, m.foo/2`) the pass can find out
 %% which specific function versions should be available.
 %%
-%% A single function make_modules/1 provides one entry point that can be used
-%% to cover all three steps for a list of code strings.
+%% make_modules/1 provides one entry point that can be used to cover all three 
+%% steps for a list of code strings.
+%%
+%% make_modules/2 takes an additional argument of a list of already compiled
+%% modules, i.e. the AST containing the type information. This can be
+%% retrieved from the module attributes of a BEAM file compiled by Alpaca.
+%% This allows the typer to verify against precompiled modules without
+%% having to recompile everything from scratch.
 
 -spec make_modules(Sources) -> {ok, [alpaca_module()]} | {error, Error} when
     Sources :: list(Source),
@@ -62,6 +70,22 @@ make_modules(Code) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
       {ok, rename_and_resolve(Modules)}
+    catch
+        throw:{parse_error, _, _, _}=Err -> {error, Err}
+    end.
+
+-spec make_modules(Sources, PrecompiledMods) -> {ok, [alpaca_module()]} | {error, Error} when
+    Sources :: list(Source),
+    Source :: {filename(), Code},
+    PrecompiledMods :: list(PrecompiledMod),
+    PrecompiledMod :: {filename(), alpaca_module()},
+    Code :: string() | binary(),
+    Error :: parse_error().
+make_modules(Code, PrecompiledMods) ->
+    try
+      Modules = [parse_module(SourceCode) || SourceCode <- Code],
+      PCMods = [M || {_FN, M} <- PrecompiledMods],
+      {ok, rename_and_resolve(PCMods ++ Modules)}
     catch
         throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
@@ -78,7 +102,9 @@ parse_module({FileName, Text}) when is_binary(Text) ->
     parse_module({FileName, binary:bin_to_list(Text)});
 parse_module({FileName, Text}) when is_list(Text) ->
     {ok, Tokens, _} = alpaca_scanner:scan(Text),
-    StartMod = #alpaca_module{filename=FileName},
+    Version = proplists:get_value(version, alpaca:compiler_info()),
+    Hash = crypto:hash(md5, unicode:characters_to_binary(Text ++ Version)),
+    StartMod = #alpaca_module{filename=FileName, hash=Hash},
     parse_module(Tokens, StartMod).
 
 parse_module([], #alpaca_module{name=no_module}=M) ->

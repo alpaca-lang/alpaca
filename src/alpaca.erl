@@ -20,6 +20,9 @@
         , compile/2
         , file/1
         , file/2
+        , compiler_info/0
+        , hash_source/1
+        , retrieve_hash/1
         ]).
 
 %% Can be safely ignored, it is meant to be called by external OTP-apps and part
@@ -28,6 +31,9 @@
              , compile/2
              , file/1
              , file/2
+             , compiler_info/0
+             , hash_source/1
+             , retrieve_hash/1
              ]).
 
 -include("alpaca_ast.hrl").
@@ -36,12 +42,18 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-define(COMPILER_VERSION, "0.2.8").
+
 -record(compiled_module, {
           name :: atom(),
           filename :: string(),
           bytes :: binary()}).
 
 -type compile_res() :: {ok, list(#compiled_module{})} | {error, term()}.
+
+-spec compiler_info() -> list({atom(), term()}).
+compiler_info() ->
+    [{version, ?COMPILER_VERSION}].
 
 -spec file(file:filename()) -> compile_res().
 file(File) ->
@@ -60,12 +72,19 @@ compile({text, Code}, Opts) ->
     compile_phase_1([{"<no file>", Code}], Opts);
 
 compile({files, Filenames}, Opts) ->
+    %% Files may be .beam files or .alp files
     compile_phase_1(load_files(Filenames), Opts).
 
 compile_phase_1(Sources, Opts) ->
-    case alpaca_ast_gen:make_modules(Sources) of
+    {BeamFiles, AlpacaSrcs} =
+        lists:partition(fun({FN, _}) ->
+                            filename:extension(FN) == ".beam"
+                        end, Sources),
+
+    case alpaca_ast_gen:make_modules(AlpacaSrcs, BeamFiles) of
         {error, _}=Err -> Err;
-        {ok, Mods} -> compile_phase_2(Mods, Opts)
+        {ok, Mods} ->
+            compile_phase_2(Mods, Opts)
     end.
 
 compile_phase_2(Mods, Opts) ->
@@ -80,7 +99,16 @@ compile_phase_3(Mods, Opts) ->
     compile_phase_4(Mods, Opts).
 
 compile_phase_4(Mods, Opts) ->
-    {ok, lists:map(fun(M) -> compile_module(M, Opts) end, Mods)}.
+    %% Filter out precompiled modules
+    CompileMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
+    {ok, lists:map(fun(M) -> compile_module(M, Opts) end, CompileMods)}.
+
+hash_source(Src) ->
+    crypto:hash(md5, Src ++ ?COMPILER_VERSION).
+
+retrieve_hash(Filename) ->
+    {ok,{_,[{attributes,A}]}} = beam_lib:chunks(Filename,[attributes]),
+    proplists:get_value(alpaca_hash, A).
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of
@@ -93,9 +121,19 @@ maybe_print_exhaustivess_warnings(Warnings, Opts) ->
 load_files(Filenames) ->
     lists:foldl(
       fun(FN, Acc) ->
-              {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
-              Res = read_file(Device, []),
-              ok = file:close(Device),
+          Res = case filename:extension(FN) of
+                    ".alp" ->
+                        {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
+                        R = read_file(Device, []),
+                        ok = file:close(Device),
+                        R;
+                    ".beam" ->
+                        io:format("Loading beam file: ~s~n", [FN]),
+                        {ok,{_,[{attributes,A}]}} = beam_lib:chunks(FN,[attributes]),
+                        TypeInfo = proplists:get_value(alpaca_typeinfo, A),
+                        TypeInfo#alpaca_module{precompiled=true}
+                end,
+
               [{FN, Res}|Acc]
       end, [], Filenames).
 
@@ -310,7 +348,7 @@ record_vs_map_match_order_test() ->
     ?assertEqual(1, M:check_map({})),
     ?assertEqual(2, M:check_record({})),
     code:delete(M).
-    
+
 raise_errors_test() ->
     [M] = compile_and_load(["test_files/error_tests.alp"], []),
     ?assertException(throw, <<"this should be a throw">>, M:raise_throw({})),
@@ -335,17 +373,17 @@ function_pattern_args_test() ->
 
     ?assertEqual({'Some', 2}, M:get_opt_x(M:make_xy(2, 3))),
     ?assertEqual('None', M:get_opt_x(M:make_y(2))),
-    
+
     ?assertEqual({'Some', 4}, M:doubler(2)),
     ?assertEqual({'Some', 4}, M:double_maybe_x(M:make_xy(2, 3))),
     ?assertEqual('None', M:double_maybe_x(M:make_y(2))),
-    
+
     code:delete(M).
 
 radius_test() ->
     [M1, M2] = compile_and_load(
-            ["test_files/radius.alp", 
-             "test_files/use_radius.alp"], 
+            ["test_files/radius.alp",
+             "test_files/use_radius.alp"],
             []),
     ?assertEqual(1, M2:test_radius({})),
     code:delete(M1),
@@ -498,5 +536,71 @@ tests_in_imports_test() ->
     ?assertMatch(true, M2:example_test()),
     code:delete(M1),
     code:delete(M2).
+
+type_information_stored_test() ->
+    Code =
+        "module typeinfo\n\n"
+        "export add\n\n"
+        "let add x y = x + y\n",
+    {ok, Compiled} = alpaca:compile({text, Code}),
+    [#compiled_module{name=N, filename=FN, bytes=Bin}] = Compiled,
+    {module, _N} = code:load_binary(N, FN, Bin),
+
+    TypeInfo = proplists:get_value(alpaca_typeinfo, N:module_info(attributes)),
+
+    [#alpaca_binding{bound_expr=F, type=T}=B] = TypeInfo#alpaca_module.functions,
+
+    %% We should have type information but the bodies should be stripped
+    ?assertMatch({t_arrow, [t_int, t_int], t_int}, T),
+    ?assertMatch(#alpaca_fun{versions=[]}, F).
+
+compiling_from_beam_test() ->
+    %% Compile the initial beam file
+    Files = ["test_files/asserts.alp"],
+    {ok, [Compiled]} = alpaca:compile({files, Files}),
+    {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
+    FP = filename:join("_build", FileName),
+    file:write_file(FP, BeamBinary),
+    Files2 = [FP, "test_files/tests_and_imports.alp"],
+    %% Only one new module should be compiled
+    [M] = compile_and_load(Files2, [test]),
+    code:delete(M).
+
+retrieve_hash_test() ->
+    %% Compile and write out .beam file
+    FN = "test_files/asserts.alp",
+    Files = [FN],
+    {ok, [Compiled]} = alpaca:compile({files, Files}),
+    {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
+    FP = filename:join("_build", FileName),
+    file:write_file(FP, BeamBinary),
+
+    %% Read in source
+    {ok, Device} = file:open(FN, [read, {encoding, utf8}]),
+    R = read_file(Device, []),
+    ok = file:close(Device),
+
+    %% Retrieve hash from generated .beam file
+    BeamHash = retrieve_hash(FP),
+
+    %% If the source matches exactly what was compiled on the same version of
+    %% Alpaca, the hashes should be the same
+    ?assertEqual(hash_source(R), BeamHash),
+    ?assertNotEqual(hash_source(R ++ "dirty"), BeamHash).
+
+hash_annotation_test() ->
+    F = "test_files/asserts.alp",
+    {ok, Device} = file:open(F, [read, {encoding, utf8}]),
+    R = read_file(Device, []),
+    ok = file:close(Device),
+    Version = proplists:get_value(version, alpaca:compiler_info()),
+    Hash = crypto:hash(md5, R ++ Version),
+
+    {ok, [Compiled]} = alpaca:compile({files, [F]}),
+    {compiled_module, N, FN, Bin} = Compiled,
+    {module, N} = code:load_binary(N, FN, Bin),
+    ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
+    ?assertEqual(Hash, hash_source(R)),
+    code:delete(N).
 
 -endif.

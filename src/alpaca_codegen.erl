@@ -57,11 +57,24 @@ prefix_modulename(Name) ->
         _ -> list_to_atom("alpaca_" ++ atom_to_list(Name))
     end.
 
+strip_bodies(#alpaca_module{functions=Funs}=Mod) ->
+    StrippedFuns = 
+        lists:map(fun(#alpaca_binding{bound_expr=F}=B) -> 
+                      case F of
+                          #alpaca_fun{}=F -> 
+                              B#alpaca_binding{
+                                  bound_expr=F#alpaca_fun{versions=[]}};
+                          _ -> B
+                      end
+                  end, Funs),
+    Mod#alpaca_module{functions=StrippedFuns}.
+
 gen(#alpaca_module{}=Mod, Opts) ->
     #alpaca_module{
        name=ModuleName,
        function_exports=Exports,
        functions=Funs,
+       hash=Hash,
        tests=Tests} = Mod,
     BaseEnv = make_env(Mod),
     PrefixModuleName = prefix_modulename(ModuleName),
@@ -77,7 +90,8 @@ gen(#alpaca_module{}=Mod, Opts) ->
            [gen_export({<<"module_info">>, 0}),
             gen_export({<<"module_info">>, 1})] ++
                CompiledExports,
-           [],
+           [{cerl:c_atom(alpaca_typeinfo), cerl:abstract(strip_bodies(Mod))},
+            {cerl:c_atom(alpaca_hash), cerl:abstract(Hash)}],
            [module_info0(PrefixModuleName),
             module_info1(PrefixModuleName)] ++
                CompiledFuns ++ CompiledTests)
