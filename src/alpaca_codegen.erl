@@ -173,6 +173,16 @@ rewrite_lambdas(#alpaca_apply{args=As}=Apply, NextFun, Memo) ->
 rewrite_lambdas(#alpaca_type_apply{arg=Arg}=Apply, NextFun, Memo) ->
     {NF, Arg2, Bindings} = rewrite_lambdas(Arg, NextFun, []),
     {NF, Apply#alpaca_type_apply{arg=Arg2}, Bindings ++ Memo};
+rewrite_lambdas(#alpaca_record{members=Ms}=R, NextFun, Memo) ->
+    F = fun(Member, {NF, MMemo, BMemo}) ->
+                {NF2, Member2, Bindings} = rewrite_lambdas(Member, NF, []),
+                {NF2, [Member2|MMemo], Bindings ++ BMemo}
+        end,
+    {NextFun2, RevMembers, Memo2} = lists:foldl(F, {NextFun, [], Memo}, Ms),
+    {NextFun2, R#alpaca_record{members=lists:reverse(RevMembers)}, Memo2};
+rewrite_lambdas(#alpaca_record_member{val=V}=RM, NextFun, Memo) ->
+    {NF, V2, NewBinds} = rewrite_lambdas(V, NextFun, []),
+    {NF, RM#alpaca_record_member{val=V2}, NewBinds ++ Memo};
 rewrite_lambdas(X, NextFun, Memo) ->
     {NextFun, X, Memo}.
 

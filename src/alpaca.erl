@@ -492,6 +492,8 @@ lambdas_test() ->
                  M:use_literal_fun_with_patterns({})),
     ?assertEqual([int, not_int, int, not_int],
                  M:literal_fun_and_guards({})),
+    ?assertEqual(4, M:fun_in_record({})),
+    ?assertEqual(3, M:fun_in_record_in_record({})),
     code:delete(M).
 
 %% Tests that we can use both leading `|` for every clause or treat it strictly
