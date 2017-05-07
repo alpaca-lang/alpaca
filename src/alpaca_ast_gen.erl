@@ -891,6 +891,36 @@ find_deps(#alpaca_apply{args=Args, expr=Expr}, Deps) ->
         {Mod, _, _} when is_atom(Mod) -> maps:put(Mod, Mod, Deps_);
         _ -> Deps_
     end;
+find_deps(#alpaca_match{match_expr=Expr, clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, find_deps(Expr, Deps), Clauses);
+find_deps(#alpaca_clause{result=Result}, Deps) ->
+    find_deps(Result, Deps);
+find_deps(#alpaca_tuple{values=Values}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Values);
+find_deps(#alpaca_cons{head=Head, tail=Tail}, Deps) ->
+    find_deps(Tail, find_deps(Head, Deps));
+find_deps(#alpaca_record{members=Members}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Members);
+find_deps(#alpaca_record_member{val=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_map{pairs=Pairs}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Pairs);
+find_deps(#alpaca_map_pair{key=Key, val=Val}, Deps) ->
+    find_deps(Key, find_deps(Val, Deps));
+find_deps(#alpaca_record_transform{additions=Adds}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Adds);
+find_deps(#alpaca_map_add{to_add=Pair}, Deps) ->
+    find_deps(Pair, Deps);
+find_deps(#alpaca_receive{clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Clauses);
+find_deps(#alpaca_send{message=Msg, pid=Pid}, Deps) ->
+    find_deps(Pid, find_deps(Msg, Deps));
+find_deps(#alpaca_test{expression=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_spawn{args=Args}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Args);
+find_deps(#alpaca_ffi{args=Args, clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, find_deps(Args, Deps), Clauses);
 find_deps(_, Deps) -> Deps.
 
 
@@ -2157,9 +2187,20 @@ infer_modules_test_() ->
     Src = "module a\n\n"
           "import_type f.far_type\n\n"
           "import b.other_fun\n\n"
-          "let arg_far_fun () = c.far_fun (d.my_fun 2)"
-          "let main () = let x = e.far_fun 5 in c.far_fun 10\n",
-    ?_assertMatch([b, c, d, e, f], list_dependencies(Src)).
+          "let arg_far_fun () = c.far_fun (d.my_fun 2)\n\n"
+          "let other () = match g.far_fun 10 with\n"
+          "  | _ -> h.far_fun 10\n\n"
+          "let colls () = ( [(i.far_fun 1), #{1 => (l.far_fun 1)}]\n"
+          "               , (j.far_fun 1), { key = k.far_fun 1})\n"
+          "let adds_x rec = {x=(m.far_fun 1) | rec}\n"
+          "let add_far m = #{k => (n.far_fun 1) | m}\n"
+          "let main () = let x = e.far_fun 5 in c.far_fun 10\n"
+          "let ffi () = beam :erl :mod [(p.far_fun 1)] with _ -> q.far_fun 1\n"
+          "test \"this\" = o.far_fun 1",
+
+    ?_assertMatch(
+       [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q], 
+       list_dependencies(Src)).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
