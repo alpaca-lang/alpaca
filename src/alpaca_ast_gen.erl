@@ -1,13 +1,14 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, make_modules/1, make_modules/2, term_line/1]).
+-export([parse/1, make_modules/1, make_modules/2, term_line/1, list_dependencies/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module;
 %% make_modules/1 is useful externally for a simple way of compiling
-%% multiple source files together
--ignore_xref([parse/1, make_modules/1]).
+%% multiple source files together; list_dependencies allows external tools
+%% to extract module dependencies from source code without compiling.
+-ignore_xref([parse/1, make_modules/1, list_dependencies/1]).
 
 -include("alpaca_ast.hrl").
 
@@ -853,6 +854,45 @@ make_bindings(Env, M, Expression) ->
 -define(base_var_name, "svar_").
 next_var(X) ->
     unicode:characters_to_binary(?base_var_name ++ integer_to_list(X), utf8).
+
+list_dependencies(Src) ->
+    {ok, Tokens, _} = alpaca_scanner:scan(Src),
+    scan_tokens_for_deps(Tokens).
+
+scan_tokens_for_deps(Tokens) ->
+    maps:keys(scan_tokens_for_deps(Tokens, maps:new())).
+
+scan_tokens_for_deps([], Deps) ->
+    Deps;
+scan_tokens_for_deps(Tokens, Deps) ->
+    case next_batch(Tokens, []) of
+        {[], Rem} -> scan_tokens_for_deps(Rem, Deps);
+        {NextBatch, Rem} ->
+            %% If we can't parse the tokens, ignore the error
+            case parse(NextBatch) of
+                {ok, Parsed} -> scan_tokens_for_deps(Rem, find_deps(Parsed, Deps));
+                {error, _} -> scan_tokens_for_deps(Rem, Deps)
+            end
+    end.
+
+find_deps({import, Is}, Deps) ->
+    lists:foldl(fun({_, Mod}, Acc) -> maps:put(Mod, Mod, Acc) end, Deps, Is);
+find_deps(#alpaca_binding{bound_expr=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_type_import{module=Mod}, Deps) ->
+    maps:put(Mod, Mod, Deps);
+find_deps(#alpaca_fun{versions=Versions}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Versions);
+find_deps(#alpaca_fun_version{body=Body}, Deps) ->
+    find_deps(Body, Deps);
+find_deps(#alpaca_apply{args=Args, expr=Expr}, Deps) ->
+    Deps_ = lists:foldl(fun find_deps/2, Deps, Args),
+    case Expr of
+        {Mod, _, _} when is_atom(Mod) -> maps:put(Mod, Mod, Deps_);
+        _ -> Deps_
+    end;
+find_deps(_, Deps) -> Deps.
+
 
 -ifdef(TEST).
 
@@ -2112,6 +2152,14 @@ invalid_fun_parameter_test_() ->
      , ?_assertMatch({error, {1, _, {invalid_fun_parameter, _}}},
                      P("let f = fn (fn x -> x + 1) -> 2"))
     ].
+
+infer_modules_test_() ->
+    Src = "module a\n\n"
+          "import_type f.far_type\n\n"
+          "import b.other_fun\n\n"
+          "let arg_far_fun () = c.far_fun (d.my_fun 2)"
+          "let main () = let x = e.far_fun 5 in c.far_fun 10\n",
+    ?_assertMatch([b, c, d, e, f], list_dependencies(Src)).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
