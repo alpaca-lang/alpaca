@@ -23,6 +23,7 @@
         , compiler_info/0
         , hash_source/1
         , retrieve_hash/1
+        , list_dependencies/1
         ]).
 
 %% Can be safely ignored, it is meant to be called by external OTP-apps and part
@@ -34,6 +35,7 @@
              , compiler_info/0
              , hash_source/1
              , retrieve_hash/1
+             , list_dependencies/1
              ]).
 
 -include("alpaca_ast.hrl").
@@ -109,6 +111,9 @@ hash_source(Src) ->
 retrieve_hash(Filename) ->
     {ok,{_,[{attributes,A}]}} = beam_lib:chunks(Filename,[attributes]),
     proplists:get_value(alpaca_hash, A).
+
+list_dependencies(Src) ->
+    alpaca_ast_gen:list_dependencies(Src).
 
 maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   case proplists:get_value(warn_exhaustiveness, Opts, true) of

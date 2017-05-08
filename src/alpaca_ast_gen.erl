@@ -8,7 +8,7 @@
 %% make_modules/1 is useful externally for a simple way of compiling
 %% multiple source files together; list_dependencies allows external tools
 %% to extract module dependencies from source code without compiling.
--ignore_xref([parse/1, make_modules/1, list_dependencies/1]).
+-ignore_xref([parse/1, make_modules/1]).
 
 -include("alpaca_ast.hrl").
 
