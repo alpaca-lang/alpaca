@@ -860,18 +860,23 @@ list_dependencies(Src) ->
     scan_tokens_for_deps(Tokens).
 
 scan_tokens_for_deps(Tokens) ->
-    maps:keys(scan_tokens_for_deps(Tokens, maps:new())).
+    {Mod, Deps} = scan_tokens_for_deps(Tokens, maps:new(), unknown_module),
+    {Mod, maps:keys(Deps)}.
 
-scan_tokens_for_deps([], Deps) ->
-    Deps;
-scan_tokens_for_deps(Tokens, Deps) ->
+scan_tokens_for_deps([], Deps, Mod) ->
+    {Mod, Deps};
+scan_tokens_for_deps(Tokens, Deps, Mod) ->
     case next_batch(Tokens, []) of
-        {[], Rem} -> scan_tokens_for_deps(Rem, Deps);
+        {[], Rem} -> scan_tokens_for_deps(Rem, Deps, Mod);
         {NextBatch, Rem} ->
             %% If we can't parse the tokens, ignore the error
             case parse(NextBatch) of
-                {ok, Parsed} -> scan_tokens_for_deps(Rem, find_deps(Parsed, Deps));
-                {error, _} -> scan_tokens_for_deps(Rem, Deps)
+                {ok, {module, Name, _}} -> 
+                    scan_tokens_for_deps(Rem, Deps, Name);
+                {ok, Parsed} -> 
+                    scan_tokens_for_deps(Rem, find_deps(Parsed, Deps), Mod);
+                {error, _} -> 
+                    scan_tokens_for_deps(Rem, Deps, Mod)
             end
     end.
 
@@ -2184,7 +2189,7 @@ invalid_fun_parameter_test_() ->
     ].
 
 infer_modules_test_() ->
-    Src = "module a\n\n"
+    Src = "module a_mod\n\n"
           "import_type f.far_type\n\n"
           "import b.other_fun\n\n"
           "let arg_far_fun () = c.far_fun (d.my_fun 2)\n\n"
@@ -2199,7 +2204,7 @@ infer_modules_test_() ->
           "test \"this\" = o.far_fun 1",
 
     ?_assertMatch(
-       [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q], 
+       {a_mod, [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q]}, 
        list_dependencies(Src)).
 
 test_make_modules(Sources) ->
