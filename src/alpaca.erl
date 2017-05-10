@@ -105,13 +105,20 @@ compile_phase_4(Mods, Opts) ->
     CompileMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
     {ok, lists:map(fun(M) -> compile_module(M, Opts) end, CompileMods)}.
 
+%% For some given Alpaca source code (list), generates a hash specific
+%% to this version of the Alpaca compiler. This is so it may be compared
+%% against compiled versions of modules.
 hash_source(Src) ->
     crypto:hash(md5, Src ++ ?COMPILER_VERSION).
 
+%% From a compiled Alpaca beam file, extract the stored hash.
 retrieve_hash(Filename) ->
     {ok,{_,[{attributes,A}]}} = beam_lib:chunks(Filename,[attributes]),
     proplists:get_value(alpaca_hash, A).
 
+%% For some given Alpaca source code (binary or list), attempt to extract a
+%% tuple of {Module, [Dependency]}. This is so that external tools can generate
+%% a graph of the relationship between modules without having to compile.
 list_dependencies(Src) ->
     alpaca_ast_gen:list_dependencies(Src).
 
@@ -133,7 +140,6 @@ load_files(Filenames) ->
                         ok = file:close(Device),
                         R;
                     ".beam" ->
-                        io:format("Loading beam file: ~s~n", [FN]),
                         {ok,{_,[{attributes,A}]}} = beam_lib:chunks(FN,[attributes]),
                         TypeInfo = proplists:get_value(alpaca_typeinfo, A),
                         TypeInfo#alpaca_module{precompiled=true}
