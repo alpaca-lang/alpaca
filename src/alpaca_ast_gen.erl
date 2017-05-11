@@ -1,12 +1,13 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, make_modules/1, make_modules/2, term_line/1]).
+-export([parse/1, make_modules/1, make_modules/2, term_line/1, list_dependencies/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module;
 %% make_modules/1 is useful externally for a simple way of compiling
-%% multiple source files together
+%% multiple source files together; list_dependencies allows external tools
+%% to extract module dependencies from source code without compiling.
 -ignore_xref([parse/1, make_modules/1]).
 
 -include("alpaca_ast.hrl").
@@ -52,7 +53,7 @@
 %% `import m.foo` instead of `import m.foo/1, m.foo/2`) the pass can find out
 %% which specific function versions should be available.
 %%
-%% make_modules/1 provides one entry point that can be used to cover all three 
+%% make_modules/1 provides one entry point that can be used to cover all three
 %% steps for a list of code strings.
 %%
 %% make_modules/2 takes an additional argument of a list of already compiled
@@ -168,7 +169,7 @@ name_and_arity(#alpaca_binding{name=BindingName, bound_expr=E}) ->
 expand_exports([], Memo) ->
     Memo;
 expand_exports([M|Tail], Memo) ->
-    F = fun({_, _}=FunWithArity) -> 
+    F = fun({_, _}=FunWithArity) ->
                 FunWithArity;
            (Name) when is_binary(Name) ->
                 NameAndArity = [name_and_arity(F) || F <- M#alpaca_module.functions],
@@ -210,7 +211,7 @@ expand_imports([M|Tail], ExportMap, Memo) ->
 
 %% Group all functions by name and arity:
 group_funs(Funs, _ModuleName) ->
-    OrderedKeys = 
+    OrderedKeys =
         drop_dupes_preserve_order(
           lists:map(fun name_and_arity/1, lists:reverse(Funs)),
           []),
@@ -228,7 +229,7 @@ group_funs(Funs, _ModuleName) ->
         end,
     Grouped = lists:foldl(F, maps:new(), Funs),
     lists:map(
-      fun({N, A}=Key) -> 
+      fun({N, A}=Key) ->
               NewVs = lists:reverse(maps:get(Key, Grouped)),
               [X|_] = NewVs,
               L = term_line(X),
@@ -242,10 +243,10 @@ group_funs(Funs, _ModuleName) ->
                   _ ->
                       #alpaca_binding{name=NewName,
                                       bound_expr=#alpaca_fun{
-                                                    arity=A, 
+                                                    arity=A,
                                                     versions=NewVs}}
               end
-      end, 
+      end,
       OrderedKeys).
 
 term_line(Term) ->
@@ -318,7 +319,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
 
     F = fun(F, {E, Memo}) ->
                 {#env{next_var=NV2, rename_map=_M}, M2, F2} = rename_bindings(E, F),
-                    
+
                 %% We invert the returned map so that it is from
                 %% synthetic variable name to source code variable
                 %% name for later lookup:
@@ -456,7 +457,7 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
                         %% different function definitions.
                         {Env3, Map, [FV2|Versions]}
                 end,
-            
+
             {Env, M2, Vs2} = lists:foldl(F, {Environment, maps:new(), []}, Vs),
             {Env, M2, TopLevel#alpaca_binding{bound_expr=Expr#alpaca_fun{versions=Vs2}}};
         _ ->
@@ -854,6 +855,85 @@ make_bindings(Env, M, Expression) ->
 next_var(X) ->
     unicode:characters_to_binary(?base_var_name ++ integer_to_list(X), utf8).
 
+list_dependencies(Src) ->
+    {ok, Tokens, _} = alpaca_scanner:scan(Src),
+    scan_tokens_for_deps(Tokens).
+
+scan_tokens_for_deps(Tokens) ->
+    {Mod, Deps} = scan_tokens_for_deps(Tokens, maps:new(), unknown_module),
+    {Mod, maps:keys(Deps)}.
+
+scan_tokens_for_deps([], Deps, Mod) ->
+    {Mod, Deps};
+scan_tokens_for_deps(Tokens, Deps, Mod) ->
+    case next_batch(Tokens, []) of
+        {[], Rem} -> scan_tokens_for_deps(Rem, Deps, Mod);
+        {NextBatch, Rem} ->
+            %% If we can't parse the tokens, ignore the error
+            case parse(NextBatch) of
+                {ok, {module, Name, _}} ->
+                    scan_tokens_for_deps(Rem, Deps, Name);
+                {ok, Parsed} ->
+                    scan_tokens_for_deps(Rem, find_deps(Parsed, Deps), Mod);
+                {error, _} ->
+                    scan_tokens_for_deps(Rem, Deps, Mod)
+            end
+    end.
+
+find_deps({import, Is}, Deps) ->
+    lists:foldl(
+        fun({_, {Mod, _}}, Acc) ->
+                maps:put(Mod, Mod, Acc);
+           ({_, Mod}, Acc) ->
+                maps:put(Mod, Mod, Acc)
+        end, Deps, Is);
+find_deps(#alpaca_binding{bound_expr=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_type_import{module=Mod}, Deps) ->
+    maps:put(Mod, Mod, Deps);
+find_deps(#alpaca_fun{versions=Versions}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Versions);
+find_deps(#alpaca_fun_version{body=Body}, Deps) ->
+    find_deps(Body, Deps);
+find_deps(#alpaca_apply{args=Args, expr=Expr}, Deps) ->
+    Deps_ = lists:foldl(fun find_deps/2, Deps, Args),
+    case Expr of
+        {Mod, _, _} when is_atom(Mod) -> maps:put(Mod, Mod, Deps_);
+        _ -> Deps_
+    end;
+find_deps(#alpaca_match{match_expr=Expr, clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, find_deps(Expr, Deps), Clauses);
+find_deps(#alpaca_clause{result=Result}, Deps) ->
+    find_deps(Result, Deps);
+find_deps(#alpaca_tuple{values=Values}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Values);
+find_deps(#alpaca_cons{head=Head, tail=Tail}, Deps) ->
+    find_deps(Tail, find_deps(Head, Deps));
+find_deps(#alpaca_record{members=Members}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Members);
+find_deps(#alpaca_record_member{val=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_map{pairs=Pairs}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Pairs);
+find_deps(#alpaca_map_pair{key=Key, val=Val}, Deps) ->
+    find_deps(Key, find_deps(Val, Deps));
+find_deps(#alpaca_record_transform{additions=Adds}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Adds);
+find_deps(#alpaca_map_add{to_add=Pair}, Deps) ->
+    find_deps(Pair, Deps);
+find_deps(#alpaca_receive{clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Clauses);
+find_deps(#alpaca_send{message=Msg, pid=Pid}, Deps) ->
+    find_deps(Pid, find_deps(Msg, Deps));
+find_deps(#alpaca_test{expression=Expr}, Deps) ->
+    find_deps(Expr, Deps);
+find_deps(#alpaca_spawn{args=Args}, Deps) ->
+    lists:foldl(fun find_deps/2, Deps, Args);
+find_deps(#alpaca_ffi{args=Args, clauses=Clauses}, Deps) ->
+    lists:foldl(fun find_deps/2, find_deps(Args, Deps), Clauses);
+find_deps(_, Deps) -> Deps.
+
+
 -ifdef(TEST).
 
 test_parse(S) ->
@@ -921,7 +1001,7 @@ defn_test_() ->
      %% this ensures that they are side-effect free and referentially
      %% transparent
      ?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"x">>}},
             bound_expr={'Int', #{line := 1, val := 5}}}},
@@ -954,7 +1034,7 @@ defn_test_() ->
                  {'Symbol', #{line := 1, name := <<"sideEffectingFun">>}},
                  [{'Int', #{line := 1, val := 5}}]},
                 {nil, 0}}}}},
-        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
+        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
 
      ?_assertMatch(
         {ok, {error, non_literal_value, {'Symbol',
@@ -973,7 +1053,7 @@ defn_test_() ->
                  {alpaca_apply,undefined,1,
                   {'Symbol', #{line := 1, name := <<"sideEffectingFun">>}},
                   [{'Int', #{line := 1, val := 5}}]}}]}}},
-        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),        
+        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {'Symbol',
                                          #{line := 1, name := <<"x">>}},
@@ -986,7 +1066,7 @@ defn_test_() ->
                                      name := <<"sideEffectingFun">>}},
                                   [{'Int', #{line := 1, val := 5}}]},
                               {nil,0}}}}},
-        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
+        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {'Symbol',
                                          #{line := 1, name := <<"x">>}},
@@ -999,7 +1079,7 @@ defn_test_() ->
                                  #{line := 1,
                                    name := <<"sideEffectingFun">>}},
                                 [{'Int', #{line := 1, val := 5}}]}}]}}},
-        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),        
+        parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),
      ?_assertMatch(
         {ok, {error, non_literal_value, {'Symbol',
                                          #{line := 1, name := <<"x">>}},
@@ -1012,9 +1092,9 @@ defn_test_() ->
                                         name := <<"sideEffectingFun">>}},
                                      [{'Int', #{line := 1, val := 5}}]},
                                  {nil,0}}}}},
-        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),        
+        parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
      ?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"double">>}},
             bound_expr=#alpaca_fun{
@@ -1033,7 +1113,7 @@ defn_test_() ->
                                                         name := <<"x">>}}]}}]}}},
         parse(alpaca_scanner:scan("let double x = x + x"))),
      ?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"add">>}},
             bound_expr=#alpaca_fun{
@@ -1055,7 +1135,7 @@ defn_test_() ->
                                                         name := <<"y">>}}]}}]}}},
         parse(alpaca_scanner:scan("let add x y = x + y"))),
         ?_assertMatch(
-            {ok, 
+            {ok,
              #alpaca_binding{
                 name={'Symbol', #{line := 1, name := <<"(<*>)">>}},
                 bound_expr=#alpaca_fun{
@@ -1087,7 +1167,7 @@ float_math_test_() ->
 
 let_binding_test_() ->
     [?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"double">>}},
             bound_expr=#alpaca_fun{
@@ -1122,7 +1202,7 @@ let_binding_test_() ->
                                                       name := <<"x">>}}]}}},
                    parse(alpaca_scanner:scan("let x = double 2 in double x"))),
      ?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"doubler">>}},
             bound_expr=
@@ -1160,7 +1240,7 @@ let_binding_test_() ->
                 "  let double x = x + x in\n"
                 "  double 2"))),
      ?_assertMatch(
-        {ok, 
+        {ok,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"my_fun">>}},
             bound_expr=
@@ -1505,7 +1585,7 @@ tuple_test_() ->
     ].
 
 list_test_() ->
-    [?_assertMatch({ok, 
+    [?_assertMatch({ok,
                     #alpaca_cons{head={'Int', #{line := 1, val := 1}},
                                  tail=#alpaca_cons{
                                          head={'Int', #{line := 1, val := 2}},
@@ -1695,7 +1775,7 @@ break_test() ->
     Code = "module test_mod\n\n
             let a = 5\n   \n"
            "let b = 6\n\n",
-     ?assertMatch({ok, 
+     ?assertMatch({ok,
        [#alpaca_module{
            name='test_mod',
            function_exports=[],
@@ -1706,7 +1786,7 @@ break_test() ->
                          name={'Symbol', #{line := 6, name := <<"b">>}},
                          bound_expr={'Int', #{line := 6, val := 6}}}]}]},
        test_make_modules([Code])).
-    
+
 
 rebinding_test_() ->
     %% Simple rebinding:
@@ -1729,7 +1809,7 @@ rebinding_test_() ->
                          " h :: y -> h"),
 
     [?_assertMatch(
-        {_, _, 
+        {_, _,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"f">>}},
             bound_expr=#alpaca_fun{
@@ -1762,7 +1842,7 @@ rebinding_test_() ->
      ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, <<"x">>}},
                    rename_bindings(#env{}, B)),
      ?_assertMatch(
-        {_, _, 
+        {_, _,
          #alpaca_binding{
             name={'Symbol', #{line := 1, name := <<"f">>}},
             bound_expr=
@@ -1809,7 +1889,7 @@ rebinding_test_() ->
             bound_expr=
                 #alpaca_fun{
                    versions=
-                       [#alpaca_fun_version{ 
+                       [#alpaca_fun_version{
                            body=
                                #alpaca_match{
                                   match_expr={'Symbol', #{line := 1,
@@ -1985,7 +2065,7 @@ import_rewriting_test_() ->
                  "import a.add\n\n"
                  "let f () = add 2 3",
              ?assertMatch(
-                {ok, 
+                {ok,
                  [#alpaca_module{name=a},
                   #alpaca_module{
                      name=b,
@@ -2112,6 +2192,26 @@ invalid_fun_parameter_test_() ->
      , ?_assertMatch({error, {1, _, {invalid_fun_parameter, _}}},
                      P("let f = fn (fn x -> x + 1) -> 2"))
     ].
+
+infer_modules_test_() ->
+    Src = "module a_mod\n\n"
+          "import_type f.far_type\n\n"
+          "import r.[arity/5, other/4]"
+          "import b.other_fun\n\n"
+          "let arg_far_fun () = c.far_fun (d.my_fun 2)\n\n"
+          "let other () = match g.far_fun 10 with\n"
+          "  | _ -> h.far_fun 10\n\n"
+          "let colls () = ( [(i.far_fun 1), #{1 => (l.far_fun 1)}]\n"
+          "               , (j.far_fun 1), { key = k.far_fun 1})\n"
+          "let adds_x rec = {x=(m.far_fun 1) | rec}\n"
+          "let add_far m = #{k => (n.far_fun 1) | m}\n"
+          "let main () = let x = e.far_fun 5 in c.far_fun 10\n"
+          "let ffi () = beam :erl :mod [(p.far_fun 1)] with _ -> q.far_fun 1\n"
+          "test \"this\" = o.far_fun 1",
+
+    ?_assertMatch(
+       {a_mod, [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r]},
+       list_dependencies(Src)).
 
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

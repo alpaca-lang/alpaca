@@ -28,8 +28,8 @@ fmt({error, {parse_error, F, L, E}}, Locale) ->
     Line = integer_to_binary(L),
     Msg = fmt_parse_error(E, Locale),
     <<File/binary, ":"/utf8, Line/binary, ": "/utf8, Msg/binary, "\n"/utf8>>;
-fmt({error, _}=Err, Locale) ->
-    Msg = fmt_unknown_error(Err, Locale),
+fmt({error, Err}, Locale) ->
+    Msg = fmt_parse_error(Err, Locale),
     <<Msg/binary, "\n"/utf8>>.
 
 fmt_parse_error({duplicate_definition, Id}, Locale) ->
@@ -54,8 +54,10 @@ fmt_parse_error({module_rename, Old, New}, Locale) ->
       [{old, atom_to_binary(Old, utf8)}, {new, atom_to_binary(New, utf8)}]);
 fmt_parse_error(no_module, Locale) ->
     t(__(<<"no_module">>), Locale);
+fmt_parse_error({no_module, Mod}, Locale) when is_atom(Mod) ->
+    t(__(<<"no_module %(mod)">>), Locale, [{mod, atom_to_binary(Mod, utf8)}]);
 fmt_parse_error({no_module, Mod}, Locale) ->
-    t(__(<<"no_module %(mod)">>), Locale, [{module, Mod}]);
+    t(__(<<"no_module %(mod)">>), Locale, [{mod, Mod}]);
 fmt_parse_error({syntax_error, ""}, Locale) ->
     t(__(<<"incomplete_expression">>), Locale);
 fmt_parse_error({syntax_error, Token}, Locale) ->
@@ -130,7 +132,7 @@ fmt_unknown_parse_error_test() ->
 fmt_unknown_error_test() ->
   Error = {error, unknown},
   Msg = fmt(Error, "en_US"),
-  Expected = <<"{error,unknown}\n"
+  Expected = <<"unknown\n"
                "Sorry, we do not have a proper message for this error yet.\n"
                "Please consider filing an issue at "
                "https://www.github.com/alpaca-lang/alpaca/issues.\n">>,
