@@ -1,7 +1,7 @@
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 -module(alpaca_ast_gen).
--export([parse/1, make_modules/1, make_modules/2, term_line/1, list_dependencies/1]).
+-export([parse/1, make_modules/1, make_modules/2, make_modules/3, term_line/1, list_dependencies/1]).
 
 %% Parse is used by other modules (particularly alpaca_typer) to make ASTs
 %% from code that does not necessarily include a module;
@@ -75,21 +75,46 @@ make_modules(Code) ->
         throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
 
--spec make_modules(Sources, PrecompiledMods) -> {ok, [alpaca_module()]} | {error, Error} when
-    Sources :: list(Source),
-    Source :: {filename(), Code},
-    PrecompiledMods :: list(PrecompiledMod),
-    PrecompiledMod :: {filename(), alpaca_module()},
-    Code :: string() | binary(),
-    Error :: parse_error().
-make_modules(Code, PrecompiledMods) ->
+-spec make_modules(Sources, PrecompiledMods, DefaultImports) ->
+    {ok, [alpaca_module()]} | {error, Error} when
+        Sources :: list(Source),
+        Source :: {filename(), Code},
+        PrecompiledMods :: list(PrecompiledMod),
+        PrecompiledMod :: {filename(), alpaca_module()},
+        DefaultTypes :: list({string(), {atom(), integer()}|string()}),
+        DefaultFuns :: list(alpaca_type_import()),
+        DefaultImports :: {DefaultFuns, DefaultTypes},
+        Code :: string() | binary(),
+        Error :: parse_error().
+make_modules(Code, PrecompiledMods, DefaultImports) ->
     try
       Modules = [parse_module(SourceCode) || SourceCode <- Code],
       PCMods = [M || {_FN, M} <- PrecompiledMods],
-      {ok, rename_and_resolve(PCMods ++ Modules)}
+
+      {DefaultFuns, DefaultTypes} = DefaultImports,
+
+      %% Inject funs
+      ModulesWithDefaults = lists:map(
+          fun(#alpaca_module{function_imports=Imports}=M) ->
+              M#alpaca_module{function_imports=Imports ++ DefaultFuns}
+          end,
+          Modules),
+
+      {ok, rename_and_resolve(PCMods ++ ModulesWithDefaults)}
     catch
         throw:{parse_error, _, _, _}=Err -> {error, Err}
     end.
+
+-spec make_modules(Sources, PrecompiledMods) ->
+    {ok, [alpaca_module()]} | {error, Error} when
+        Sources :: list(Source),
+        Source :: {filename(), Code},
+        PrecompiledMods :: list(PrecompiledMod),
+        PrecompiledMod :: {filename(), alpaca_module()},
+        Code :: string() | binary(),
+        Error :: parse_error().
+make_modules(Code, PrecompiledMods) ->
+    make_modules(Code, PrecompiledMods, {[], []}).
 
 parse_error(#alpaca_module{filename=FileName}, Line, Error) ->
     throw({parse_error, FileName, Line, Error}).

@@ -1,0 +1,8 @@
+module use_default
+
+export main/1
+
+-- `identity` and `always` are defined in the `default` module
+
+let main () = let same = identity 42 in
+              always same 1

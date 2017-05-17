@@ -1,0 +1,7 @@
+module default
+
+export identity, always
+
+let identity x = x
+
+let always x _ = x
