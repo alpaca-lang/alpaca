@@ -622,7 +622,8 @@ default_imports_test() ->
     Files = ["test_files/default.alp", "test_files/use_default.alp"],
 
     DefaultImports = {
-        [{<<"identity">>, default}, {<<"always">>, default}], []},
+        [{default, <<"identity">>}, {default, <<"always">>, 2}],
+        [{default, <<"box">>}]},
 
     {ok, [Default, Compiled]} = alpaca:compile(
         {files, Files},
@@ -633,7 +634,7 @@ default_imports_test() ->
     {module, N} = code:load_binary(N, FN, Bin),
     code:load_binary(N2, FN2, Bin2),
 
-    ?assertEqual(42, N:main({})),
+    ?assertEqual({'Box', 42}, N:main({})),
     code:delete(N).
 
 -endif.

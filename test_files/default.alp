@@ -1,6 +1,9 @@
 module default
 
 export identity, always
+export_type box
+
+type box 'a = Box 'a
 
 let identity x = x
 

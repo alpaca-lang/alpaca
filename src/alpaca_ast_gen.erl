@@ -8,7 +8,7 @@
 %% make_modules/1 is useful externally for a simple way of compiling
 %% multiple source files together; list_dependencies allows external tools
 %% to extract module dependencies from source code without compiling.
--ignore_xref([parse/1, make_modules/1]).
+-ignore_xref([parse/1, make_modules/1, make_modules/2]).
 
 -include("alpaca_ast.hrl").
 
@@ -93,10 +93,22 @@ make_modules(Code, PrecompiledMods, DefaultImports) ->
 
       {DefaultFuns, DefaultTypes} = DefaultImports,
 
+      DefaultFunsA = lists:map(
+          fun ({Mod, F}) -> {F, Mod};
+              ({Mod, F, Arity}) -> {F, {Mod, Arity}}
+          end,
+          DefaultFuns),
+
+      DefaultTypesA = lists:map(
+          fun({Mod, T}) -> #alpaca_type_import{module=Mod, type=T} end,
+          DefaultTypes),
+
       %% Inject funs
       ModulesWithDefaults = lists:map(
-          fun(#alpaca_module{function_imports=Imports}=M) ->
-              M#alpaca_module{function_imports=Imports ++ DefaultFuns}
+          fun(#alpaca_module{function_imports=Imports, type_imports=Types}=M) ->
+              M#alpaca_module{
+                  function_imports=Imports ++ DefaultFunsA,
+                  type_imports=Types ++ DefaultTypesA}
           end,
           Modules),
 
