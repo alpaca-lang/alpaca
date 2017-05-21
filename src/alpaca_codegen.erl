@@ -806,6 +806,20 @@ infix_fun_test() ->
     ?assertEqual(20, Name:adder(10)),
     true = code:delete(Name).
 
+infix_left_fun_test() ->
+    Name = alpaca_infix_left_fun,
+    FN = atom_to_list(Name) ++ ".beam",
+    Code =
+        "module infix_left_fun\n\n"
+        "export main/1 \n\n"
+        "let (<|) f x = f x\n\n"
+        "let add x = x + 10\n\n"
+        "let main () = add <| add <| add <| add 12",
+    {ok, _, Bin} = parse_and_gen(Code),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    ?assertEqual(52, Name:main({})),
+    true = code:delete(Name).
+
 fun_and_var_binding_test() ->
     Name = alpaca_fun_and_var_binding,
     FN = atom_to_list(Name) ++ ".beam",

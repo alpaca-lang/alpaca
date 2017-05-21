@@ -21,7 +21,10 @@ L   = [a-z]
 U   = [A-Z]
 SYM = {L}[a-zA-Z0-9_]*
 O  = [\.\*<>\|\$~\^=\?\+@%/]
-OP = {O}{O}*
+OL = [\.\*>\|\$~\^=\?\+@%/]
+OR = [<]
+OPR = {OR}{O}*
+OPL = {OL}{O}*
 ATOM = :[a-zA-Z0-9_\*]*
 TYPE = {U}[a-zA-Z0-9_]*
 WS  = [\000-\s]
@@ -137,8 +140,8 @@ _        : {token, {'_', TokenLine}}.
 
 %% Non-predefined infixes
 
-{OP} : {token, {infixable, TokenLine, TokenChars}}.
-
+{OPL} : {token, {infixl, TokenLine, TokenChars}}.
+{OPR} : {token, {infixr, TokenLine, TokenChars}}.
 
 %% Whitespace ignore
 {WS} : skip_token.

@@ -23,7 +23,7 @@
         , compiler_info/0
         , hash_source/1
         , retrieve_hash/1
-        , list_dependencies/1
+        , list_dependencies/1 
         ]).
 
 %% Can be safely ignored, it is meant to be called by external OTP-apps and part
