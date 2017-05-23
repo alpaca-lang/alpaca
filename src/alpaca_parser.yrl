@@ -36,7 +36,7 @@ record_type_member record_type_members record_type
 
 term terms
 unit tuple tuple_list
-defn definfix binding
+defn definfix binding all_infix
 module_def 
 
 import_export_fun
@@ -73,7 +73,7 @@ type_declare type_constructor type_var
 test
 
 boolean int float atom string chars '_'
-symbol infixable '.'
+symbol infixl infixr '.'
 assign int_math float_math minus plus
 '[' ']' cons_infix ':'
 bin_open bin_close
@@ -100,7 +100,8 @@ Rootsymbol expr.
 
 Unary 500 minus.
 Unary 500 plus.
-Left 200 infixable.
+Right 0 infixr.
+Left 100 infixl.
 
 
 %% Comments are stripped in the AST assembly right now but I want them
@@ -585,13 +586,17 @@ spawn_pid -> spawn symbol terms:
 
 defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
 
-definfix -> let '(' infixable ')' terms assign simple_expr : 
-  {infixable, L, C} = '$3',
+definfix -> let '(' infixl ')' terms assign simple_expr : 
+  {infixl, L, C} = '$3',
   %% This conversion may seem excessive but note that the purpose of the Alpaca
   %% native AST is to let Alpaca code work with the AST.  This means that symbol
   %% names do need to be legitimate Alpaca strings in UTF-8, not Erlang strings.
-  BinC = unicode:characters_to_binary(C, utf8),
-  InfixName = <<"("/utf8, BinC/binary, ")"/utf8>>,
+  InfixName = infix_name(C),
+  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+
+definfix -> let '(' infixr ')' terms assign simple_expr : 
+  {infixr, L, C} = '$3',
+  InfixName = infix_name(C),
   make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
@@ -663,10 +668,13 @@ import_fun_items -> import_fun_item : ['$1'].
 import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
 
 import_export_fun -> symbol : unwrap('$1').
-import_export_fun -> '(' infixable ')' :
-  {infixable, L, C} = '$2',
-  BinC = unicode:characters_to_binary(C, utf8),
-  alpaca_ast:symbol(L, <<"("/utf8, BinC/binary, ")"/utf8>>).
+
+all_infix -> infixl : '$1'.
+all_infix -> infixr : '$1'.
+
+import_export_fun -> '(' all_infix ')' :
+  {_, L, C} = '$2',
+  alpaca_ast:symbol(L, infix_name(C)).
 
 fun_and_arity -> import_export_fun '/' int :
   Name = symbol_name('$1'),
@@ -710,7 +718,9 @@ simple_expr -> receive_block : '$1'.
 simple_expr -> ffi_call : '$1'.
 simple_expr -> guard : '$1'.
 simple_expr -> spawn_pid : '$1'.
-simple_expr -> simple_expr infixable simple_expr : make_infix('$2', '$1', '$3').
+simple_expr -> simple_expr infixl simple_expr : make_infix('$2', '$1', '$3').
+simple_expr -> simple_expr infixr simple_expr : make_infix('$2', '$1', '$3').
+
 
 expr -> comment : '$1'.
 expr -> simple_expr : '$1'.
@@ -735,9 +745,10 @@ Erlang code.
 
 make_infix(Op, A, B) ->
     Name = case Op of
-      {infixable, L, C} ->
-                   BinC = unicode:characters_to_binary(C, utf8),
-                   alpaca_ast:symbol(L, <<"("/utf8, BinC/binary, ")"/utf8>>);
+      {infixl, L, C} ->
+                   alpaca_ast:symbol(L, infix_name(C));
+      {infixr, L, C} ->
+                   alpaca_ast:symbol(L, infix_name(C));                
       {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
@@ -895,6 +906,10 @@ line({symbol, S}) ->
     alpaca_ast:line(S);
 line(X) ->
     alpaca_ast:line(X).
+
+infix_name(C) ->
+  BinC = unicode:characters_to_binary(C, utf8),
+  <<"("/utf8, BinC/binary, ")"/utf8>>.
 
 %% Yecc requires tuples to start with a token name it can recognize so we can't
 %% actually product and use Alpaca AST nodes straight from Leex.
