@@ -1,0 +1,8 @@
+module use_default
+
+export main/1
+
+-- `identity`, `always` and `box` are defined in the `default` module
+
+let main () = let same = identity (Box 42) in
+              always same (Box 1)

@@ -83,7 +83,9 @@ compile_phase_1(Sources, Opts) ->
                             filename:extension(FN) == ".beam"
                         end, Sources),
 
-    case alpaca_ast_gen:make_modules(AlpacaSrcs, BeamFiles) of
+    DefaultImports = proplists:get_value(default_imports, Opts, {[], []}),
+
+    case alpaca_ast_gen:make_modules(AlpacaSrcs, BeamFiles, DefaultImports) of
         {error, _}=Err -> Err;
         {ok, Mods} ->
             compile_phase_2(Mods, Opts)
@@ -614,6 +616,25 @@ hash_annotation_test() ->
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
     ?assertEqual(Hash, hash_source(R)),
+    code:delete(N).
+
+default_imports_test() ->
+    Files = ["test_files/default.alp", "test_files/use_default.alp"],
+
+    DefaultImports = {
+        [{default, <<"identity">>}, {default, <<"always">>, 2}],
+        [{default, <<"box">>}]},
+
+    {ok, [Default, Compiled]} = alpaca:compile(
+        {files, Files},
+        [{default_imports, DefaultImports}]),
+
+    {compiled_module, N, FN, Bin} = Compiled,
+    {compiled_module, N2, FN2, Bin2} = Default,
+    {module, N} = code:load_binary(N, FN, Bin),
+    code:load_binary(N2, FN2, Bin2),
+
+    ?assertEqual({'Box', 42}, N:main({})),
     code:delete(N).
 
 -endif.
