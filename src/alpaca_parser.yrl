@@ -751,7 +751,7 @@ make_infix(Op, A, B) ->
       {infixr, L, C} ->
                    alpaca_ast:symbol(L, infix_name(C));
 
-      {int_math, L, "%"} -> {bif, 'rem', L, erlang, 'rem'};
+      {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
       {int_math, L, OpString} ->
@@ -761,13 +761,13 @@ make_infix(Op, A, B) ->
                    [OpChar|_] = OpString,
                    OpAtom = list_to_atom([OpChar]),
                    {bif, list_to_atom(OpString), L, erlang, OpAtom};
-      {'/', L} ->  {bif, 'div', L, erlang, 'div'};
+      {'/', L} ->  {bif, '/', L, erlang, 'div'};
       {eq, L} ->   {bif, '=:=', L, erlang, '=:='};
       {gt, L} ->   {bif, '>', L, erlang, '>'};
       {lt, L} ->   {bif, '<', L, erlang, '<'};
       {gte, L} ->  {bif, '>=', L, erlang, '>='};
       {lte, L} ->  {bif, '=<', L, erlang, '=<'};
-      {neq, L} ->  {bif, '/=', L, erlang, '/='}
+      {neq, L} ->  {bif, '!=', L, erlang, '/='}
     end,
     #alpaca_apply{type=undefined,
                   line=term_line(Name),
