@@ -58,10 +58,10 @@ prefix_modulename(Name) ->
     end.
 
 strip_bodies(#alpaca_module{functions=Funs}=Mod) ->
-    StrippedFuns = 
-        lists:map(fun(#alpaca_binding{bound_expr=F}=B) -> 
+    StrippedFuns =
+        lists:map(fun(#alpaca_binding{bound_expr=F}=B) ->
                       case F of
-                          #alpaca_fun{}=F -> 
+                          #alpaca_fun{}=F ->
                               B#alpaca_binding{
                                   bound_expr=F#alpaca_fun{versions=[]}};
                           _ -> B
@@ -792,6 +792,58 @@ module_with_internal_apply_test() ->
         "let eq x y = x == y",
     {ok, _, _Bin} = parse_and_gen(Code).
 
+bif_infix_test() ->
+    %% (+) -> Integer addition
+    ?assertEqual(4, run_expr("2 + 2")),
+
+    %% (-) -> Integer subtraction
+    ?assertEqual(7, run_expr("19 - 12")),
+
+    %% (/) -> Integer divison
+    ?assertEqual(8, run_expr("152 / 19")),
+
+    %% (*) -> Integer multiplication
+    ?assertEqual(12, run_expr("6 * 2")),
+
+    %% (%) -> Integer modulo
+    ?assertEqual(3, run_expr("7 % 4")),
+
+    %% (+.) -> Float adddition
+    ?assertEqual(4.0, run_expr("3.2 +. 0.8")),
+
+    %% (-.) -> Float subtraction
+    ?assertEqual(7.0, run_expr("11.0 -. 4.0")),
+
+    %% (*.) -> Float multiplication
+    ?assertEqual(7.0, run_expr("2.0 *. 3.5")),
+
+    %% (/.) -> Float division
+    ?assertEqual(4.75, run_expr("22.8 /. 4.8")),
+
+    %% (==) -> polymorphic equals
+    ?assertEqual(true,  run_expr(":this == :this")),
+    ?assertEqual(false, run_expr(":this == :that")),
+
+    %% (!=) -> polymorphic not equals
+    ?assertEqual(false, run_expr(":this != :this")),
+    ?assertEqual(true,  run_expr(":this != :that")),
+
+    %% (>) -> greater than
+    ?assertEqual(true, run_expr("10 > 5")),
+    ?assertEqual(false, run_expr("2.0 > 2.5")),
+
+    %% (<) -> less than
+    ?assertEqual(false, run_expr("10 < 5")),
+    ?assertEqual(true, run_expr("2.0 < 2.5")),
+
+     %% (>=) -> greater than or equal to
+    ?assertEqual(true, run_expr("10 >= 10")),
+    ?assertEqual(false, run_expr("8 >= 9")),
+
+    %% (<=) -> less than or equal to
+    ?assertEqual(true, run_expr("5 =< 5")),
+    ?assertEqual(false, run_expr("5.1 =< 5.0")).
+
 infix_fun_test() ->
     Name = alpaca_infix_fun,
     FN = atom_to_list(Name) ++ ".beam",
@@ -1036,5 +1088,15 @@ unit_as_value_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
     ?assertEqual({}, Mod:return_unit({})),
     true = code:delete(Mod).
+
+run_expr(Expr) ->
+    Name = alpaca_expr_test,
+    Src = "module expr_test;; export main;; let main () = " ++ Expr,
+    {ok, FN, Bin} = parse_and_gen(Src),
+    {module, Name} = code:load_binary(Name, FN, Bin),
+    Res = Name:main({}),
+    code:purge(Name),
+    true = code:delete(Name),
+    Res.
 
 -endif.

@@ -29,8 +29,8 @@
 -define(t_int_add, {'+', ?t_int_math}).
 -define(t_int_sub, {'-', ?t_int_math}).
 -define(t_int_mul, {'*', ?t_int_math}).
--define(t_int_div, {'/', ?t_int_math}).
--define(t_int_rem, {'%', ?t_int_math}).
+-define(t_int_div, {'div', ?t_int_math}).
+-define(t_int_rem, {'rem', ?t_int_math}).
 
 -define(t_float_math, {t_arrow, [t_float, t_float], t_float}).
 
@@ -41,7 +41,7 @@
 
 -define(compare, {t_arrow, [{unbound, eq_a, 1}, {unbound, eq_a, 1}], t_bool}).
 -define(t_equality, {'=:=', ?compare}).
--define(t_neq, {'!=', ?compare}).
+-define(t_neq, {'/=', ?compare}).
 -define(t_gt, {'>', ?compare}).
 -define(t_lt, {'<', ?compare}).
 -define(t_gte, {'>=', ?compare}).

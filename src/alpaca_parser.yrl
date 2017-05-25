@@ -37,7 +37,7 @@ record_type_member record_type_members record_type
 term terms
 unit tuple tuple_list
 defn definfix binding all_infix
-module_def 
+module_def
 
 import_export_fun
 
@@ -173,7 +173,7 @@ record_type_member -> symbol ':' type_expr :
 record_type_members -> record_type_member : ['$1'].
 record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'].
 
-record_type -> open_brace record_type_members close_brace : 
+record_type -> open_brace record_type_members close_brace :
   #t_record{members='$2'}.
 
 module_qualified_type_name -> symbol '.' symbol:
@@ -262,7 +262,7 @@ type_tuple -> '(' comma_separated_type_list ')':
 %%%     type U x = B | C x
 %%%     type V x y = D x | E (x, (int, x))
 %%%
-type_member -> type_constructor : 
+type_member -> type_constructor :
   {type_constructor, L, N} = '$1',
   #alpaca_constructor{name=#type_constructor{line=L, name=N}, arg=none}.
 type_member -> type_constructor type_expr :
@@ -317,6 +317,7 @@ op -> int_math : '$1'.
 op -> float_math : '$1'.
 op -> minus : '$1'.
 op -> plus : '$1'.
+op -> '/' : '$1'.
 
 const -> boolean : '$1'.
 
@@ -586,7 +587,7 @@ spawn_pid -> spawn symbol terms:
 
 defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
 
-definfix -> let '(' infixl ')' terms assign simple_expr : 
+definfix -> let '(' infixl ')' terms assign simple_expr :
   {infixl, L, C} = '$3',
   %% This conversion may seem excessive but note that the purpose of the Alpaca
   %% native AST is to let Alpaca code work with the AST.  This means that symbol
@@ -594,14 +595,14 @@ definfix -> let '(' infixl ')' terms assign simple_expr :
   InfixName = infix_name(C),
   make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
-definfix -> let '(' infixr ')' terms assign simple_expr : 
+definfix -> let '(' infixr ')' terms assign simple_expr :
   {infixr, L, C} = '$3',
   InfixName = infix_name(C),
   make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
-binding -> let terms assign simple_expr in simple_expr : 
+binding -> let terms assign simple_expr in simple_expr :
     make_binding(make_define('$2', '$4', 'let'), '$6').
 
 
@@ -619,9 +620,9 @@ export_def -> export export_list : {export, '$2'}.
 %% Imported functions come out of the parser in the following tuple format:
 %%   {FunctionName, {ModuleName, Arity}}
 %% where names are strings (lists) and Arity is integer().
-%% 
+%%
 %% Name comes first because we will resolve missing local functions in the order
-%% that they were imported.  We can import individual functions from another 
+%% that they were imported.  We can import individual functions from another
 %% module with `import foo.bar` for all arities of `bar` or `import foo.bar/1`
 %% for only `bar1`.  Subsets of functions from the same module can be imported
 %% in a list, e.g. `import foo.[bar, baz/2]` to import all arities of `bar` and
@@ -640,9 +641,9 @@ fun_list_items -> import_export_fun ',' fun_list_items :
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 
 %% Here we associate the module name with each of the functions being imported.
-%% We do this so we can deal with a flat proplist later on when resolving 
+%% We do this so we can deal with a flat proplist later on when resolving
 %% functions that aren't defined in the module importing these functions.
-fun_subset -> symbol '.' '[' fun_list_items ']' : 
+fun_subset -> symbol '.' '[' fun_list_items ']' :
   Mod = binary_to_atom(symbol_name('$1'), utf8),
   F = fun({Name, Arity}) -> {Name, {Mod, Arity}};
          (Name)          -> {Name, Mod}
@@ -660,7 +661,7 @@ import_fun_item -> symbol '.' import_export_fun :
 import_fun_item -> symbol '.' import_export_fun '/' int:
   Mod = symbol_name('$1'),
   Fun = symbol_name('$3'),
-  {int, _, Arity} = '$5',  
+  {int, _, Arity} = '$5',
   {Fun, {binary_to_atom(Mod, utf8), Arity}}.
 import_fun_item -> fun_subset : '$1'.
 
@@ -748,8 +749,9 @@ make_infix(Op, A, B) ->
       {infixl, L, C} ->
                    alpaca_ast:symbol(L, infix_name(C));
       {infixr, L, C} ->
-                   alpaca_ast:symbol(L, infix_name(C));                
-      {int_math, L, '%'} -> {bif, '%', L, erlang, 'rem'};
+                   alpaca_ast:symbol(L, infix_name(C));
+
+      {int_math, L, "%"} -> {bif, 'rem', L, erlang, 'rem'};
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
       {int_math, L, OpString} ->
@@ -759,6 +761,7 @@ make_infix(Op, A, B) ->
                    [OpChar|_] = OpString,
                    OpAtom = list_to_atom([OpChar]),
                    {bif, list_to_atom(OpString), L, erlang, OpAtom};
+      {'/', L} ->  {bif, 'div', L, erlang, 'div'};
       {eq, L} ->   {bif, '=:=', L, erlang, '=:='};
       {gt, L} ->   {bif, '>', L, erlang, '>'};
       {lt, L} ->   {bif, '<', L, erlang, '<'};
@@ -778,7 +781,7 @@ make_define([{'Symbol', _}=Name|A], Expr, Level) ->
             %% If this is a zero-arg function, at the toplevel, it's a value
             %% and therefore its body must be restricted to literals only
             case {Level, is_literal(Expr)} of
-                {top, false} -> 
+                {top, false} ->
                     {error, non_literal_value, Name, Expr};
                 _ ->
                     #alpaca_binding{
@@ -792,7 +795,7 @@ make_define([{'Symbol', _}=Name|A], Expr, Level) ->
                name=Name,
                bound_expr=#alpaca_fun{
                              line=L,
-                             arity=length(Args), 
+                             arity=length(Args),
                              versions=[#alpaca_fun_version{
                                           line=L,
                                           args=Args,
@@ -827,9 +830,9 @@ is_literal({'Float', _}) -> true;
 is_literal(#alpaca_fun{}) -> true;
 is_literal({alpaca_record, _, _, _, Members}) ->
     MemberExprs = lists:map(
-        fun({alpaca_record_member, _, _, _, M}) -> 
-            M 
-        end, Members),  
+        fun({alpaca_record_member, _, _, _, M}) ->
+            M
+        end, Members),
     all_literals(MemberExprs);
 is_literal({nil, _}) -> true;
 is_literal({alpaca_cons, _, _, Value, Sub}) ->
