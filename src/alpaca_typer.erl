@@ -2287,7 +2287,7 @@ type_map(Env, Lvl, #alpaca_map{pairs=Pairs}) ->
     Env2 = update_counter(NV, Env),
     case unify_map_pairs(Env2, Lvl, Pairs, MapType) of
         {error, _}=Err -> Err;
-        {Type, #env{next_var=NV}} -> {Type, NV}
+        {Type, #env{next_var=NV2}} -> {Type, NV2}
     end.
 unify_map_pairs(Env, _, [], T) ->
     {new_cell(T), Env};
