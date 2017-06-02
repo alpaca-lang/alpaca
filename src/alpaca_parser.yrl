@@ -888,7 +888,7 @@ make_vars_for_concrete_types(Vars, Line) ->
     F = fun({type_var, _, _}=V, {Vs, VarNum}) ->
                 {[V|Vs], VarNum};
            (Expr, {Vs, VarNum}) ->
-                VN = ":SynthTypeVar_" ++ integer_to_list(VarNum),
+                VN = {synthetic, ":SynthTypeVar_" ++ integer_to_list(VarNum)},
                 {[{{type_var, Line, VN}, Expr}|Vs], VarNum + 1}
         end,
     {Vs, _} = lists:foldl(F, {[], 0}, Vars),

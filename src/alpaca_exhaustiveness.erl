@@ -164,7 +164,21 @@ wildcard_if_seen(Name, Mod, AllMods, SeenADTs0, Vars) ->
         false ->
             {ok, T} = lookup_type(Name, Mod, AllMods),
             SeenADTs = sets:add_element(Name, SeenADTs0),
-            covering_patterns(T, Mod, AllMods, SeenADTs, Vars)
+            %% User-defined ADTs may bind concrete types or new variable names
+            %% to existing ADT variables, causing name lookup failures.  Here
+            %% we replace any user-supplied or synthetic names with the original
+            %% type definition's variable names so that lookup in
+            %% covering_patterns/5 does not fail.
+            Vars2 = case T of
+                        #alpaca_type{vars=Vs} ->
+                            F = fun({{type_var, _, _}, ActualV}) -> ActualV;
+                                   ({{_, Bound}, {_, _, ActualV}}) -> {ActualV, Bound}
+                                end,
+                            lists:map(F, lists:zip(Vars, Vs));
+                        _ ->
+                            Vars
+                    end,
+            covering_patterns(T, Mod, AllMods, SeenADTs, Vars2)
     end.
 
 lookup_type(Name, Mod, AllMods) ->

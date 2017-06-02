@@ -1,0 +1,46 @@
+module record_types
+
+export make_export, make_exports
+export make_t
+
+type opt 'a = Some 'a | None
+
+type module_ast = Module {line: int, name: atom}
+                | Exports list {line: int, name: string, arity: opt int}
+
+let make_export l n = {line=l, name=n, arity=None}
+let make_export l n a = {line=l, name=n, arity=Some a}
+
+let make_exports es = Exports es
+
+type t = T map string (opt int)
+
+let make_t x = T #{"x" => x}
+
+type tt 't = TT map string (opt 't)
+
+let make_tt x = TT #{"x" => x}
+
+type u = U opt int
+
+let make_u x = U Some x
+
+let int_u U Some u = u
+ 
+type v = V list (opt int)
+
+let make_v vs = V vs
+
+type int_opt = opt int
+
+type x = X int_opt
+
+let make_x x = X Some x
+
+type z = Z (int, opt int)
+
+let make_z z = Z (z, Some z)
+
+type r = R list {x: int, y: opt int}
+
+let make_r r = R r
