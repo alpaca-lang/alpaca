@@ -637,4 +637,15 @@ default_imports_test() ->
     ?assertEqual({'Box', 42}, N:main({})),
     code:delete(N).
 
+built_in_adt_exhaustiveness_test() ->
+    Files = ["test_files/exhaustiveness_cases.alp"],
+    [M1] = compile_and_load(Files, [test]),
+    ?assertMatch(
+       #{'__struct__' := record,
+         arity := 'None',
+         line := 1,
+         name := <<"make_export">>},
+       M1:make_export(1, <<"make_export">>)),
+    code:delete(M1).
+
 -endif.
