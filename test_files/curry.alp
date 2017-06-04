@@ -1,6 +1,7 @@
 module curry
 
 export foo/1
+export local
 export filter
 export (|>)
 
@@ -35,6 +36,10 @@ let eq a b =
 let filtered_list () =
   [1, 2, 3]
   |> filter (eq 2)
+
+let local () =
+  let f x y = x + y in
+  f 10
 
 let foo () =
   let many_args_curry = many_args 1 in

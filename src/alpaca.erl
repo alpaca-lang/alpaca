@@ -446,6 +446,8 @@ function_in_adt_test() ->
 curry_test() ->
     [M] = compile_and_load(["test_files/curry.alp"], []),
     ?assertEqual({16,26,[2]}, M:foo({})),
+    LocalFun = M:local({}),
+    ?assertEqual(100, LocalFun(90)),
     code:delete(M).
 
 curry_import_export_test() ->
