@@ -1908,6 +1908,27 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     %% to find a potential function that can be unambigiously
     %% curried, and then types against that by manipulating the
     %% argument list and return type
+    LocalCurryFun =
+        fun() ->
+            %% If we got an arrow type, if we couldn't find it in the
+            %% top level, and it still didn't unify, it might be
+            %% a local binding we can still curry.
+            case typ_of(Env, Lvl, Expr) of
+                {error, {bad_variable_name, _, _, _}} = E -> E;
+                {error, _} = E -> E;
+                {{t_arrow, TArgs, TRet}, NextVar} ->
+                    case length(Args) >= length(TArgs) of
+                        true -> 
+                            {'Symbol', #{name := N, line := Ln}} = Expr,
+                            Mod = Env#env.current_module#alpaca_module.name,
+                            {error, {not_found, Mod, N, length(Args)}};
+                        false ->
+                            {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
+                            CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
+                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)               
+                    end
+            end
+        end,
     CurryFun =
         fun(OriginalErr) ->
             %% Attempt to find a curryable version
@@ -1928,7 +1949,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             end,
             CurryFuns = get_curryable_funs(Mod, FN, length(Args)+1),
             case CurryFuns of
-                [] -> OriginalErr;
+                [] -> LocalCurryFun();
                 [Item] -> case typ_of(Env2, Lvl, Item) of
                                 {{t_arrow, TArgs, TRet}, NextVar} ->
                                     {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
@@ -4760,19 +4781,7 @@ different_arity_test_() ->
               ?assertMatch(
                  {error, {not_found, _, <<"add">>, 2}},
                  module_typ_and_parse(Code))
-      end
-    , fun() ->
-              Code =
-                  "module arity_test\n\n"
-                  "export add/1\n\n"
-                  "let add x = "
-                  "let f a b = a + b in "
-                  "f x",
-              ?assertMatch(
-                 {error, {not_found, _, SyntheticName, 1}},
-                 module_typ_and_parse(Code))
-      end
-    ].
+      end].
 
 types_in_types_test_() ->
     AstCode =
@@ -5003,6 +5012,24 @@ curry_applications_test_() ->
             module_typ_and_parse(Code))
     end
     ].
+
+local_curry_test() ->
+    Code =
+    "module local_curry\n"
+    "let main () = \n"
+    "  let f x y = x * y in\n"
+    "  f 10",
+    ?assertMatch(
+        {ok, #alpaca_module{
+                functions=[
+                    #alpaca_binding{
+                        type={t_arrow,
+                                [t_unit], {t_arrow, [t_int], t_int}}
+                    }
+                ]
+            }
+        },
+        module_typ_and_parse(Code)).
 
 %% For issue #113, we want to be able to define a polymorphic type and use it
 %% as a member in another type but with a concrete type rather than variables,
