@@ -2777,25 +2777,25 @@ rename_wildcards({'_', L}, N) ->
 rename_wildcards(O, N) ->
     {O, N}.
 
--dialyzer({nowarn_function, dump_env/1}).
-dump_env(#env{next_var=V, bindings=Bs}) ->
-    io:format("Next var number is ~w~n", [V]),
-    [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])
-     || {N, T} <- Bs].
+%% -dialyzer({nowarn_function, dump_env/1}).
+%% dump_env(#env{next_var=V, bindings=Bs}) ->
+%%     io:format("Next var number is ~w~n", [V]),
+%%     [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])
+%%      || {N, T} <- Bs].
 
--dialyzer({nowarn_function, dump_term/1}).
-dump_term({t_arrow, Args, Ret}) ->
-    io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
-dump_term({t_clause, P, G, R}) ->
-    io_lib:format(" | ~s ~s -> ~s", [dump_term(X)||X<-[P, G, R]]);
-dump_term({t_tuple, Ms}) ->
-    io_lib:format("(~s) ", [[dump_term(unwrap(M)) ++ " " || M <- Ms]]);
-dump_term(P) when is_pid(P) ->
-    io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
-dump_term({link, P}) when is_pid(P) ->
-    io_lib:format("{link ~w ~s}", [P, dump_term(P)]);
-dump_term(T) ->
-    io_lib:format("~w", [T]).
+%% -dialyzer({nowarn_function, dump_term/1}).
+%% dump_term({t_arrow, Args, Ret}) ->
+%%     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
+%% dump_term({t_clause, P, G, R}) ->
+%%     io_lib:format(" | ~s ~s -> ~s", [dump_term(X)||X<-[P, G, R]]);
+%% dump_term({t_tuple, Ms}) ->
+%%     io_lib:format("(~s) ", [[dump_term(unwrap(M)) ++ " " || M <- Ms]]);
+%% dump_term(P) when is_pid(P) ->
+%%     io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
+%% dump_term({link, P}) when is_pid(P) ->
+%%     io_lib:format("{link ~w ~s}", [P, dump_term(P)]);
+%% dump_term(T) ->
+%%     io_lib:format("~w", [T]).
 
 
 %%% Tests
