@@ -74,7 +74,7 @@ test
 
 boolean int float atom string chars '_'
 symbol infixl infixr '.'
-assign int_math float_math minus plus
+assign int_math float_math minus plus logic
 '[' ']' cons_infix ':'
 bin_open bin_close
 open_brace close_brace
@@ -318,6 +318,7 @@ op -> float_math : '$1'.
 op -> minus : '$1'.
 op -> plus : '$1'.
 op -> '/' : '$1'.
+op -> logic : '$1'.
 
 const -> boolean : '$1'.
 
@@ -752,6 +753,10 @@ make_infix(Op, A, B) ->
                    alpaca_ast:symbol(L, infix_name(C));
 
       {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
+
+      {logic, L, "||"} -> {bif, '||', L, erlang, 'or'};
+      {logic, L, "&&"} -> {bif, '&&', L, erlang, 'and'};
+
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
       {int_math, L, OpString} ->

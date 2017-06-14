@@ -15,7 +15,9 @@
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
 
--define(all_bifs, [?t_int_add, ?t_int_sub,
+-define(all_bifs, [?t_logic_and, ?t_logic_or,
+
+                   ?t_int_add, ?t_int_sub,
                    ?t_int_mul, ?t_int_div, ?t_int_rem,
                    ?t_float_add, ?t_float_sub,
                    ?t_float_mul, ?t_float_div,
@@ -23,6 +25,12 @@
                    ?t_equality, ?t_neq,
                    ?t_gt, ?t_lt, ?t_gte, ?t_lte
                   ]).
+
+
+-define(t_logic,     {t_arrow, [t_bool, t_bool], t_bool}).
+
+-define(t_logic_and, {'&&', ?t_logic}).
+-define(t_logic_or,  {'||', ?t_logic}).
 
 -define(t_int_math, {t_arrow, [t_int, t_int], t_int}).
 
