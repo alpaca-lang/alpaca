@@ -207,9 +207,9 @@ hl_fn("") ->
     end;
 hl_fn(O) ->
     P = re:replace(O, "[.^$*+?()[{\\\|\s#]", "\\\\&", [global | ?RE_OPTS]),
-    R = list_to_binary(cf:format("~!r~ts", [O])),
+    R = red(O),
     fun(L) ->
-            re:replace(L, ["(.*)", P, "(.*?)$"], ["\\1", R, "\\2"], [?RE_OPTS])
+            re:replace(L, ["(.*)", P, "(.*?)$"], ["\\1", R, "\\2"], ?RE_OPTS)
     end.
 
 -ifdef(TEST).
@@ -259,6 +259,39 @@ en_us_fallback_test() ->
     Msg = test_fmt(Error),
     Expected = <<"/tmp/file.alp:10\n"
                  "  Syntax error before \"blah\".\n">>,
+    ?assertEqual(Expected, Msg).
+
+syntax_error_hl_test() ->
+    File = "test/error.alp",
+    Line = 11,
+    ParseError = {syntax_error, "="},
+    Error = {error, {parse_error, File, Line, ParseError}},
+    Msg = test_fmt(Error),
+    Expected = <<"test/error.alp:11\n"
+                 "  Syntax error before \"=\".\n\n"
+                 "     9: let format ast_node = format_ast 0 ast_node\n"
+                 "    10: \n"
+                 "    11: let max_len = = 80\n"
+                 "    12: \n"
+                 "    13: let format_ast depth Symbol {name=name} =\n\n">>,
+    ?assertEqual(Expected, Msg).
+
+syntax_error_hl_c_test() ->
+    File = "test/error.alp",
+    Line = 11,
+    ParseError = {syntax_error, "="},
+    Error = {error, {parse_error, File, Line, ParseError}},
+    Msg = test_fmt_c(Error),
+    Expected = <<"\e[4mtest/\e[0;36m\e[4merror\e[0m\e[4m.alp\e[0m:"
+                 "\e[0;36m11\e[0m\e[0m\n"
+                 "  Syntax error before \"\e[0;31m=\e[0m\".\n\n"
+                 "  \e[0;36m   9\e[0m: let format ast_node = format_ast "
+                 "0 ast_node\n"
+                 "\e[0m  \e[0;36m  10\e[0m: \n"
+                 "\e[0m  \e[0;31m  11\e[0m: let max_len = \e[0;31m=\e[0m 80\n"
+                 "\e[0m  \e[0;36m  12\e[0m: \n"
+                 "\e[0m  \e[0;36m  13\e[0m: let format_ast depth Symbol "
+                 "{name=name} =\n\e[0m\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
 en_us_syntax_color_test() ->
