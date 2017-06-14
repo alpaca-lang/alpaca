@@ -71,6 +71,7 @@ receive     : {token, {'receive', TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 test        : {token, {'test', TokenLine}}.
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
+and|or     : {token, {logic, TokenLine, TokenChars}}.
 
 true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 
@@ -133,7 +134,6 @@ c"(\\"*|\\.|[^"\\])*" :
 
 
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
-&&|\|\|    : {token, {logic, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->       : {token, {'->', TokenLine}}.
 \x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow

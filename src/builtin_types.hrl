@@ -29,8 +29,8 @@
 
 -define(t_logic,     {t_arrow, [t_bool, t_bool], t_bool}).
 
--define(t_logic_and, {'&&', ?t_logic}).
--define(t_logic_or,  {'||', ?t_logic}).
+-define(t_logic_and, {'and', ?t_logic}).
+-define(t_logic_or,  {'or', ?t_logic}).
 
 -define(t_int_math, {t_arrow, [t_int, t_int], t_int}).
 
