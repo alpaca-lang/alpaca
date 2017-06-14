@@ -5,7 +5,7 @@
 %%%
 %%%     http://www.apache.org/licenses/LICENSE-2.0
 %%%
-                                                % Unless required by applicable law or agreed to in writing, software
+%%% Unless required by applicable law or agreed to in writing, software
 %%% distributed under the License is distributed on an "AS IS" BASIS,
 %%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %%% See the License for the specific language governing permissions and
@@ -40,16 +40,16 @@ fmt({error, {parse_error, F, Line, E}}, Locale) ->
     Module = filename:rootname(filename:basename(File)),
     FileLine = case File of
                    <<"<no file>">> ->
-                       cf("~!_c~s~!!:~!c~p~!!", [File, Line]);
+                       cf("~!_c~ts~!!:~!c~p~!!", [File, Line]);
                    _ ->
-                       cf("~!__~s/~!_c~s~!!~!__.alp~!!:~!c~p~!!",
+                       cf("~!__~ts/~!_c~ts~!!~!__.alp~!!:~!c~p~!!",
                           [SourceDir, Module, Line])
                end,
     case get_context(SourceDir, Module, Line, HlFn) of
         "" ->
-            cf("~s~n~s~n", [FileLine, MsgI]);
+            cf("~ts~n~ts~n", [FileLine, MsgI]);
         Ctx ->
-            cf("~s~n~s~n~n~s~n", [FileLine, MsgI, Ctx])
+            cf("~ts~n~ts~n~n~ts~n", [FileLine, MsgI, Ctx])
     end;
 
 fmt({error, Err}, Locale) ->
@@ -113,7 +113,8 @@ fmt_parse_error({wrong_type_arity, t_pid, A}, Locale) ->
 fmt_parse_error({wrong_type_arity, t_string, _A}, Locale) ->
     simple_type_arity_error("string", Locale);
 fmt_parse_error(Unknown, Locale) ->
-    fmt_unknown_error(Unknown, Locale).
+    E = fmt_unknown_error(Unknown, Locale),
+    <<"(╯°□°）╯︵ ┻━┻ "/utf8, E/binary>>.
 
 simple_type_arity_error(LiteralType, Locale) ->
     t(__(<<"type_parameter_given_to_primitive_builtin_type %(type)">>), Locale,
@@ -148,7 +149,7 @@ replace(TranslatedStr, Replacements) ->
 
 
 get_context(SourceDir, Module, Target, Fn) ->
-    case file:open(io_lib:format("~s/~s.alp", [SourceDir, Module]),
+    case file:open(io_lib:format("~ts/~ts.alp", [SourceDir, Module]),
                    [read, binary]) of
         {ok, Device} ->
             read_lines(Device, 1, Target, Fn, []);
@@ -178,24 +179,25 @@ read_lines(Device, Line, Target, Fn, Acc) ->
         Txt ->
             L1 = case Line of
                      Target ->
-                         cf("  ~!r~4b~!!: ~s", [Line, Fn(Txt)]);
+                         cf("  ~!r~4b~!!: ~ts", [Line, Fn(Txt)]);
                      _ ->
-                         cf("  ~!c~4b~!!: ~s", [Line, Txt])
+                         cf("  ~!c~4b~!!: ~ts", [Line, Txt])
                  end,
             read_lines(Device, Line + 1, Target, Fn, [L1 | Acc])
     end.
 
 red(S) ->
-    cf("~!r~s", [S]).
+    cf("~!r~ts", [S]).
 
 green(S) ->
-    cf("~!g~s", [S]).
+    cf("~!g~ts", [S]).
 
 bold(S) ->
-    cf("~!^~s", [S]).
+    cf("~!^~ts", [S]).
 
 cf(Fmt, Args) ->
     unicode:characters_to_binary(cf:format(Fmt, Args), utf8).
+
 
 %% Helper function to generate a 'highlighter' to display syntax errors
 %% in line.
@@ -205,7 +207,7 @@ hl_fn("") ->
     end;
 hl_fn(O) ->
     P = re:replace(O, "[.^$*+?()[{\\\|\s#]", "\\\\&", [global | ?RE_OPTS]),
-    R = list_to_binary(cf:format("~!r~s", [O])),
+    R = list_to_binary(cf:format("~!r~ts", [O])),
     fun(L) ->
             re:replace(L, ["(.*)", P, "(.*?)$"], ["\\1", R, "\\2"], [?RE_OPTS])
     end.
@@ -232,8 +234,8 @@ fmt_unknown_parse_error_test() ->
     ParseError = unknown,
     Error = {error, {parse_error, File, Line, ParseError}},
     Msg = test_fmt(Error),
-    Expected = <<"/tmp/file.alp:10\n"
-                 "  unknown\n"
+    Expected = <<"/tmp/file.alp:10\n",
+                 "  (╯°□°）╯︵ ┻━┻ "/utf8, "unknown\n"
                  "  Sorry, we do not have a proper message for this error yet.\n"
                  "  Please consider filing an issue at "
                  "https://www.github.com/alpaca-lang/alpaca/issues.\n">>,
@@ -243,7 +245,7 @@ fmt_unknown_error_test() ->
     application:set_env(cf, colour_term, false),
     Error = {error, unknown},
     Msg = test_fmt(Error),
-    Expected = <<"unknown\n"
+    Expected = <<"(╯°□°）╯︵ ┻━┻ "/utf8, "unknown\n"
                  "Sorry, we do not have a proper message for this error yet.\n"
                  "Please consider filing an issue at "
                  "https://www.github.com/alpaca-lang/alpaca/issues.\n">>,
