@@ -1,4 +1,10 @@
-[{<<"epo_runtime">>,
+{"1.1.0",
+[{<<"cf">>,{pkg,<<"cf">>,<<"0.2.2">>},0},
+ {<<"epo_runtime">>,
   {git,"git://github.com/brigadier/epo_runtime.git",
        {ref,"a3e50e7cebb526f833757e867bbe914c1da7baa3"}},
-  0}].
+  0}]}.
+[
+{pkg_hash,[
+ {<<"cf">>, <<"7F2913FFF90ABCABD0F489896CFEB0B0674F6C8DF6C10B17A83175448029896C">>}]}
+].

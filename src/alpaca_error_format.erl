@@ -20,14 +20,38 @@
 
 -compile({parse_transform, epo_gettext}).
 
+%% number of lines to show before or after the errorrous line
+-define(CTX_AREA, 2).
+
 %% This function expects all strings passed in to it as part of error messages
 %% (e.g. function names) to be valid unicode strings.
 -spec fmt({error, term()}, Locale::string()) -> binary().
-fmt({error, {parse_error, F, L, E}}, Locale) ->
+fmt({error, {parse_error, F, Line, E}}, Locale) ->
     File = unicode:characters_to_binary(F, utf8),
-    Line = integer_to_binary(L),
-    Msg = fmt_parse_error(E, Locale),
-    <<File/binary, ":"/utf8, Line/binary, ": "/utf8, Msg/binary, "\n"/utf8>>;
+    {Msg, H} = case fmt_parse_error(E, Locale) of
+                   {MsgC, HC} ->
+                       {MsgC, HC};
+                   MsgC ->
+                       {MsgC, ""}
+               end,
+    SourceDir = filename:dirname(File),
+    Module = filename:rootname(filename:basename(File)),
+    FileLine = case File of
+                   <<"<no file>">> ->
+                       cf:format("~!_c~s~!!:~!c~p~!!", [File, Line]);
+                   _ ->
+                       cf:format("~!__~s/~!_c~s.alp~!!:~!c~p~!!",
+                                 [SourceDir, Module, Line])
+               end,
+    Err = case get_context(SourceDir, Module, Line, hl_fn(H)) of
+              "" ->
+                  cf:format("~s~n  ~s~n",
+                            [FileLine, Msg]);
+              Ctx ->
+                  cf:format("~s~n  ~s~n~n"
+                            "~s~n", [FileLine, Msg, Ctx])
+          end,
+    unicode:characters_to_binary(Err, utf8);
 fmt({error, Err}, Locale) ->
     Msg = fmt_parse_error(Err, Locale),
     <<Msg/binary, "\n"/utf8>>.
@@ -114,24 +138,85 @@ replace(TranslatedStr, Replacements) ->
     re:replace(Str, FromStr, To, [global, unicode, {return, binary}])
   end, TranslatedStr, Replacements).
 
+
+get_context(SourceDir, Module, Target, Fn) ->
+    case file:open(io_lib:format("~s/~s.alp", [SourceDir, Module]),
+                   [read, binary]) of
+        {ok, Device} ->
+            read_lines(Device, 1, Target, Fn, []);
+        _E ->
+            ""
+    end.
+
+read_lines(Device, Line, Target, Fn, Acc)
+  when Line < Target - ?CTX_AREA ->
+    case io:get_line(Device, "") of
+        eof ->
+            file:close(Device),
+            lists:reverse(Acc);
+        _Txt ->
+            read_lines(Device, Line + 1, Target, Fn, Acc)
+    end;
+read_lines(Device, Line, Target, _Fn, Acc)
+  when Line > Target + ?CTX_AREA ->
+    file:close(Device),
+    lists:reverse(Acc);
+
+read_lines(Device, Line, Target, Fn, Acc) ->
+    case io:get_line(Device, "") of
+        eof ->
+            file:close(Device),
+            lists:reverse(Acc);
+        Txt ->
+            L1 = case Line of
+                     Target ->
+                         cf:format("~!r~4b~!!: ~s", [Line, Fn(Txt)]);
+                      _ ->
+                         cf:format("~!c~4b~!!: ~s", [Line, Txt])
+                  end,
+            read_lines(Device, Line + 1, Target, Fn, [L1 | Acc])
+    end.
+
+
+
+%% Helper function to generate a 'highlighter' to display syntax errors
+%% in line.
+hl_fn("") ->
+    fun(X) ->
+            X
+    end;
+hl_fn(O) ->
+    P = re:replace(O, "[.^$*+?()[{\\\|\s#]", "\\\\&", [global]),
+    R = list_to_binary(cf:format("~!r~s", [O])),
+    fun(L) ->
+            re:replace(L, ["(.*)", P, "(.*?)$"], ["\\1", R, "\\2"])
+    end.
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+test_fmt(Error) ->
+    CF = application:get_env(cf, colour_term),
+    application:set_env(cf, colour_term, false),
+    R = fmt(Error, "en_US"),
+    application:set_env(cf, colour_term, CF),
+    R.
 fmt_unknown_parse_error_test() ->
   File = "/tmp/file.alp",
   Line = 10,
   ParseError = unknown,
   Error = {error, {parse_error, File, Line, ParseError}},
-  Msg = fmt(Error, "en_US"),
-  Expected = <<"/tmp/file.alp:10: unknown\n"
+  Msg = test_fmt(Error),
+  Expected = <<"/tmp/file.alp:10\n  unknown\n"
                "Sorry, we do not have a proper message for this error yet.\n"
                "Please consider filing an issue at "
                "https://www.github.com/alpaca-lang/alpaca/issues.\n">>,
   ?assertEqual(Expected, Msg).
 
 fmt_unknown_error_test() ->
+    application:set_env(cf, colour_term, false),
   Error = {error, unknown},
-  Msg = fmt(Error, "en_US"),
+  Msg = test_fmt(Error),
   Expected = <<"unknown\n"
                "Sorry, we do not have a proper message for this error yet.\n"
                "Please consider filing an issue at "
@@ -143,15 +228,15 @@ en_us_fallback_test() ->
   Line = 10,
   ParseError = {syntax_error, "blah"},
   Error = {error, {parse_error, File, Line, ParseError}},
-  Msg = fmt(Error, "sv_SE"),
-  Expected = <<"/tmp/file.alp:10: Syntax error before \"blah\".\n">>,
+  Msg = test_fmt(Error),
+  Expected = <<"/tmp/file.alp:10\n  Syntax error before \"blah\".\n">>,
   ?assertEqual(Expected, Msg).
 
 real_error_test() ->
   Source = "let add a b = a + b",
   Error = {error, _}  = alpaca:compile({text, Source}),
-  Msg = fmt(Error, "sv_SE"),
-  Expected = <<"<no file>:1: No module name defined.\n"
+  Msg = test_fmt(Error),
+  Expected = <<"<no file>:1\n  No module name defined.\n"
                "You may define it like this: \"module foo\".\n">>,
   ?assertEqual(Expected, Msg).
 
