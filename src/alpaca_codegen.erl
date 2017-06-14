@@ -844,17 +844,6 @@ bif_infix_test() ->
     ?assertEqual(true, run_expr("5 =< 5")),
     ?assertEqual(false, run_expr("5.1 =< 5.0")),
 
-    %% (or) -> logical not short circute
-    ?assertEqual(false, run_expr("false or false")),
-    ?assertEqual(true,  run_expr("true or false")),
-    ?assertEqual(true,  run_expr("true or true")),
-
-    %% (and) -> logical and not short circute
-    ?assertEqual(false, run_expr("false and false")),
-    ?assertEqual(false, run_expr("true and false")),
-    ?assertEqual(true,  run_expr("true and true")),
-
-
     %% (&&) -> logical and short circute
     ?assertEqual(false, run_expr("false && false")),
     ?assertEqual(false, run_expr("true && false")),

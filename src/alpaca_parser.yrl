@@ -784,9 +784,6 @@ make_infix(Op, A, B) ->
 
       {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
 
-      {logic, L, "or"} -> {bif, 'or', L, erlang, 'or'};
-      {logic, L, "and"} -> {bif, 'and', L, erlang, 'and'};
-
       {minus, L} -> {bif, '-', L, erlang, '-'};
       {plus, L} -> {bif, '+', L, erlang, '+'};
       {int_math, L, OpString} ->
