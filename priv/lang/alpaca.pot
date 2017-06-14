@@ -2,10 +2,10 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: alpaca\n"
-"POT-Creation-Date: 2017-03-20 06:41+0100\n"
+"POT-Creation-Date: 2017-06-14 16:46+0200\n"
 "Plural-Forms: nplurals=1; plural=1;\n"
 
-msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgid "builtin_type_arity_error %(type) %(num_expected) %(num_supplied)"
 msgstr ""
 
 msgid "duplicate_definition %(id)"
@@ -14,7 +14,7 @@ msgstr ""
 msgid "duplicate_type_definition %(id)"
 msgstr ""
 
-msgid "function_not_exported %(mod) %(name)"
+msgid "function_not_exported %(mod) %(fun)"
 msgstr ""
 
 msgid "incomplete_expression"

@@ -12,7 +12,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: Poedit 1.8.7.1\n"
 
-msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgid "builtin_type_arity_error %(type) %(num_expected) %(num_supplied)"
 msgstr ""
 "Wrong number of type parameters provided for builtin type \"%(type)\".\n"
 "Expected %(num_expected), but got %(num_supplied)."
@@ -23,7 +23,7 @@ msgstr "Duplicate definition of \"%(id)\"."
 msgid "duplicate_type_definition %(id)"
 msgstr "Type \"%(id)\" has already been defined."
 
-msgid "function_not_exported %(mod) %(name)"
+msgid "function_not_exported %(mod) %(fun)"
 msgstr "No function \"%(fun)\" exported from module \"%(mod)\"."
 
 msgid "incomplete_expression"

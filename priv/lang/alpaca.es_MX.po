@@ -12,7 +12,7 @@ msgstr ""
 "Last-Translator: Eric Bailey <eric@ericb.me>\n"
 "Language: es_MX\n"
 
-msgid "builtin_type_arity_error %(num_expected) %(num_supplied)"
+msgid "builtin_type_arity_error %(type) %(num_expected) %(num_supplied)"
 msgstr ""
 "Número incorrecto de parámetros de tipo proporcionados\n"
 "para el tipo incorporado \"%(type)\".\n"
@@ -24,7 +24,7 @@ msgstr "Definición duplicada de \"%(id)\"."
 msgid "duplicate_type_definition %(id)"
 msgstr "Tipo \"%(id)\" ya se ha definido."
 
-msgid "function_not_exported %(mod) %(name)"
+msgid "function_not_exported %(mod) %(fun)"
 msgstr "No hay ninguna función \"%(fun)\" que se exporte desde el módulo \"%(mod)\"."
 
 msgid "incomplete_expression"
