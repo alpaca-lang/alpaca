@@ -1,0 +1,20 @@
+module alpaca_format
+
+export format/1
+
+import_type alpaca_native_ast.ast
+
+import_type alpaca_native_ast.symbol
+
+let format ast_node = format_ast 0 ast_node
+
+let max_len = = 80
+
+let format_ast depth Symbol {name=name} =
+  let end_of_line = depth + (s_len name) in
+  (end_of_line, name)
+
+--format depth Apply (sym, _) =
+
+let s_len s = beam :string :len [s] with
+  l, is_integer l -> l
