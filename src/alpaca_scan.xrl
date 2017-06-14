@@ -132,10 +132,11 @@ c"(\\"*|\\.|[^"\\])*" :
 \+ : {token, {plus, TokenLine}}.
 
 
-
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->       : {token, {'->', TokenLine}}.
+&&       : {token, {'&&', TokenLine}}.
+\|\|       : {token, {'&&', TokenLine}}.
 \x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow
 _        : {token, {'_', TokenLine}}.
 

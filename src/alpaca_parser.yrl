@@ -74,12 +74,12 @@ test
 
 boolean int float atom string chars '_'
 symbol infixl infixr '.'
-assign int_math float_math minus plus logic
+assign int_math float_math minus plus logic logic_sc
 '[' ']' cons_infix ':'
 bin_open bin_close
 open_brace close_brace
 map_open map_arrow
-match with '|' '->'
+match with '|' '->' '&&' '||'
 
 raise_error
 
@@ -481,6 +481,36 @@ tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
 tuple -> '(' tuple_list ')' :
   #alpaca_tuple{arity=length('$2'), values='$2'}.
+
+infix -> term '&&' term :
+         L1 = term_line('$1'),
+         L2 = term_line('$3'),
+         FalseC = #alpaca_clause{
+                     pattern={boolean, L1, false},
+                     result={boolean, L1, false}, line=L1},
+         TrueC = #alpaca_clause{
+                    pattern={boolean, L2, true},
+                    result='$3', line=L2},
+         #alpaca_match{
+            match_expr='$1',
+            clauses=[TrueC, FalseC],
+            line=L1
+           }.
+
+infix -> term '||' term :
+         L1 = term_line('$1'),
+         L2 = term_line('$3'),
+         TrueC = #alpaca_clause{
+                     pattern={boolean, L1, true},
+                     result={boolean, L1, true}, line=L1},
+         FalseC = #alpaca_clause{
+                    pattern={boolean, L2, false},
+                    result='$3', line=L2},
+         #alpaca_match{
+            match_expr='$1',
+            clauses=[TrueC, FalseC],
+            line=L1
+           }.
 
 infix -> term op term : make_infix('$2', '$1', '$3').
 
