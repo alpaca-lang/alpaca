@@ -116,10 +116,10 @@ rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=undefined}=TopBinding) ->
     TopBinding#alpaca_binding{bound_expr=BE2};
 rewrite_lambdas(#alpaca_test{expression=Exp, line=L}=Test) ->
     {_, Exp2, Bindings} = rewrite_lambdas(Exp, 0, []),
-    F = fun({Name, Exp}, Chain) ->
+    F = fun({Name, ExpF}, Chain) ->
                 #alpaca_binding{name=Name,
                                 line=L,
-                                bound_expr=Exp,
+                                bound_expr=ExpF,
                                 body=Chain}
         end,
 
@@ -271,7 +271,7 @@ gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
 
     case gen_guards(Env, Gs) of
         [] ->     cerl:c_clause(Patt, BodyExp);
-        Guards -> cerl:c_clause(Patt, gen_guards(Env, Gs), BodyExp)
+        _Guards -> cerl:c_clause(Patt, gen_guards(Env, Gs), BodyExp)
     end.
 
 gen_tests(Env, Tests) ->
