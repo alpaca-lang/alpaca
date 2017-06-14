@@ -169,6 +169,11 @@ type_modules(Mods) ->
 
 -ifdef(TEST).
 
+
+pd(Module) ->
+    code:purge(Module),
+    code:delete(Module).
+
 basic_file_test() ->
     {ok, Res} = file("test_files/basic_compile_file.alp"),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
@@ -188,7 +193,7 @@ basic_math_compile_test() ->
     ?assertEqual(-1, N:dec(0)),
     ?assertEqual(-1, N:dec_alt(0)),
     ?assertEqual(4.0, N:neg_float(-4.0)),
-    true = code:delete(N).
+    true = pd(N).
 
 basic_adt_compile_test() ->
     {ok, Res} = compile({files, ["test_files/basic_adt.alp"]}),
@@ -197,14 +202,14 @@ basic_adt_compile_test() ->
     ?assertEqual(0, N:len('Nil')),
     ?assertEqual(1, N:len({'Cons', {1, 'Nil'}})),
     ?assertEqual(2, N:len({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
-    true = code:delete(N).
+    true = pd(N).
 
 basic_concat_compile_test() ->
     {ok, Res} = compile({files, ["test_files/string_concat.alp"]}),
     [#compiled_module{name=N, filename=FN, bytes=Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual("Hello, world", N:hello("world")),
-    true = code:delete(N).
+    true = pd(N).
 
 compile_and_load(Files, Opts) ->
     {ok, Compiled} = compile({files, Files}, Opts),
@@ -221,7 +226,7 @@ type_import_test() ->
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     M = alpaca_type_import,
     ?assertEqual(2, M:test_output({})),
-    [code:delete(N) || N <- ModuleNames].
+    [pd(N) || N <- ModuleNames].
 
 type_imports_and_pattern_test() ->
     Files = ["test_files/basic_adt.alp", "test_files/list_opts.alp"],
@@ -230,7 +235,7 @@ type_imports_and_pattern_test() ->
     LO = alpaca_list_opts,
     ?assertEqual({'Some', 1}, LO:head_opt({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
     ?assertEqual('None', LO:head_opt('Nil')),
-    [code:delete(N) || N <- ModuleNames].
+    [pd(N) || N <- ModuleNames].
 
 private_types_error_test() ->
     Files = ["test_files/unexported_adts.alp", "test_files/list_opts.alp"],
@@ -255,7 +260,7 @@ basic_pid_test() ->
                     II -> II
                 end,
     ?assertEqual(5, ShouldBe5),
-    code:delete(M).
+    pd(M).
 
 basic_map_test() ->
     Files =["test_files/basic_map_test.alp"],
@@ -267,7 +272,7 @@ basic_map_test() ->
     ?assertEqual('NotFound', M:get({'one', 2}, M:test_tuple_key_map({}))),
     ?assertEqual(#{one => 1, two => 2}, M:add(one, 1, #{two => 2})),
 
-    code:delete(M).
+    pd(M).
 
 basic_binary_test() ->
     Files =["test_files/basic_binary.alp"],
@@ -283,7 +288,7 @@ basic_binary_test() ->
 
     ?assertEqual(<<" world">>, M:drop_hello(<<"hello world">>)),
 
-    code:delete(M).
+    pd(M).
 
 basic_unit_tests_test() ->
     Files = ["test_files/basic_module_with_tests.alp"],
@@ -299,7 +304,7 @@ basic_unit_tests_test() ->
 
 simple_example_module_test() ->
     [M] = compile_and_load(["test_files/simple_example.alp"], []),
-    code:delete(M).
+    pd(M).
 
 comments_test() ->
     [M] = compile_and_load(["test_files/comments.alp"], []),
@@ -308,7 +313,7 @@ comments_test() ->
 top_level_value_test() ->
     [M] = compile_and_load(["test_files/values.alp"], []),
     ?assertMatch({42, <<"Vicugna pacos">>}, M:test_values({})),
-    code:delete(M).
+    pd(M).
 
 higher_order_function_test() ->
     [M] = compile_and_load(["test_files/higher_order_functions.alp"], []),
@@ -317,18 +322,18 @@ higher_order_function_test() ->
     Dict1 = M:insert(key, value, Dict0),
     ?assertEqual({'Some', value}, M:lookup(key, Dict1)),
     ?assertEqual('None', M:lookup(anotherkey, Dict1)),
-    code:delete(M).
+    pd(M).
 
 simple_record_test() ->
     [M] = compile_and_load(["test_files/simple_records.alp"], []),
     ?assertEqual({<<"sample">>, <<"person">>}, M:sample_person({})),
-    code:delete(M).
+    pd(M).
 
 polymorphic_record_test() ->
     [M] = compile_and_load(["test_files/polymorphic_record_test.alp"], []),
     ?assertEqual(<<"bar">>, M:with_y({})),
     ?assertEqual(<<"baz">>, M:with_y_and_throwaway_x({})),
-    code:delete(M).
+    pd(M).
 
 multiple_underscore_test() ->
     [M] = compile_and_load(["test_files/multiple_underscore_test.alp"], []),
@@ -339,18 +344,18 @@ multiple_underscore_test() ->
     ?assertEqual(<<"just two">>, M:map_check(Map)),
     ?assertEqual(<<"all three">>, M:map_check(Map#{z => 3})),
     ?assertEqual(<<"three">>, M:tuple_check({1, 2, 3})),
-    code:delete(M).
+    pd(M).
 
 circle_module_test() ->
     [M] = compile_and_load(["test_files/circles.alp"], []),
     ?assertEqual(12.56636, M:area(M:new(2))),
-    code:delete(M).
+    pd(M).
 
 records_with_x_module_test() ->
     [M] = compile_and_load(["test_files/records_with_x.alp"], []),
     ?assertEqual(2, M:get_x(M:make_xyz(2, 3, 4))),
     ?assertEqual(5, M:get_x(M:make_xy(5, 6))),
-    code:delete(M).
+    pd(M).
 
 %% A pattern match that matches records and maps with the same key should
 %% correctly distinguish between maps and records that are compiled as
@@ -359,7 +364,7 @@ record_vs_map_match_order_test() ->
     [M] = compile_and_load(["test_files/record_map_match_order.alp"], []),
     ?assertEqual(1, M:check_map({})),
     ?assertEqual(2, M:check_record({})),
-    code:delete(M).
+    pd(M).
 
 raise_errors_test() ->
     [M] = compile_and_load(["test_files/error_tests.alp"], []),
@@ -369,7 +374,7 @@ raise_errors_test() ->
 
     ?assertException(throw, <<"oh no zero!">>, M:throw_or_int(0)),
     ?assertEqual(4, M:throw_or_int(2)),
-    code:delete(M).
+    pd(M).
 
 function_pattern_args_test() ->
     [M] = compile_and_load(["test_files/function_pattern_args.alp"], []),
@@ -390,7 +395,7 @@ function_pattern_args_test() ->
     ?assertEqual({'Some', 4}, M:double_maybe_x(M:make_xy(2, 3))),
     ?assertEqual('None', M:double_maybe_x(M:make_y(2))),
 
-    code:delete(M).
+    pd(M).
 
 radius_test() ->
     [M1, M2] = compile_and_load(
@@ -398,26 +403,26 @@ radius_test() ->
              "test_files/use_radius.alp"],
             []),
     ?assertEqual(1, M2:test_radius({})),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 allow_duplicate_definition_with_different_arity_test() ->
     [M] = compile_and_load(["test_files/same_name_diff_arity.alp"], []),
     ?assertEqual([0, 1, 2, 3], M:seq(3)),
-    code:delete(M).
+    pd(M).
 
 apply_to_expressions_test() ->
     [M] = compile_and_load(["test_files/apply_to_expression.alp"], []),
     ?assertEqual(4, M:foo({})),
     ?assertEqual(6, M:uses_fun(3)),
-    code:delete(M).
+    pd(M).
 
 batch_export_test() ->
     [M] = compile_and_load(["test_files/batch_export.alp"], []),
     ?assertEqual(1, M:foo(1)),
     ?assertEqual(5, M:foo(2, 3)),
     ?assertEqual(8, M:mult(2, 4)),
-    code:delete(M).
+    pd(M).
 
 %% There seems to be a compilation bug in the early formatter work I'm trying
 %% using Alpaca to write its own code formatter.  Figured I might as well just
@@ -425,8 +430,8 @@ batch_export_test() ->
 own_formatter_test() ->
     Files = ["src/alpaca_native_ast.alp", "src/alpaca_format.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 export_import_test() ->
     Files = ["test_files/export_all_arities.alp", "test_files/import_test.alp"],
@@ -434,34 +439,34 @@ export_import_test() ->
     ?assertEqual(12, M2:test_pipe({})),
     ?assertEqual(12, M2:test_pipe_far_call({})),
     ?assertEqual(5, M2:test_specified_arity({})),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 function_in_adt_test() ->
     [M] = compile_and_load(["test_files/dictionary.alp"], []),
     ?assertEqual(true, M:test_int_dict({})),
-    code:delete(M).
+    pd(M).
 
 curry_test() ->
     [M] = compile_and_load(["test_files/curry.alp"], []),
     ?assertEqual({16,26,[2]}, M:foo({})),
     LocalFun = M:local({}),
     ?assertEqual(100, LocalFun(90)),
-    code:delete(M).
+    pd(M).
 
 curry_import_export_test() ->
     Files = ["test_files/curry.alp", "test_files/curry_import.alp"],
     [M1, M2] = compile_and_load(Files, []),
     ?assertEqual([3], M2:run_filter({})),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 throw_with_variables_test() ->
     Files = ["test_files/asserts.alp"],
     [M] = compile_and_load(Files, []),
     ?assertEqual(true, M:assert_equal(2, 2)),
     ?assertThrow({not_equal, 1, 2}, M:assert_equal(1, 2)),
-    code:delete(M).
+    pd(M).
 
 record_update_test() ->
     Files = ["test_files/update_record.alp",
@@ -480,8 +485,8 @@ record_update_test() ->
                    c => 3,
                    x => 1.0,
                    z => <<"this is z">>}, M2:add_3_members({})),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 option_map_test() ->
     %% Including asserts now to check a bug found when experimenting for the
@@ -491,7 +496,7 @@ option_map_test() ->
     ?assertEqual({'Some', 1}, M:some(1)),
     ?assertEqual({'Some', 2}, M:map(fun(X) -> X + 1 end, M:some(1))),
     ?assertEqual('None', M:map(fun(X) -> X + 1 end, 'None')),
-    code:delete(M).
+    pd(M).
 
 lambdas_test() ->
     Files = ["test_files/lambda_examples.alp"],
@@ -508,7 +513,7 @@ lambdas_test() ->
                  M:literal_fun_and_guards({})),
     ?assertEqual(4, M:fun_in_record({})),
     ?assertEqual(3, M:fun_in_record_in_record({})),
-    code:delete(M).
+    pd(M).
 
 %% Tests that we can use both leading `|` for every clause or treat it strictly
 %% as "or" when defining clauses.
@@ -519,39 +524,39 @@ clause_style_test() ->
     ?assertEqual(not_zero, M:leading_pipe(42)),
     ?assertEqual(not_zero, M:or_pipe(1)),
     ?assertEqual(zero, M:or_pipe(0)),
-    code:delete(M).
+    pd(M).
 
 %% Check that we can use the receiver and rec types directly in an ADT.
 receiver_type_test() ->
     Files = ["test_files/receiver_type.alp"],
     [M] = compile_and_load(Files, []),
-    code:delete(M).
+    pd(M).
 
 failing_test_test() ->
     Files = ["test_files/failing_test.alp"],
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(error, M:test()),
-    code:delete(M).
+    pd(M).
 
 forward_symbol_reference_test() ->
     Files = ["test_files/forward_symbol_reference.alp"],
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(15, M:hof_fail({})),
     ?assertMatch(15, M:val_fail({})),
-    code:delete(M).
+    pd(M).
 
 lambda_in_test_test() ->
     Files = ["test_files/lambda_in_test.alp"],
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(2, M:lambda_test()),
-    code:delete(M).
+    pd(M).
 
 tests_in_imports_test() ->
     Files = ["test_files/asserts.alp", "test_files/tests_and_imports.alp"],
     [M1, M2] = compile_and_load(Files, [test]),
     ?assertMatch(true, M2:example_test()),
-    code:delete(M1),
-    code:delete(M2).
+    pd(M1),
+    pd(M2).
 
 type_information_stored_test() ->
     Code =
@@ -580,7 +585,7 @@ compiling_from_beam_test() ->
     Files2 = [FP, "test_files/tests_and_imports.alp"],
     %% Only one new module should be compiled
     [M] = compile_and_load(Files2, [test]),
-    code:delete(M).
+    pd(M).
 
 retrieve_hash_test() ->
     %% Compile and write out .beam file
@@ -617,7 +622,7 @@ hash_annotation_test() ->
     {module, N} = code:load_binary(N, FN, Bin),
     ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
     ?assertEqual(Hash, hash_source(R)),
-    code:delete(N).
+    pd(N).
 
 default_imports_test() ->
     Files = ["test_files/default.alp", "test_files/use_default.alp"],
@@ -636,7 +641,7 @@ default_imports_test() ->
     code:load_binary(N2, FN2, Bin2),
 
     ?assertEqual({'Box', 42}, N:main({})),
-    code:delete(N).
+    pd(N).
 
 built_in_adt_exhaustiveness_test() ->
     Files = ["test_files/exhaustiveness_cases.alp"],
@@ -647,6 +652,6 @@ built_in_adt_exhaustiveness_test() ->
          line := 1,
          name := <<"make_export">>},
        M1:make_export(1, <<"make_export">>)),
-    code:delete(M1).
+    pd(M1).
 
 -endif.
