@@ -2815,9 +2815,9 @@ typ_of(Env, Exp) ->
         {Typ, NewVar} -> {unwrap(Typ), update_counter(NewVar, Env)}
     end.
 
-from_code(C) ->
-    {ok, E} = alpaca_ast_gen:parse(alpaca_scanner:scan(C)),
-    E.
+%% from_code(C) ->
+%%     {ok, E} = alpaca_ast_gen:parse(alpaca_scanner:scan(C)),
+%%     E.
 
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
@@ -4367,7 +4367,7 @@ record_inference_test_() ->
                                                                 #t_record_member{
                                                                    name=y,
                                                                    type=t_int}],
-                                                       row_var={unbound, B, _}}]}}
+                                                       row_var={unbound, _B, _}}]}}
                                            }]
                              }},
                           module_typ_and_parse(Code))
@@ -4448,7 +4448,7 @@ adt_ordering_test_() ->
                               functions=[#alpaca_binding{
                                             type={t_arrow,
                                                   [#adt{
-                                                    vars=[{"a", {unbound, A, _}}],
+                                                    vars=[{"a", {unbound, _A, _}}],
                                                       members=[{t_adt_cons, "None"},
                                                                {t_adt_cons, "Some"}]}],
                                                  t_atom}}]}},
@@ -4466,7 +4466,7 @@ adt_ordering_test_() ->
                               functions=[#alpaca_binding{
                                             type={t_arrow,
                                                   [#adt{
-                                                      vars=[{"a", {unbound, A, _}}],
+                                                      vars=[{"a", {unbound, _A, _}}],
                                                       members=[{t_adt_cons, "Some"},
                                                                {t_adt_cons, "None"}]}],
                                                  t_atom}}]}},
@@ -4944,7 +4944,7 @@ no_process_leak_test() ->
     ProcessesAfter = wait_for_processes_to_die(ProcessesBefore, 10),
     ?assertEqual(ProcessesBefore, ProcessesAfter).
 
-wait_for_processes_to_die(ExpectedNumProcesses, 0)            ->
+wait_for_processes_to_die(_ExpectedNumProcesses, 0)            ->
     length(erlang:processes());
 wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft) ->
     case length(erlang:processes()) of
