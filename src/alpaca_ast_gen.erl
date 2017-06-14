@@ -366,6 +366,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                 {Env#env{next_var=NV2, rename_map=M3}, [F2|Memo]}
         end,
     {#env{next_var=NV2, rename_map=_}, Funs2} = lists:foldl(F, {Env, []}, Funs),
+    %% Don't need NV from the tests
     {#env{next_var=_NV3, rename_map=_}, Tests2} = lists:foldl(F, {Env, []}, Tests),
     {NV2, Mod#alpaca_module{
             functions=lists:reverse(Funs2),
@@ -490,10 +491,10 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
                                 guards=Gs2,
                                 body=E},
                         %% As with patterns and clauses we deliberately
-                        %% throw away the rename map here so that the
+                        %% throw away the rename map M4 here so that the
                         %% same symbols can be reused by distinctly
                         %% different function definitions.
-                        {Env3, Map, [FV2|Versions]}
+                        {Env4, Map, [FV2|Versions]}
                 end,
 
             {Env, M2, Vs2} = lists:foldl(F, {Environment, maps:new(), []}, Vs),
