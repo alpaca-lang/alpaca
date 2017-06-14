@@ -179,7 +179,7 @@ read_lines(Device, Line, Target, Fn, Acc) ->
         Txt ->
             L1 = case Line of
                      Target ->
-                         cf("  ~!r~4b~!!: ~ts", [Line, Fn(Txt)]);
+                         cf("  ~!#d01c8b~4b~!!: ~ts", [Line, Fn(Txt)]);
                      _ ->
                          cf("  ~!c~4b~!!: ~ts", [Line, Txt])
                  end,
@@ -187,10 +187,10 @@ read_lines(Device, Line, Target, Fn, Acc) ->
     end.
 
 red(S) ->
-    cf("~!r~ts", [S]).
+    cf("~!#d01c8b~ts", [S]).
 
 green(S) ->
-    cf("~!g~ts", [S]).
+    cf("~!#4dac26~ts", [S]).
 
 bold(S) ->
     cf("~!^~ts", [S]).
@@ -282,13 +282,14 @@ syntax_error_hl_c_test() ->
     ParseError = {syntax_error, "="},
     Error = {error, {parse_error, File, Line, ParseError}},
     Msg = test_fmt_c(Error),
-    Expected = <<"\e[4mtest/\e[0;36m\e[4merror\e[0m\e[4m.alp\e[0m:"
-                 "\e[0;36m11\e[0m\e[0m\n"
-                 "  Syntax error before \"\e[0;31m=\e[0m\".\n\n"
-                 "  \e[0;36m   9\e[0m: let format ast_node = format_ast "
-                 "0 ast_node\n"
+    Expected = <<"\e[4mtest/\e[0;36m\e[4merror\e[0m\e[4m.alp\e[0m"
+                 ":\e[0;36m11\e[0m\e[0m\n"
+                 "  Syntax error before \"\e[38;2;208;28;139m=\e[0m\".\n\n"
+                 "  \e[0;36m   9\e[0m: let format "
+                 "ast_node = format_ast 0 ast_node\n"
                  "\e[0m  \e[0;36m  10\e[0m: \n"
-                 "\e[0m  \e[0;31m  11\e[0m: let max_len = \e[0;31m=\e[0m 80\n"
+                 "\e[0m  \e[38;2;208;28;139m  11\e[0m: let max_len = "
+                 "\e[38;2;208;28;139m=\e[0m 80\n"
                  "\e[0m  \e[0;36m  12\e[0m: \n"
                  "\e[0m  \e[0;36m  13\e[0m: let format_ast depth Symbol "
                  "{name=name} =\n\e[0m\n\e[0m">>,
@@ -300,9 +301,10 @@ en_us_syntax_color_test() ->
     ParseError = {syntax_error, "blah"},
     Error = {error, {parse_error, File, Line, ParseError}},
     Msg = test_fmt_c(Error),
-    Expected = <<"\e[4m/tmp/\e[0;36m\e[4mfile\e[0m\e[4m.alp\e[0m:\e[0;36m10"
-                 "\e[0m\e[0m\n"
-                 "  Syntax error before \"\e[0;31mblah\e[0m\".\n\e[0m">>,
+    Expected = <<"\e[4m/tmp/\e[0;36m\e[4mfile\e[0m\e[4m.alp\e[0m:"
+                 "\e[0;36m10\e[0m\e[0m\n"
+                 "  Syntax error before "
+                 "\"\e[38;2;208;28;139mblah\e[0m\".\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
 function_not_exported_test() ->
@@ -323,7 +325,7 @@ function_not_exported_c_test() ->
     Msg = test_fmt_c(Error),
     Expected = <<"\e[4m/tmp/\e[0;36m\e[4mmodule\e[0m\e[4m.alp\e[0m:"
                  "\e[0;36m10\e[0m\e[0m\n"
-                 "  No function \"\e[0;31mfun\e[0m\" "
+                 "  No function \"\e[38;2;208;28;139mfun\e[0m\" "
                  "exported from module \"\e[1mmodule\e[0m\".\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
@@ -347,9 +349,10 @@ buildin_type_arity_c_test() ->
     Msg = test_fmt_c(Error),
     Expected = <<"\e[4m/tmp/\e[0;36m\e[4mmodule\e[0m\e[4m.alp\e[0m:"
                  "\e[0;36m10\e[0m\e[0m\n"
-                 "  Wrong number of type parameters provided for builtin type "
-                 "\"\e[1mpid\e[0m\".\n"
-                 "  Expected \e[0;32m1\e[0m, but got \e[0;31m42\e[0m.\n\e[0m">>,
+                 "  Wrong number of type parameters provided for builtin "
+                 "type \"\e[1mpid\e[0m\".\n"
+                 "  Expected \e[38;2;77;172;38m1\e[0m, but got "
+                 "\e[38;2;208;28;139m42\e[0m.\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
 
