@@ -178,9 +178,9 @@ read_lines(Device, Line, Target, Fn, Acc) ->
         Txt ->
             L1 = case Line of
                      Target ->
-                         cf("~!r~4b~!!: ~s", [Line, Fn(Txt)]);
+                         cf("  ~!r~4b~!!: ~s", [Line, Fn(Txt)]);
                      _ ->
-                         cf("~!c~4b~!!: ~s", [Line, Txt])
+                         cf("  ~!c~4b~!!: ~s", [Line, Txt])
                  end,
             read_lines(Device, Line + 1, Target, Fn, [L1 | Acc])
     end.
