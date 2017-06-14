@@ -366,7 +366,7 @@ rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
                 {Env#env{next_var=NV2, rename_map=M3}, [F2|Memo]}
         end,
     {#env{next_var=NV2, rename_map=_}, Funs2} = lists:foldl(F, {Env, []}, Funs),
-    {#env{next_var=NV3, rename_map=_}, Tests2} = lists:foldl(F, {Env, []}, Tests),
+    {#env{next_var=_NV3, rename_map=_}, Tests2} = lists:foldl(F, {Env, []}, Tests),
     {NV2, Mod#alpaca_module{
             functions=lists:reverse(Funs2),
             tests=lists:reverse(Tests2)}}.
