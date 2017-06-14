@@ -27,9 +27,6 @@
 
 -module(alpaca_typer).
 
--dialyzer({nowarn_function, dump_env/1}).
--dialyzer({nowarn_function, dump_term/1}).
-
 -include("alpaca_ast.hrl").
 -include("builtin_types.hrl").
 
@@ -1918,19 +1915,19 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 {error, _} = E -> E;
                 {{t_arrow, TArgs, TRet}, NextVar} ->
                     case length(Args) >= length(TArgs) of
-                        true -> 
-                            {'Symbol', #{name := N, line := Ln}} = Expr,
+                        true ->
+                            {'Symbol', #{name := N, line := _Ln}} = Expr,
                             Mod = Env#env.current_module#alpaca_module.name,
                             {error, {not_found, Mod, N, length(Args)}};
                         false ->
                             {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
                             CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
-                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)               
+                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)
                     end
             end
         end,
     CurryFun =
-        fun(OriginalErr) ->
+        fun(_OriginalErr) ->
             %% Attempt to find a curryable version
             {Mod, FN, Env2} = case Expr of
                 {'Symbol', _}=Sym ->
@@ -2780,25 +2777,6 @@ rename_wildcards({'_', L}, N) ->
 rename_wildcards(O, N) ->
     {O, N}.
 
-dump_env(#env{next_var=V, bindings=Bs}) ->
-    io:format("Next var number is ~w~n", [V]),
-    [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])
-     || {N, T} <- Bs].
-
-dump_term({t_arrow, Args, Ret}) ->
-    io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
-dump_term({t_clause, P, G, R}) ->
-    io_lib:format(" | ~s ~s -> ~s", [dump_term(X)||X<-[P, G, R]]);
-dump_term({t_tuple, Ms}) ->
-    io_lib:format("(~s) ", [[dump_term(unwrap(M)) ++ " " || M <- Ms]]);
-dump_term(P) when is_pid(P) ->
-    io_lib:format("{cell ~w ~s}", [P, dump_term(get_cell(P))]);
-dump_term({link, P}) when is_pid(P) ->
-    io_lib:format("{link ~w ~s}", [P, dump_term(P)]);
-dump_term(T) ->
-    io_lib:format("~w", [T]).
-
-
 %%% Tests
 
 -ifdef(TEST).
@@ -2815,10 +2793,6 @@ typ_of(Env, Exp) ->
         {error, _} = E -> E;
         {Typ, NewVar} -> {unwrap(Typ), update_counter(NewVar, Env)}
     end.
-
-from_code(C) ->
-    {ok, E} = alpaca_ast_gen:parse(alpaca_scanner:scan(C)),
-    E.
 
 %% Check the type of an expression from the "top-level"
 %% of 0 with a new environment.
@@ -4368,7 +4342,7 @@ record_inference_test_() ->
                                                                 #t_record_member{
                                                                    name=y,
                                                                    type=t_int}],
-                                                       row_var={unbound, B, _}}]}}
+                                                       row_var={unbound, _B, _}}]}}
                                            }]
                              }},
                           module_typ_and_parse(Code))
@@ -4449,7 +4423,7 @@ adt_ordering_test_() ->
                               functions=[#alpaca_binding{
                                             type={t_arrow,
                                                   [#adt{
-                                                    vars=[{"a", {unbound, A, _}}],
+                                                    vars=[{"a", {unbound, _A, _}}],
                                                       members=[{t_adt_cons, "None"},
                                                                {t_adt_cons, "Some"}]}],
                                                  t_atom}}]}},
@@ -4467,7 +4441,7 @@ adt_ordering_test_() ->
                               functions=[#alpaca_binding{
                                             type={t_arrow,
                                                   [#adt{
-                                                      vars=[{"a", {unbound, A, _}}],
+                                                      vars=[{"a", {unbound, _A, _}}],
                                                       members=[{t_adt_cons, "Some"},
                                                                {t_adt_cons, "None"}]}],
                                                  t_atom}}]}},
@@ -4945,7 +4919,7 @@ no_process_leak_test() ->
     ProcessesAfter = wait_for_processes_to_die(ProcessesBefore, 10),
     ?assertEqual(ProcessesBefore, ProcessesAfter).
 
-wait_for_processes_to_die(ExpectedNumProcesses, 0)            ->
+wait_for_processes_to_die(_ExpectedNumProcesses, 0)            ->
     length(erlang:processes());
 wait_for_processes_to_die(ExpectedNumProcesses, AttemptsLeft) ->
     case length(erlang:processes()) of

@@ -228,7 +228,6 @@ type_imports_and_pattern_test() ->
     ModuleNames = compile_and_load(Files, []),
     io:format("Compiled and loaded modules are ~w~n", [ModuleNames]),
     LO = alpaca_list_opts,
-    ADT = alpaca_basic_adt,
     ?assertEqual({'Some', 1}, LO:head_opt({'Cons', {1, {'Cons', {2, 'Nil'}}}})),
     ?assertEqual('None', LO:head_opt('Nil')),
     [code:delete(N) || N <- ModuleNames].
@@ -565,7 +564,7 @@ type_information_stored_test() ->
 
     TypeInfo = proplists:get_value(alpaca_typeinfo, N:module_info(attributes)),
 
-    [#alpaca_binding{bound_expr=F, type=T}=B] = TypeInfo#alpaca_module.functions,
+    [#alpaca_binding{bound_expr=F, type=T}] = TypeInfo#alpaca_module.functions,
 
     %% We should have type information but the bodies should be stripped
     ?assertMatch({t_arrow, [t_int, t_int], t_int}, T),
@@ -575,7 +574,7 @@ compiling_from_beam_test() ->
     %% Compile the initial beam file
     Files = ["test_files/asserts.alp"],
     {ok, [Compiled]} = alpaca:compile({files, Files}),
-    {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
+    {compiled_module, _ModuleName, FileName, BeamBinary} = Compiled,
     FP = filename:join("_build", FileName),
     file:write_file(FP, BeamBinary),
     Files2 = [FP, "test_files/tests_and_imports.alp"],
@@ -588,7 +587,7 @@ retrieve_hash_test() ->
     FN = "test_files/asserts.alp",
     Files = [FN],
     {ok, [Compiled]} = alpaca:compile({files, Files}),
-    {compiled_module, ModuleName, FileName, BeamBinary} = Compiled,
+    {compiled_module, _ModuleName, FileName, BeamBinary} = Compiled,
     FP = filename:join("_build", FileName),
     file:write_file(FP, BeamBinary),
 

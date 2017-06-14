@@ -74,7 +74,7 @@ test
 
 boolean int float atom string chars '_'
 symbol infixl infixr '.'
-assign int_math float_math minus plus logic logic_sc
+assign int_math float_math minus plus
 '[' ']' cons_infix ':'
 bin_open bin_close
 open_brace close_brace
@@ -318,7 +318,6 @@ op -> float_math : '$1'.
 op -> minus : '$1'.
 op -> plus : '$1'.
 op -> '/' : '$1'.
-op -> logic : '$1'.
 
 const -> boolean : '$1'.
 
