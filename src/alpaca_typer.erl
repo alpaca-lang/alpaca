@@ -27,9 +27,6 @@
 
 -module(alpaca_typer).
 
--dialyzer({nowarn_function, dump_env/1}).
--dialyzer({nowarn_function, dump_term/1}).
-
 -include("alpaca_ast.hrl").
 -include("builtin_types.hrl").
 
@@ -1918,19 +1915,19 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 {error, _} = E -> E;
                 {{t_arrow, TArgs, TRet}, NextVar} ->
                     case length(Args) >= length(TArgs) of
-                        true -> 
-                            {'Symbol', #{name := N, line := Ln}} = Expr,
+                        true ->
+                            {'Symbol', #{name := N, line := _Ln}} = Expr,
                             Mod = Env#env.current_module#alpaca_module.name,
                             {error, {not_found, Mod, N, length(Args)}};
                         false ->
                             {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
                             CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
-                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)               
+                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)
                     end
             end
         end,
     CurryFun =
-        fun(OriginalErr) ->
+        fun(_OriginalErr) ->
             %% Attempt to find a curryable version
             {Mod, FN, Env2} = case Expr of
                 {'Symbol', _}=Sym ->
@@ -2780,11 +2777,13 @@ rename_wildcards({'_', L}, N) ->
 rename_wildcards(O, N) ->
     {O, N}.
 
+-dialyzer({nowarn_function, dump_env/1}).
 dump_env(#env{next_var=V, bindings=Bs}) ->
     io:format("Next var number is ~w~n", [V]),
     [io:format("Env:  ~s ~s~n    ~w~n", [N, dump_term(T), unwrap(T)])
      || {N, T} <- Bs].
 
+-dialyzer({nowarn_function, dump_term/1}).
 dump_term({t_arrow, Args, Ret}) ->
     io_lib:format("~s -> ~s", [[dump_term(A) || A <- Args], dump_term(Ret)]);
 dump_term({t_clause, P, G, R}) ->
