@@ -15,7 +15,8 @@
 %%% See the License for the specific language governing permissions and
 %%% limitations under the License.
 
--define(all_bifs, [?t_int_add, ?t_int_sub,
+-define(all_bifs, [
+                   ?t_int_add, ?t_int_sub,
                    ?t_int_mul, ?t_int_div, ?t_int_rem,
                    ?t_float_add, ?t_float_sub,
                    ?t_float_mul, ?t_float_div,

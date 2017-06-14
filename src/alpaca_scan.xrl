@@ -20,8 +20,8 @@ D   = [0-9]
 L   = [a-z]
 U   = [A-Z]
 SYM = {L}[a-zA-Z0-9_]*
-O  = [\.\*<>\|\$~\^=\?\+@%/]
-OL = [\.\*>\|\$~\^=\?\+@%/]
+O  = [\.\*<>\|\$~\^=\?\+@%/&]
+OL = [\.\*>\|\$~\^=\?\+@%/&]
 OR = [<]
 OPR = {OR}{O}*
 OPL = {OL}{O}*
@@ -131,10 +131,11 @@ c"(\\"*|\\.|[^"\\])*" :
 \+ : {token, {plus, TokenLine}}.
 
 
-
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->       : {token, {'->', TokenLine}}.
+&&       : {token, {'&&', TokenLine}}.
+\|\|       : {token, {'||', TokenLine}}.
 \x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow
 _        : {token, {'_', TokenLine}}.
 
@@ -192,6 +193,3 @@ unescape([$\\, Char | Rest], Acc) ->
     _ -> unescape(Rest, [Res | Acc])
   end;
 unescape([C | Rest], Acc) -> unescape(Rest, [C | Acc]).
-
-
-

@@ -842,7 +842,23 @@ bif_infix_test() ->
 
     %% (<=) -> less than or equal to
     ?assertEqual(true, run_expr("5 =< 5")),
-    ?assertEqual(false, run_expr("5.1 =< 5.0")).
+    ?assertEqual(false, run_expr("5.1 =< 5.0")),
+
+    %% (&&) -> logical and short circute
+    ?assertEqual(false, run_expr("false && false")),
+    ?assertEqual(false, run_expr("true && false")),
+    ?assertEqual(true,  run_expr("true && true")),
+    %% prove short circuting by throwing as 2nd part of the expression
+    ?assertEqual(false, run_expr("false && (error \"oh no and failed!\")")),
+
+    %% (||) -> logical and short circute
+    ?assertEqual(false, run_expr("false || false")),
+    ?assertEqual(true, run_expr("true || false")),
+    ?assertEqual(true,  run_expr("true || true")),
+    %% prove short circuting by throwing as 2nd part of the expression
+    ?assertEqual(true, run_expr("true || (error \"oh no or failed!\")")),
+
+    ok.
 
 infix_fun_test() ->
     Name = alpaca_infix_fun,
