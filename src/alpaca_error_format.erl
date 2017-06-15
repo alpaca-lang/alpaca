@@ -59,13 +59,15 @@ fmt({error, Err}, Locale) ->
 ident(S) ->
     re:replace(S, "^", "  ", [multiline, global | ?RE_OPTS]).
 
-fmt_parse_error({duplicate_definition, Id}, Locale) ->
-    t(__(<<"duplicate_definition %(id)">>), Locale, [{id, red(Id)}]);
+fmt_parse_error({duplicate_definition, Type, Id, Module, Line}, Locale) ->
+    t(__(<<"duplicate_definition %(type) %(id) %(mod) %(line)">>),
+      Locale, [{type, a2b(Type)}, {id, red(Id)}, {mod, file(a2b(Module))},
+               {line, file(i2b(Line))}]);
 fmt_parse_error({duplicate_type, Id}, Locale) ->
     t(__(<<"duplicate_type_definition %(id)">>), Locale, [{id, red(Id)}]);
 fmt_parse_error({function_not_exported, Mod, Name}, Locale) ->
     t(__(<<"function_not_exported %(mod) %(fun)">>), Locale,
-      [{'fun', red(Name)}, {mod, bold(atom_to_binary(Mod, utf8))}]);
+      [{'fun', red(Name)}, {mod, bold(a2b(Mod))}]);
 fmt_parse_error({invalid_bin_qualifier, Str}, Locale) ->
     t(__(<<"invalid_bin_qualifier %(qualifier)">>), Locale,
       [{qualifier, red(Str)}]);
@@ -81,12 +83,12 @@ fmt_parse_error({invalid_top_level_construct, _}, Locale) ->
     t(__(<<"invalid_top_level_construct">>), Locale);
 fmt_parse_error({module_rename, Old, New}, Locale) ->
     t(__(<<"module_rename %(old) %(new).">>), Locale,
-      [{old, green(atom_to_binary(Old, utf8))},
-       {new, red(atom_to_binary(New, utf8))}]);
+      [{old, green(a2b(Old))},
+       {new, red(a2b(New))}]);
 fmt_parse_error(no_module, Locale) ->
     t(__(<<"no_module">>), Locale);
 fmt_parse_error({no_module, Mod}, Locale) when is_atom(Mod) ->
-    fmt_parse_error({no_module, atom_to_binary(Mod, utf8)}, Locale);
+    fmt_parse_error({no_module, a2b(Mod)}, Locale);
 fmt_parse_error({no_module, Mod}, Locale) ->
     t(__(<<"no_module %(mod)">>), Locale, [{mod, red(Mod)}]);
 fmt_parse_error({syntax_error, ""}, Locale) ->
@@ -192,12 +194,20 @@ red(S) ->
 green(S) ->
     cf("~!#4dac26~ts", [S]).
 
+file(S) ->
+    cf("~!_c~ts", [S]).
+
 bold(S) ->
     cf("~!^~ts", [S]).
 
 cf(Fmt, Args) ->
     unicode:characters_to_binary(cf:format(Fmt, Args), utf8).
 
+a2b(Atom) ->
+    atom_to_binary(Atom, utf8).
+
+i2b(I) ->
+    integer_to_binary(I).
 
 %% Helper function to generate a 'highlighter' to display syntax errors
 %% in line.
@@ -355,8 +365,6 @@ buildin_type_arity_c_test() ->
                  "\e[38;2;208;28;139m42\e[0m.\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
-
-
 real_error_test() ->
     Source = "let add a b = a + b",
     Error = {error, _}  = alpaca:compile({text, Source}),
@@ -364,6 +372,28 @@ real_error_test() ->
     Expected = <<"<no file>:1\n"
                  "  No module name defined.\n"
                  "  You may define it like this: \"module foo\".\n">>,
+    ?assertEqual(Expected, Msg).
+
+double_binding_test() ->
+    Source = "module test_error;; let f x y = match x with\n"
+        " h :: y -> h",
+    Error = {error, _}  = alpaca:compile({text, Source}),
+    Msg = test_fmt(Error),
+    Expected = <<"<no file>:2\n"
+                 "  Duplicate definition of binding \"y\".\n"
+                 "  \"y\" was priviously defined in test_error:1\n">>,
+    ?assertEqual(Expected, Msg).
+
+double_binding_c_test() ->
+    Source = "module test_error;; let f x y = match x with\n"
+        " h :: y -> h",
+    Error = {error, _}  = alpaca:compile({text, Source}),
+    Msg = test_fmt_c(Error),
+    Expected = <<"\e[0;36m\e[4m<no file>\e[0m:\e[0;36m2\e[0m\e[0m\n"
+                 "  Duplicate definition of binding "
+                 "\"\e[38;2;208;28;139my\e[0m\".\n"
+                 "  \"\e[38;2;208;28;139my\e[0m\" was priviously defined "
+                 "in \e[0;36m\e[4mtest_error\e[0m:\e[0;36m\e[4m1\e[0m\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
 -endif.

@@ -17,8 +17,11 @@ msgstr ""
 "Wrong number of type parameters provided for builtin type \"%(type)\".\n"
 "Expected %(num_expected), but got %(num_supplied)."
 
-msgid "duplicate_definition %(id)"
-msgstr "Duplicate definition of \"%(id)\"."
+
+msgid "duplicate_definition %(type) %(id) %(mod) %(line)"
+msgstr ""
+"Duplicate definition of %(type) \"%(id)\".\n"
+"\"%(id)\" was priviously defined in %(mod):%(line)"
 
 msgid "duplicate_type_definition %(id)"
 msgstr "Type \"%(id)\" has already been defined."
