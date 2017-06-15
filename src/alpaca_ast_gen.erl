@@ -23,7 +23,8 @@
                         alpaca_map_type() |
                         alpaca_pid_type().
 
--type error_reason() :: {duplicate_definition, string()} |
+-type error_reason() :: {duplicate_definition, binding | argument,
+                         string(), atom(), non_neg_integer()} |
                         {duplicate_type, string()} |
                         {function_not_exported, module(), string()} |
                         {invalid_bin_qualifier, string()} |
@@ -39,6 +40,10 @@
 
 -type filename() :: string().
 -type line() :: integer().
+
+-record(synth, {module :: atom(),
+                line :: non_neg_integer(),
+                name :: string()}).
 
 %% Generating an Alpaca module AST from text source requires the following
 %% steps:
@@ -514,12 +519,16 @@ rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
                 case maps:get(N, AccMap, undefined) of
                     undefined ->
                         Synth = next_var(NV),
+                        SR = #synth{module = Mod#alpaca_module.name,
+                                    line = L,
+                                    name = Synth},
                         { E#env{next_var=NV+1}
-                        , maps:put(N, Synth, AccMap)
+                        , maps:put(N, SR, AccMap)
                         , [alpaca_ast:symbol(L, Synth)|Syms]
                         };
-                    _ ->
-                        parse_error(Mod, L, {duplicate_definition, N})
+                    #synth{module = ModOld, line = LineOld} ->
+                        parse_error(Mod, L, {duplicate_definition, argument, N,
+                                             ModOld, LineOld})
                 end;
            ({unit, _}=U, {E, AccMap, Syms}) ->
                 {E, AccMap, [U|Syms]};
@@ -540,9 +549,13 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                                  #env{next_var=NV} = StartEnv,
                                  Synth = next_var(NV),
                                  E2 = StartEnv#env{next_var=NV+1},
-                                 {Synth, E2, maps:put(Name, Synth, M)};
-                             _ ->
-                                 parse_error(Mod, L, {duplicate_definition, Name})
+                                 SR = #synth{module = Mod#alpaca_module.name,
+                                             line = L,
+                                             name = Synth},
+                                 {Synth, E2, maps:put(Name, SR, M)};
+                    #synth{module = ModOld, line = LineOld} ->
+                                 parse_error(Mod, L, {duplicate_definition, binding, Name,
+                                                      ModOld, LineOld})
                          end,
 
     F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
@@ -724,7 +737,7 @@ rename_bindings(Env, Map, {'Symbol', _}=S) ->
                             {Env, Map, S}
                     end
             end;
-        Synthetic -> {Env, Map, alpaca_ast:symbol_rename(S, Synthetic)}
+        #synth{name = Synthetic} -> {Env, Map, alpaca_ast:symbol_rename(S, Synthetic)}
     end;
 rename_bindings(#env{current_module=CurrentMod}=Env, Map,
                 #alpaca_far_ref{module=M, name=N, arity=none, line=L}=FR) ->
@@ -882,10 +895,14 @@ make_bindings(#env{current_module=Mod}=Env, M, {'Symbol', _}=S) ->
         undefined ->
             #env{next_var=NV} = Env,
             Synth = next_var(NV),
+            SR = #synth{module = Mod#alpaca_module.name,
+                        line = L,
+                        name = Synth},
             Env2 = Env#env{next_var=NV+1},
-            {Env2, maps:put(Name, Synth, M), alpaca_ast:symbol_rename(S, Synth)};
-        _ ->
-            parse_error(Mod, L, {duplicate_definition, Name})
+            {Env2, maps:put(Name, SR, M), alpaca_ast:symbol_rename(S, Synth)};
+        #synth{module = ModOld, line = LineOld} ->
+            parse_error(Mod, L, {duplicate_definition, binding, Name,
+                                 ModOld, LineOld})
     end;
 make_bindings(Env, M, Expression) ->
     {Env, M, Expression}.
@@ -1878,7 +1895,7 @@ rebinding_test_() ->
                                                            original := {'Some',
                                                                         <<"y">>}}}]}}}]}}},
         rename_bindings(#env{}, A)),
-     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, <<"x">>}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, binding, <<"x">>, no_module, 1}},
                    rename_bindings(#env{}, B)),
      ?_assertMatch(
         {_, _,
@@ -1920,7 +1937,7 @@ rebinding_test_() ->
                                                    #{line := 3,
                                                      name := <<"svar_3">>}}}]}}]}}},
         rename_bindings(#env{}, C)),
-     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, <<"x">>}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, binding, <<"x">>, no_module, 1}},
                    rename_bindings(#env{}, D)),
      ?_assertMatch(
         {_, _,
@@ -1961,7 +1978,7 @@ rebinding_test_() ->
                                                   #{line := 3,
                                                     name := <<"svar_2">>}}}]}}]}}},
         rename_bindings(#env{}, E)),
-     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, <<"y">>}},
+     ?_assertThrow({parse_error, undefined, 2, {duplicate_definition, binding, <<"y">>, no_module, 1}},
                    rename_bindings(#env{}, F))
     ].
 
