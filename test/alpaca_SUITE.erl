@@ -355,7 +355,8 @@ keywords() ->
      <<"exit">>,
      <<"throw">>,
      <<"true">>,
-     <<"false">>
+     <<"false">>,
+     <<"fn">>
     ]
     ++ base_types().
 

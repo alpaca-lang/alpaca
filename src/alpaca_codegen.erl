@@ -860,6 +860,10 @@ bif_infix_test() ->
 
     ok.
 
+pd(Module) ->
+    code:purge(Module),
+    code:delete(Module).
+
 infix_fun_test() ->
     Name = alpaca_infix_fun,
     FN = atom_to_list(Name) ++ ".beam",
@@ -872,7 +876,7 @@ infix_fun_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(20, Name:adder(10)),
-    true = code:delete(Name).
+    true = pd(Name).
 
 infix_left_fun_test() ->
     Name = alpaca_infix_left_fun,
@@ -886,7 +890,7 @@ infix_left_fun_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(52, Name:main({})),
-    true = code:delete(Name).
+    true = pd(Name).
 
 fun_and_var_binding_test() ->
     Name = alpaca_fun_and_var_binding,
@@ -901,7 +905,7 @@ fun_and_var_binding_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(8, Name:test_func(2)),
-    true = code:delete(Name).
+    true = pd(Name).
 
 value_test() ->
     Name = alpaca_value_function,
@@ -916,7 +920,7 @@ value_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(42, Name:test_func({})),
-    true = code:delete(Name).
+    true = pd(Name).
 
 unit_function_test() ->
     Name = alpaca_unit_function,
@@ -931,7 +935,7 @@ unit_function_test() ->
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(10, Name:test_func(2)),
-    true = code:delete(Name).
+    true = pd(Name).
 
 parser_nested_letrec_test() ->
     Code =
@@ -969,7 +973,7 @@ module_with_match_test() ->
     ?assertEqual(not_a_2_tuple, Name:first(an_atom)),
     ?assertEqual('matched', Name:compare(1, 1)),
     ?assertEqual('not_matched', Name:compare(1, 2)),
-    true = code:delete(Name).
+    true = pd(Name).
 
 cons_test() ->
     Name = alpaca_compiler_cons_test,
@@ -991,7 +995,7 @@ cons_test() ->
     ?assertEqual([1, 2, 3], Name:make_list(1, [2, 3])),
     ?assertEqual([2, 3], Name:my_map(fun(X) -> X+1 end, [1, 2])),
     ?assertEqual([3, 4], Name:my_map(fun(X) -> X+1 end, Name:make_list(2, 3))),
-    true = code:delete(Name).
+    true = pd(Name).
 
 call_test() ->
     Code1 =
@@ -1012,8 +1016,8 @@ call_test() ->
 
     Name = alpaca_call_test_a,
     ?assertEqual(3, Name:a(2)),
-    true = code:delete(alpaca_call_test_a),
-    true = code:delete(alpaca_call_test_b).
+    true = pd(alpaca_call_test_a),
+    true = pd(alpaca_call_test_b).
 
 ffi_test() ->
     Code =
@@ -1029,7 +1033,7 @@ ffi_test() ->
     Mod = alpaca_ffi_test,
     ?assertEqual('one', Mod:a("1")),
     ?assertEqual('not_one', Mod:a("2")),
-    true = code:delete(alpaca_ffi_test).
+    true = pd(alpaca_ffi_test).
 
 %% TODO:  with union types, test/1 should return integers and floats
 %% just tagged with different type constructors.
@@ -1049,7 +1053,7 @@ type_guard_test() ->
     %% to integer 0 as expected in the code above:
     ?assertEqual(4, Mod:check(2)),
     ?assertEqual(0, Mod:check(1.3)),
-    true = code:delete(Mod).
+    true = pd(Mod).
 
 multi_type_guard_test() ->
     Code =
@@ -1069,7 +1073,7 @@ multi_type_guard_test() ->
     ?assertEqual('middle', Mod:check(4)),
     ?assertEqual('just_int', Mod:check(5)),
     ?assertEqual('not_int', Mod:check(1.3)),
-    true = code:delete(Mod).
+    true = pd(Mod).
 
 module_info_helpers_test() ->
     Code = "module module_info_helpers_test\n",
@@ -1078,7 +1082,7 @@ module_info_helpers_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_module_info_helpers_test.beam", Bin),
     ?assertEqual(Mod, Mod:module_info(module)),
     ?assert(is_list(Mod:module_info())),
-    true = code:delete(Mod).
+    true = pd(Mod).
 
 curry_test() ->
     Code =
@@ -1092,7 +1096,7 @@ curry_test() ->
     Mod = alpaca_autocurry,
     {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
     ?assertEqual(Mod:main(unit), 11),
-    true = code:delete(Mod).
+    true = pd(Mod).
 
 unit_as_value_test() ->
     Code =
@@ -1103,7 +1107,7 @@ unit_as_value_test() ->
     Mod = alpaca_unit_test,
     {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
     ?assertEqual({}, Mod:return_unit({})),
-    true = code:delete(Mod).
+    true = pd(Mod).
 
 run_expr(Expr) ->
     Name = alpaca_expr_test,
@@ -1111,8 +1115,7 @@ run_expr(Expr) ->
     {ok, FN, Bin} = parse_and_gen(Src),
     {module, Name} = code:load_binary(Name, FN, Bin),
     Res = Name:main({}),
-    code:purge(Name),
-    true = code:delete(Name),
+    true = pd(Name),
     Res.
 
 -endif.
