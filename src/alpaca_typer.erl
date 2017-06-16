@@ -206,10 +206,21 @@ copy_cell(Cell, RefMap) ->
           type_constructors=[] :: list({string(), alpaca_constructor()}),
           type_bindings=[]     :: list({string(), t_adt()}),
           bindings=[]          :: list({term(), typ()|t_cell()}),
-          modules=[]           :: list(alpaca_module())
+          modules=[]           :: list(alpaca_module()),
+          path=[]              :: list(integer()) % perhaps
          }).
 
 -type env() :: #env{}.
+pop_path(E = #env{path = []}) ->
+    E;
+pop_path(E = #env{path = [_H | T]}) ->
+    E#env{path = T}.
+push_path(E = #env{path = P}, Step) ->
+    E#env{path = [Step | P]}.
+
+swap_path(E, Step) ->
+    push_path(pop_path(E), Step).
+
 
 new_env(Mods) ->
     #env{bindings=[celled_binding(Typ)||Typ <- ?all_bifs],
@@ -332,13 +343,21 @@ module_name(_) ->
     undefined.
 
 -type unification_error() ::
-        {error, {cannot_unify, atom(), integer(), typ(), typ()}}.
+        {error, error_cannot_unify()}.
 %% I make unification error tuples everywhere, just standardizing their
 %% construction here:
+
 -spec unify_error(Env::env(), Line::integer(), typ(), typ()) ->
                          unification_error().
-unify_error(Env, Line, Typ1, Typ2) ->
-    {error, {cannot_unify, module_name(Env), Line, unwrap(Typ1), unwrap(Typ2)}}.
+unify_error(Env, Line, Expected, Found) ->
+    {error, #cannot_unify{
+               module = module_name(Env),
+               line = Line,
+               found = unwrap(Found),
+               expected = unwrap(Expected),
+               path = lists:reverse(Env#env.path),
+               ast = Env#env.current_module
+              }}.
 
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
@@ -368,7 +387,8 @@ unify(T1, T2, Env, Line) ->
         {T, T} ->
             ok;
         %% only one instance of a type variable is permitted:
-        {{unbound, N, _}, {unbound, N, _}}  -> unify_error(Env, Line, T1, T2);
+        {{unbound, N, _}, {unbound, N, _}}  ->
+            unify_error(Env, Line, T1, T2);
         {{link, Ty}, _} ->
             unify(Ty, T2, Env, Line);
         {_, {link, Ty}} ->
@@ -708,7 +728,7 @@ unify_adt_and_poly(C1, C2, #adt{members=_Ms}=A, ToCheck, Env, L) ->
         env(),
         integer()) -> {ok, typ(), env()} |
                       {error,
-                       {cannot_unify, atom(), integer(), typ(), typ()} |
+                       error_cannot_unify() |
                        {bad_variable, integer(), alpaca_type_var()}}.
 find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
     %% Convert all the available types to actual ADT types with
@@ -747,6 +767,7 @@ find_covering_type(T1, T2, #env{current_types=Ts}=EnvIn, L) ->
                             _ -> Acc
                         end
                 end,
+            %%MARK
             Default = unify_error(EnvIn, L, T1, T2),
             lists:foldl(F, Default, lists:reverse(ADTs))
     end.
@@ -1353,13 +1374,13 @@ gen(_, T) ->
 
 %% Simple function that takes the place of a foldl over a list of
 %% arguments to an apply.
-typ_list([], _Lvl, #env{next_var=NextVar}, Memo) ->
+typ_list(_I, [], _Lvl, #env{next_var=NextVar}, Memo) ->
     {lists:reverse(Memo), NextVar};
-typ_list([H|T], Lvl, Env, Memo) ->
-    case typ_of(Env, Lvl, H) of
+typ_list(I, [H|T], Lvl, Env, Memo) ->
+    case typ_of(push_path(Env, I), Lvl, H) of
         {error, _}=Err -> Err;
         {Typ, NextVar} ->
-            typ_list(T, Lvl, update_counter(NextVar, Env), [Typ|Memo])
+            typ_list(I + 1, T, Lvl, update_counter(NextVar, Env), [Typ|Memo])
     end.
 
 unwrap(P) when is_pid(P) ->
@@ -1444,14 +1465,15 @@ type_modules([M|Ms], Env, Acc) ->
 
 -spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
-type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
-    {ok, M};                                       
+type_module(#alpaca_module{precompiled=true}=M, _Env) ->
+    {ok, M};
 type_module(#alpaca_module{functions=Fs,
                         name=Name,
                         types=Ts,
                         type_imports=Imports,
                         tests=Tests}=M,
-           #env{modules=Modules}=Env) ->
+           #env{modules=Modules} = Env) ->
+    Env1 = Env#env{path = []},
     [] = validate_types(M, Modules),
 
     %% Fold function to yield all the imported types or report a missing one.
@@ -1474,7 +1496,7 @@ type_module(#alpaca_module{functions=Fs,
         {error, _}=Err -> Err;
         Imported ->
             AllTypes = Ts ++ [T || {ok, T} <- Imported],
-            case lists:foldl(TypFolder, {[], Env}, AllTypes) of
+            case lists:foldl(TypFolder, {[], Env1}, AllTypes) of
                 {error, _}=Err ->
                     Err;
                 {ADTs, Env2} ->
@@ -1490,11 +1512,11 @@ type_module(#alpaca_module{functions=Fs,
                     %% We need to get the environment back from typ_module_funs
                     %% so that the top-level function bindings are available to
                     %% tests:
-                    case typ_module_funs(Fs, Env3, []) of
+                    case type_module_funs(0, Fs, push_path(Env3, functions), []) of
                         {error, _}=Err ->
                             Err;
                         {Env4, FunRes} ->
-                            case type_module_tests(Tests, Env4, ok, FunRes) of
+                            case type_module_tests(0, Tests, swap_path(Env4, tests), ok, FunRes) of
                                 {error, _} = Err        ->
                                     Err;
                                 Funs when is_list(Funs) ->
@@ -1504,27 +1526,27 @@ type_module(#alpaca_module{functions=Fs,
             end
     end.
 
-typ_module_funs([], Env, Memo) ->
+type_module_funs(_I, [], Env, Memo) ->
     {Env, lists:reverse(Memo)};
-typ_module_funs([#alpaca_binding{name={'Symbol', _}=N}=F|Rem], Env, Memo) ->
+type_module_funs(I, [#alpaca_binding{name={'Symbol', _}=N}=F|Rem], Env, Memo) ->
     Name = alpaca_ast:symbol_name(N),
-    case typ_of(Env, 0, F) of
+    case typ_of(push_path(Env, I), 0, F) of
         {error, _} = E ->
             E;
         {Typ, NV} ->
             Env2 = update_counter(NV, Env),
             Env3 = update_binding(Name, Typ, Env2),
-            typ_module_funs(Rem, Env3, [F#alpaca_binding{type=unwrap(Typ)}|Memo])
+            type_module_funs(I + 1, Rem, Env3, [F#alpaca_binding{type=unwrap(Typ)}|Memo])
     end.
 
-type_module_tests(_, _Env, {error, _}=Err, _) ->
+type_module_tests(_I, _, _Env, {error, _}=Err, _) ->
     Err;
-type_module_tests(_, _Env, _, {error, _}=Err) ->
+type_module_tests(_I,_, _Env, _, {error, _}=Err) ->
     Err;
-type_module_tests([], _, _, Funs) ->
+type_module_tests(_I, [], _, _, Funs) ->
     Funs;
-type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
-    type_module_tests(Rem, Env, typ_of(Env, 0, E), Funs).
+type_module_tests(I, [#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
+    type_module_tests(I + 1, Rem, Env, typ_of(push_path(Env, I), 0, E), Funs).
 
 %% Here we make a quick pass over each type defined in a module to ensure
 %% types that are members of a type are defined in this module or imported.
@@ -1614,7 +1636,7 @@ typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
 typ_of(Env, Lvl, {'Symbol', _}=S) ->
     N = alpaca_ast:symbol_name(S),
     L = alpaca_ast:line(S),
-    case inst_binding(N, L, Lvl, Env) of
+    case inst_binding(N, L, Lvl, push_path(Env, bindings)) of
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
@@ -1624,7 +1646,8 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
 
     %% Type the called function in its own module:
     Env2 = Env#env{current_module=Module,
-                   entered_modules=EnteredModules},
+                   entered_modules=EnteredModules,
+                   path = []},
     {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
 
     [Typ] = [Typ || #alpaca_binding{
@@ -1675,7 +1698,7 @@ typ_of(Env, Lvl, {'_', L}) ->
     {T, #env{next_var=VarNum}, _} = inst_binding('_', L, Lvl, Env),
     {T, VarNum};
 typ_of(Env, Lvl, #alpaca_tuple{values=Vs}) ->
-    case typ_list(Vs, Lvl, Env, []) of
+    case typ_list(0, Vs, Lvl, push_path(Env, tuple), []) of
         {error, _} = E -> E;
         {VTyps, NextVar} -> {new_cell({t_tuple, VTyps}), NextVar}
     end;
@@ -1683,26 +1706,28 @@ typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {TL, #env{next_var=NV}} = new_var(Lvl, Env),
     {new_cell({t_list, TL}), NV};
 typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
-    {HTyp, NV1} = typ_of(Env, Lvl, H),
+    CEnv = push_path(Env, cons),
+    {HTyp, NV1} = typ_of(push_path(CEnv, head), Lvl, H),
+    TEnv = push_path(CEnv, tail),
     {TTyp, NV2} =
         case T of
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
             #alpaca_cons{}=Cons ->
-                typ_of(update_counter(NV1, Env), Lvl, Cons);
+                typ_of(update_counter(NV1, TEnv), Lvl, Cons);
             {'Symbol', _} = S ->
                 L = alpaca_ast:line(S),
                 {STyp, Next} =
-                    typ_of(update_counter(NV1, Env), Lvl, S),
+                    typ_of(update_counter(NV1, TEnv), Lvl, S),
                 {TL, #env{next_var=Next2}} =
                     new_var(Lvl, update_counter(Next, Env)),
-                case unify(new_cell({t_list, TL}), STyp, Env, L) of
+                case unify(new_cell({t_list, TL}), STyp, TEnv, L) of
                     {error, _} = E -> E;
                     ok -> {STyp, Next2}
                 end;
             #alpaca_apply{}=Apply ->
-                {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
+                {TApp, Next} = typ_of(update_counter(NV1, TEnv), Lvl, Apply),
                 case unify(
-                       new_cell({t_list, HTyp}), TApp, Env, apply_line(Apply))
+                       new_cell({t_list, HTyp}), TApp, TEnv, apply_line(Apply))
                 of
                     {error, _} = E -> E;
                     ok -> {TApp, Next}
@@ -1729,7 +1754,7 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                    {t_list, LT} ->
                        LT
                end,
-    case unify(HTyp, ListType, Env, Line) of
+    case unify(HTyp, ListType, CEnv, Line) of
         {error, _} = Err ->
             Err;
         ok ->
@@ -1737,20 +1762,21 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_binary{segments=Segs}) ->
-    case type_bin_segments(Env, Lvl, Segs) of
+    case type_bin_segments(push_path(Env, binary), Lvl, Segs) of
         {error, _}=Err -> Err;
         {ok, NV} -> {new_cell(t_binary), NV}
     end;
 
 typ_of(Env, Lvl, #alpaca_map{}=M) ->
-    type_map(Env, Lvl, M);
+    type_map(push_path(Env, map), Lvl, M);
 typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
     #alpaca_map_pair{key=KE, val=VE} = A,
-    TypA = typ_list([KE, VE], Lvl, Env, []),
-    TypB = typ_of(Env, Lvl, B),
+    MEnv = push_path(Env, map_add),
+    TypA = typ_list(0, [KE, VE], Lvl, push_path(MEnv, to_add), []),
+    TypB = typ_of(push_path(MEnv, existing), Lvl, B),
 
     map_typ_of(
-      Env, TypA,
+      MEnv, TypA,
       fun(Env2, [KT, VT]) ->
               AMap = new_cell({t_map, KT, VT}),
               map_typ_of(
@@ -1763,8 +1789,9 @@ typ_of(Env, Lvl, #alpaca_map_add{line=L, to_add=A, existing=B}) ->
 
 %% Record typing:
 typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
+    REnv = push_path(Env, record),
     F = fun(#alpaca_record_member{name=N, val=V}, {ARMembers, E}) ->
-                case typ_of(E, Lvl, V) of
+                case typ_of(push_path(E, N), Lvl, V) of
                     {error, _}=Err ->
                         erlang:error(Err);
                     {VTyp, NextVar} ->
@@ -1772,7 +1799,7 @@ typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
                         {[MTyp|ARMembers], update_counter(NextVar, E)}
                 end
         end,
-    {Members2, Env2} = lists:foldl(F, {[], Env}, Members),
+    {Members2, Env2} = lists:foldl(F, {[], REnv}, Members),
     {RowVar, Env3} = new_var(Lvl, Env2),
     Res = new_cell(#t_record{
                       is_pattern=IsPattern,
@@ -1781,17 +1808,18 @@ typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
     {Res, Env3#env.next_var};
 
 typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists}) ->
-    {ExistsType, NV} = case typ_of(Env, Lvl, Exists) of
+    REnv = push_path(Env, alpaca_record_transform),
+    {ExistsType, NV} = case typ_of(push_path(REnv, existing), Lvl, Exists) of
                            {error, _}=Err -> throw(Err);
                            OK -> OK
                        end,
-    {EmptyRecType, NV2} = typ_of(update_counter(NV, Env), Lvl, #alpaca_record{}),
+    {EmptyRecType, NV2} = typ_of(update_counter(NV, REnv), Lvl, #alpaca_record{}),
 
-    Env2 = update_counter(NV2, Env),
+    Env2 = update_counter(NV2, REnv),
     ok = unify(EmptyRecType, ExistsType, Env2, Lvl),
     #t_record{row_var=RV} = get_cell(EmptyRecType),
     AddsRec = #alpaca_record{members=Adds},
-    {AddsRecCell, NV3} = typ_of(Env2, Lvl, AddsRec),
+    {AddsRecCell, NV3} = typ_of(push_path(Env2, additions), Lvl, AddsRec),
 
     #t_record{members=AddMs} = get_cell(AddsRecCell),
     Flattened = flatten_record(#t_record{members=AddMs, row_var=RV}),
@@ -1808,7 +1836,7 @@ typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists}) ->
     {new_cell(Rec), NV3};
 
 typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
-    case inst_type_arrow(Env, N) of
+    case inst_type_arrow(push_path(Env, type_apply), N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, _CTyp, RTyp}} ->
             {RTyp, Env2#env.next_var}
@@ -1820,20 +1848,22 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
     %% to unify/4 which requires both arguments to be in cells while other parts
     %% of the typer balk at things being immediately celled.  An overhaul of the
     %% inferencer is in order pretty soon I think.
+    AEnv = push_path(Env, type_apply),
     EnsureCelled = fun(X) when is_pid(X) -> X;
                       (X) -> new_cell(X)
                    end,
 
-    case inst_type_arrow(Env, N) of
+    case inst_type_arrow(push_path(AEnv, name), N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, CTyp, RTyp}} ->
-            case typ_of(Env2, Lvl, A) of
+            Env3 = pop_path(Env2),
+            case typ_of(push_path(Env3, arg), Lvl, A) of
                 {error, _}=Err -> Err;
                 {ATyp, NVNum} ->
                     #type_constructor{line=L} = N,
                     case unify(CTyp,
                                EnsureCelled(ATyp),
-                               update_counter(NVNum, Env2), L)
+                               update_counter(NVNum, Env3), L)
                     of
                         ok             -> {RTyp, NVNum};
                         {error, _}=Err -> Err
@@ -1843,7 +1873,7 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
 
 %% BIFs are loaded in the environment as atoms:
 typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
-    case inst_binding(AlpacaName, L, Lvl, Env) of
+    case inst_binding(AlpacaName, L, Lvl, push_path(Env, bif)) of
         {error, _} = E ->
             E;
         {T, #env{next_var=VarNum}, _} ->
@@ -1853,16 +1883,18 @@ typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
 typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {'Symbol', _}=Sym, Arity}, args=Args}) ->
     X = alpaca_ast:symbol_name(Sym),
     L = alpaca_ast:line(Sym),
+    AEnv = push_path(Env, apply),
     Satisfy =
         fun() ->
                 %% Naively assume a single call to the same function for now.
                 %% does the module exist and does it export the function?
-                case extract_fun(Env, Mod, X, Arity) of
+                case extract_fun(AEnv, Mod, X, Arity) of
                     {error, _} = E -> E;
                     {ok, Module, _Fun} ->
-                        EnteredModules = [Mod | Env#env.entered_modules],
+                        EnteredModules = [Mod | AEnv#env.entered_modules],
                         Env2 = Env#env{current_module=Module,
-                                       entered_modules=EnteredModules},
+                                       entered_modules=EnteredModules,
+                                       path = []},
                         %% Type the called function in its own module:
                         case type_module(Module, Env2) of
                             {ok, #alpaca_module{functions=Funs}} ->
@@ -1874,25 +1906,25 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {'Symbol', _}=Sym, Arity}, args=Args})
                                                            arity=A}} <- Funs,
                                           N =:= X,
                                           A =:= Arity],
-                                #env{next_var=NextVar}=Env,
+                                #env{next_var=NextVar}=AEnv,
                                 %% deep copy to cell the various types, needed
                                 %% because typing a module unwraps all the
                                 %% reference cells before returning the module:
                                 {DT, _} = deep_copy_type(T, maps:new()),
-                                typ_apply(Env, Lvl, DT, NextVar, Args, L);
+                                typ_apply(AEnv, Lvl, DT, NextVar, Args, L);
                             {error, _}=Err ->
                                 Err
                         end
                 end
         end,
     Error = fun() ->
-                    [CurrMod|_] = Env#env.entered_modules,
+                    [CurrMod|_] = AEnv#env.entered_modules,
                     {error, {bidirectional_module_ref, Mod, CurrMod}}
             end,
 
-    case [M || M <- Env#env.entered_modules, M == Mod] of
+    case [M || M <- AEnv#env.entered_modules, M == Mod] of
         [] -> Satisfy();
-        [Mod] -> case Env#env.current_module of
+        [Mod] -> case AEnv#env.current_module of
                      #alpaca_module{name=Mod} -> Satisfy();
                      _ -> Error()
                  end;
@@ -1905,24 +1937,25 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     %% to find a potential function that can be unambigiously
     %% curried, and then types against that by manipulating the
     %% argument list and return type
+    AEnv = push_path(Env, apply),
     LocalCurryFun =
         fun() ->
             %% If we got an arrow type, if we couldn't find it in the
             %% top level, and it still didn't unify, it might be
             %% a local binding we can still curry.
-            case typ_of(Env, Lvl, Expr) of
+            case typ_of(push_path(AEnv, expr), Lvl, Expr) of
                 {error, {bad_variable_name, _, _, _}} = E -> E;
                 {error, _} = E -> E;
                 {{t_arrow, TArgs, TRet}, NextVar} ->
                     case length(Args) >= length(TArgs) of
                         true ->
                             {'Symbol', #{name := N, line := _Ln}} = Expr,
-                            Mod = Env#env.current_module#alpaca_module.name,
+                            Mod = AEnv#env.current_module#alpaca_module.name,
                             {error, {not_found, Mod, N, length(Args)}};
                         false ->
                             {CurryArgs, RemArgs} = lists:split(length(Args), TArgs),
                             CurriedTypF = {t_arrow, CurryArgs, {t_arrow, RemArgs, TRet}},
-                            typ_apply(Env, Lvl, CurriedTypF, NextVar, Args, L)
+                            typ_apply(push_path(AEnv, apply), Lvl, CurriedTypF, NextVar, Args, L)
                     end
             end
         end,
@@ -1932,15 +1965,15 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             {Mod, FN, Env2} = case Expr of
                 {'Symbol', _}=Sym ->
                     FunName = alpaca_ast:symbol_name(Sym),
-                    {Env#env.current_module, FunName, Env};
+                    {AEnv#env.current_module, FunName, AEnv};
 
                 {bif, FunName, _, _, _} ->
-                    {Env#env.current_module, FunName, Env};
+                    {AEnv#env.current_module, FunName, AEnv};
 
                 {alpaca_far_ref, _, ModName, FunName, _} ->
-                    EnteredModules = [Env#env.current_module | Env#env.entered_modules],
-                    {ok, Module, _} = extract_module_bindings(Env, ModName, FunName),
-                    E = Env#env{current_module=Module,
+                    EnteredModules = [AEnv#env.current_module | AEnv#env.entered_modules],
+                    {ok, Module, _} = extract_module_bindings(AEnv, ModName, FunName),
+                    E = AEnv#env{current_module=Module,
                                 entered_modules=EnteredModules},
                     {Module, FunName, E}
             end,
@@ -1966,17 +1999,17 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                          {'Symbol', _}=Sym       -> alpaca_ast:symbol_name(Sym);
                          {bif, FunName, _, _, _} -> FunName
                      end,
-                Mod = Env#env.current_module,
+                Mod = AEnv#env.current_module,
                 case get_fun(Mod, FN, length(Args)) of
                     {ok, _, Fun} ->
-                        case typ_of(Env, Lvl, Fun) of
+                        case typ_of(push_path(AEnv, 'fun'), Lvl, Fun) of
                             {error, _}=Err -> Err;
                             {TypF, NextVar} ->
                                 %% We should have a t_arrow taking some args with a return value
                                 %% What we need is a t_arrow that takes some of those args and returns
                                 %% another t_arrow taking the remainder and returning the final arg
                                 try
-                                    typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                                    typ_apply(AEnv, Lvl, TypF, NextVar, Args, L)
                                 catch
                                     throw:{arity_error, _, _} = Err -> CurryFun(Err)
                                 end
@@ -1985,7 +2018,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 end
         end,
 
-    case typ_of(Env, Lvl, Expr) of
+    case typ_of(push_path(AEnv, expr), Lvl, Expr) of
         {error, {bad_variable_name, _, _, _}} -> ForwardFun();
         {error, _} = E -> E;
         {TypF, NextVar} ->
@@ -1995,7 +2028,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             %% of let bindings which could be a weakness.
             %%
             try
-                typ_apply(Env, Lvl, TypF, NextVar, Args, L)
+                typ_apply(AEnv, Lvl, TypF, NextVar, Args, L)
             catch
                 error:{arity_error, _, _} ->
                     case Expr of
@@ -2009,14 +2042,15 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
 %% other, then unifying the general pattern type with the match expression's
 %% type.
 typ_of(Env, Lvl, #alpaca_match{match_expr=E, clauses=Cs, line=Line}) ->
-    {ETyp, NextVar1} = typ_of(Env, Lvl, E),
-    Env2 = update_counter(NextVar1, Env),
+    MEnv = push_path(Env, match),
+    {ETyp, NextVar1} = typ_of(push_path(MEnv, match_expr), Lvl, E),
+    Env2 = update_counter(NextVar1, MEnv),
 
-    case unify_clauses(Env2, Lvl, Cs) of
+    case unify_clauses(push_path(Env2, clauses), Lvl, Cs) of
         {error, _} = Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, #env{next_var=NextVar2}}  ->
             %% unify the expression with the unified pattern:
-            case unify(PTyp, ETyp, Env, Line) of
+            case unify(PTyp, ETyp, MEnv, Line) of
                 {error, _} = Err -> Err;
                 %% only need to return the result type of the unified
                 %% clause types:
@@ -2025,33 +2059,40 @@ typ_of(Env, Lvl, #alpaca_match{match_expr=E, clauses=Cs, line=Line}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_clause{pattern=P, guards=Gs, result=R, line=L}) ->
-    case add_bindings(P, Env, Lvl, 0) of
+    CEnv = push_path(Env, clause),
+    case add_bindings(P, CEnv, Lvl, 0) of
         {error, _}=Err -> Err;
         {PTyp, _, NewEnv, _} ->
+            GEnv = push_path(NewEnv, guards),
             F = fun(_, {error, _}=Err) -> Err;
-                   (G, {Typs, AccEnv}) ->
-                        case typ_of(AccEnv, Lvl, G) of
+                   (G, {I, Typs, AccEnv}) ->
+                        AccEnv1 = push_path(AccEnv, I),
+                        case typ_of(AccEnv1, Lvl, G) of
                             {error, _}=Err ->
                                 Err;
                             {GTyp, NV} ->
-                                {[GTyp|Typs], update_counter(NV, AccEnv)}
+                                {I + 1, [GTyp|Typs], update_counter(NV, AccEnv)}
                         end
                 end,
-            case lists:foldl(F, {[], NewEnv}, Gs) of
+            case lists:foldl(F, {0, [], GEnv}, Gs) of
                 {error, _}=Err -> Err;
-                {GTyps, Env2} ->
+                {GCount, GTyps, Env2} ->
+                    %% Remove the guards part
                     UnifyFolder = fun(_, {error, _}=Err) -> Err;
-                                     (N, Acc) ->
-                                          case unify(N, Acc, Env, L) of
+                                     (N, {I, Acc}) ->
+                                          case unify(N, Acc, push_path(Env2, I), L) of
                                               {error, _}=Err -> Err;
-                                              ok -> Acc
+                                              ok -> {I - 1, Acc}
                                           end
                                   end,
 
-                    case lists:foldl(UnifyFolder, new_cell(t_bool), GTyps) of
+                    %% The list for GTypes comes in reverse, so we also need to
+                    %% count the index off backwards.
+                    case lists:foldl(UnifyFolder, {GCount, new_cell(t_bool)}, GTyps) of
                         {error, _}=Err -> Err;
                         _ ->
-                            case typ_of(Env2, Lvl, R) of
+                            Env3 = pop_path(Env2),
+                            case typ_of(push_path(Env3, result), Lvl, R) of
                                 {error, _} = E   -> E;
                                 {RTyp, NextVar2} ->
                                     {{t_clause, PTyp, none, RTyp}, NextVar2}
@@ -2064,7 +2105,8 @@ typ_of(Env, Lvl, #alpaca_clause{pattern=P, guards=Gs, result=R, line=L}) ->
 %%% it's type to be fixed.
 typ_of(Env, Lvl, #alpaca_type_check{type=T, expr=E, line=L}) ->
     Typ = proplists:get_value(T, ?all_type_checks),
-    case typ_of(Env, Lvl, E) of
+    TEnv = push_path(Env, type_check),
+    case typ_of(push_path(TEnv, exrp), Lvl, E) of
         {error, _}=Err -> Err;
         {ETyp, NV} ->
             %% polymorphic built-in types like PIDs need to be instantiated
@@ -2084,16 +2126,17 @@ typ_of(Env, Lvl, #alpaca_type_check{type=T, expr=E, line=L}) ->
     end;
 
 typ_of(Env, Lvl, #alpaca_send{line=L, message=M, pid=P}) ->
-    case typ_of(Env, Lvl, P) of
+    SEnv = push_path(Env, send),
+    case typ_of(push_path(SEnv, pid), Lvl, P) of
         {error, _}=Err -> Err;
         {T, NV} ->
-            {Var, Env2} = new_var(Lvl, Env),
+            {Var, Env2} = new_var(Lvl, SEnv),
             PidT = new_cell(Var),
             PC = new_cell({t_pid, PidT}),
             case unify(T, PC, Env2, Lvl) of
                 {error, _}=Err -> Err;
                 ok ->
-                    case typ_of(Env2, Lvl, M) of
+                    case typ_of(push_path(Env2, message), Lvl, M) of
                         {error, _}=Err -> Err;
                         {MT, NV2} ->
                             Env3 = update_counter(NV2, Env2),
@@ -2105,25 +2148,28 @@ typ_of(Env, Lvl, #alpaca_send{line=L, message=M, pid=P}) ->
             end
     end;
 typ_of(Env, Lvl, #alpaca_receive{}=Recv) ->
-    type_receive(Env, Lvl, Recv);
+    REnv = push_path(Env, 'receive'),
+    type_receive(REnv, Lvl, Recv);
 
 %%% Calls to Erlang code only have their return value typed.
 %%% However, we also check that the arguments refer to in-scope names.
 typ_of(Env, Lvl, #alpaca_ffi{args=Args}=FFI) ->
-    case typ_ffi_args(Env, Lvl, Args) of
-        ok -> typ_ffi_clauses(Env, Lvl, FFI);
+    FEnv = push_path(Env, ffi),
+    case typ_ffi_args(0, push_path(FEnv, args), Lvl, Args) of
+        ok -> typ_ffi_clauses(FEnv, Lvl, FFI);
         {error, _}=Err -> Err
     end;
 
 %% Spawning of functions in the current module:
 typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}) ->
+    SEnv = push_path(Env, spawn),
     %% make a function application and type it:
     Apply = #alpaca_apply{line=0, expr=F, args=Args},
 
-    case typ_of(Env, Lvl, F) of
+    case typ_of(SEnv, Lvl, F) of
         {error, _}=Err -> Err;
         {SpawnFunTyp, NV} ->
-            Env2 = update_counter(NV, Env),
+            Env2 = update_counter(NV, SEnv),
             case typ_of(Env2, Lvl, Apply) of
                 {error, _}=Err -> Err;
                 {_AT, NV2} ->
@@ -2144,6 +2190,7 @@ typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}
     end;
 
 typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
+    FEnv =  push_path(EnvIn, 'fun'),
     F = fun(_, {error, _}=Err) ->
                 Err;
            (#alpaca_fun_version{args=Args, body=Body}, {Types, Env}) ->
@@ -2181,7 +2228,7 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
                         end
                 end
         end,
-    case lists:foldl(F, {[], EnvIn}, Vs) of
+    case lists:foldl(F, {[], FEnv}, Vs) of
         {error, _}=Err ->
             Err;
         {RevVersions, Env2} ->
@@ -2208,9 +2255,10 @@ typ_of(Env, Lvl, #alpaca_binding{
                     name={'Symbol', _}=Sym,
                     bound_expr=#alpaca_fun{}=E,
                     body=E2}) ->
+    BEnv = push_path(Env, binding),
     N = alpaca_ast:symbol_name(Sym),
-    {TypE, NextVar} = typ_of(Env, Lvl, E#alpaca_fun{name=N}),
-    Env2 = update_counter(NextVar, Env),
+    {TypE, NextVar} = typ_of(BEnv, Lvl, E#alpaca_fun{name=N}),
+    Env2 = update_counter(NextVar, BEnv),
     case E2 of
         undefined ->
             {TypE, NextVar};
@@ -2220,8 +2268,9 @@ typ_of(Env, Lvl, #alpaca_binding{
 
 %% A var binding inside a function:
 typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}) ->
+    BEnv = push_path(Env, binding),
     N = alpaca_ast:symbol_name(Sym),
-    case typ_of(Env, Lvl, E1) of
+    case typ_of(BEnv, Lvl, E1) of
         {error, _}=Err ->
             Err;
         {TypE, NextVar} ->
@@ -2230,16 +2279,16 @@ typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}
                     {TypE, NextVar};
                 _ ->
                     Gen = gen(Lvl, TypE),
-                    Env2 = update_counter(NextVar, Env),
+                    Env2 = update_counter(NextVar, BEnv),
                     typ_of(update_binding(N, Gen, Env2), Lvl+1, E2)
             end
     end.
 
-typ_ffi_args(_Env, _Lvl, {nil, _}) -> ok;
-typ_ffi_args(Env, Lvl, #alpaca_cons{head=H, tail=T}) ->
-    case typ_of(Env, Lvl, H) of
+typ_ffi_args(_I, _Env, _Lvl, {nil, _}) -> ok;
+typ_ffi_args(I, Env, Lvl, #alpaca_cons{head=H, tail=T}) ->
+    case typ_of(push_path(Env, I), Lvl, H) of
         {error, _}=Err -> Err;
-        _Ok -> typ_ffi_args(Env, Lvl, T)
+        _Ok -> typ_ffi_args(I+1, Env, Lvl, T)
     end.
 
 typ_ffi_clauses(#env{next_var=NV}=Env, Lvl,
@@ -2303,21 +2352,23 @@ type_map(Env, Lvl, #alpaca_map{pairs=[]}) ->
 type_map(Env, Lvl, #alpaca_map{pairs=Pairs}) ->
     {MapType, NV} = type_map(Env, Lvl, #alpaca_map{}),
     Env2 = update_counter(NV, Env),
-    case unify_map_pairs(Env2, Lvl, Pairs, MapType) of
+    case unify_map_pairs(0, Env2, Lvl, Pairs, MapType) of
         {error, _}=Err -> Err;
         {Type, #env{next_var=NV2}} -> {Type, NV2}
     end.
-unify_map_pairs(Env, _, [], T) ->
+unify_map_pairs(_I, Env, _, [], T) ->
     {new_cell(T), Env};
-unify_map_pairs(Env, Lvl, [#alpaca_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
+unify_map_pairs(I, Env, Lvl, [#alpaca_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
     {t_map, K, V} = unwrap_cell(T),
-    case typ_list([KE, VE], Lvl, Env, []) of
+    IEnv = push_path(Env, I),
+    case typ_list(0, [KE, VE], Lvl, IEnv, []) of
         {error, _}=Err -> Err;
         {[KT, VT], NV} ->
-            Env2 = update_counter(NV, Env),
+            Env2 = update_counter(NV, IEnv),
             case unify(K, KT, Env2, L) of
                 ok -> case unify(V, VT, Env2, L) of
-                          ok -> unify_map_pairs(Env2, Lvl, Rem, T);
+                          %% We got to popo he path here to remove I from it.
+                          ok -> unify_map_pairs(I+1, pop_path(Env2), Lvl, Rem, T);
                           {error, _}=Err -> Err
                       end;
                 {error, _}=Err -> Err
@@ -2329,17 +2380,17 @@ unify_map_pairs(Env, Lvl, [#alpaca_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
 unify_clauses(Env, Lvl, Cs) ->
     ClauseFolder =
         fun(_, {error, _}=Err) -> Err;
-           (C, {Clauses, EnvAcc}) ->
-                case typ_of(EnvAcc, Lvl, C) of
+           (C, {I, Clauses, EnvAcc}) ->
+                case typ_of(push_path(EnvAcc, I), Lvl, C) of
                     {error, _}=Err -> Err;
                     {TypC, NV} ->
                         #alpaca_clause{line=Line} = C,
-                        {[{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
+                        {I+1, [{Line, TypC}|Clauses], update_counter(NV, EnvAcc)}
                 end
         end,
-    case lists:foldl(ClauseFolder, {[], Env}, Cs) of
+    case lists:foldl(ClauseFolder, {0, [], Env}, Cs) of
         {error, _}=Err -> Err;
-        {TypedCs, #env{next_var=NextVar2}} ->
+        {_I, TypedCs, #env{next_var=NextVar2}} ->
             UnifyFolder =
                 fun(_, {error, _}=Err) -> Err;
                    ({Line, {t_clause, PA, _, RA}}, Acc) ->
@@ -2495,7 +2546,7 @@ typ_apply_no_recv(Env, Lvl, TypF, NextVar, Args, Line) ->
     %% placeholder:
     CopiedTypF = TypF,
 
-    case typ_list(Args, Lvl, update_counter(NextVar, Env), []) of
+    case typ_list(0, Args, Lvl, update_counter(NextVar, Env), []) of
         {error, _}=Err -> Err;
         {ArgTypes, NextVar2} ->
             TypRes = new_cell(t_rec),
@@ -2874,7 +2925,7 @@ clause_test_() ->
 match_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
                    top_typ_of("let f x = match x with\n  i -> i + 2")),
-     ?_assertMatch({error, {cannot_unify, _, _, _, _}},
+     ?_assertMatch({error, #cannot_unify{}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  i -> i + 1\n"
@@ -2890,19 +2941,19 @@ match_test_() ->
 %% Testing that type errors are reported for the appropriate line when
 %% clauses are unified by match or receive.
 pattern_match_error_line_test_() ->
-    [?_assertMatch({error, {cannot_unify, _, 3, t_float, t_int}},
+    [?_assertMatch({error, #cannot_unify{line = 3, found = t_float, expected = t_int}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    i, is_integer i -> :int\n"
                      "  | f, is_float f -> :float")),
-     ?_assertMatch({error, {cannot_unify, _, 4, t_float, t_int}},
+     ?_assertMatch({error, #cannot_unify{line = 4, found = t_float, expected = t_int}},
                    top_typ_of(
                      "let f () = receive with\n"
                      "    0 -> :zero\n"
                      "  | 1 -> :one\n"
                      "  | 2.0 -> :two\n"
                      "  | 3 -> :three\n")),
-     ?_assertMatch({error, {cannot_unify, _, 3, t_string, t_atom}},
+     ?_assertMatch({error, #cannot_unify{line = 3, found = t_string, expected = t_atom}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    0 -> :zero\n"
@@ -2959,7 +3010,8 @@ list_test_() ->
                      "let f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_float, t_int}},
+     ?_assertMatch({error, #cannot_unify{module = undefined, line = 3,
+                                         found = t_float, expected = t_int}},
                    top_typ_of(
                      "let f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
@@ -2974,7 +3026,7 @@ binary_test_() ->
                    top_typ_of(
                      "let f x = match x with "
                      "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
-     ?_assertMatch({error, {cannot_unify, _, 1, t_float, t_int}},
+     ?_assertMatch({error, #cannot_unify{ line = 1, found = t_float, expected = t_int}},
                    top_typ_of("let f () = let x = 1.0 in <<x: type=int>>")),
      ?_assertMatch({{t_arrow, [t_binary], t_string}, _},
                    top_typ_of(
@@ -2988,7 +3040,7 @@ map_test_() ->
                    top_typ_of("#{:one => 1}")),
      ?_assertMatch({{t_map, t_atom, t_int}, _},
                    top_typ_of("#{:one => 1, :two => 2}")),
-     ?_assertMatch({error, {cannot_unify, _, 2, t_atom, t_string}},
+     ?_assertMatch({error, #cannot_unify{ line = 2, found = t_atom, expected = t_string}},
                    top_typ_of(
                      "#{:one => 1,\n"
                      "  \"two\" => 2}")),
@@ -2999,7 +3051,8 @@ map_test_() ->
                      "  | _ -> \"doesn't have one\"")),
      ?_assertMatch({{t_map, t_atom, t_int}, _},
                    top_typ_of("#{:a => 1 | #{:b => 2}}")),
-     ?_assertMatch({error, {cannot_unify, undefined, 1, t_atom, t_string}},
+     ?_assertMatch({error, #cannot_unify{module = undefined, line = 1,
+                                         found = t_atom, expected = t_string}},
                    top_typ_of("#{:a => 1 | #{\"b\" => 2}}"))
     ].
 
@@ -3102,7 +3155,8 @@ recursive_fun_test_() ->
                      "let f x = match x with\n"
                      "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_atom}},
+     ?_assertMatch({error, #cannot_unify{ module = undefined, line = 3,
+                                          found = t_int, expected = t_atom}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  0 -> :zero\n"
@@ -3167,7 +3221,8 @@ ffi_test_() ->
                    top_typ_of(
                      "beam :io :format [\"One is ~w~n\", [1]] with\n"
                      " _ -> 1")),
-     ?_assertMatch({error, {cannot_unify, undefined, 1, t_atom, t_int}},
+     ?_assertMatch({error, #cannot_unify{module = undefined, line = 1,
+                                         found = t_atom, expected = t_int}},
                    top_typ_of(
                      "beam :a :b [1] with\n"
                      "  (:ok, x) -> 1\n"
@@ -3188,13 +3243,13 @@ equality_test_() ->
     [?_assertMatch({t_bool, _}, top_typ_of("1 == 2")),
      ?_assertMatch({{t_arrow, [t_int], t_bool}, _},
                    top_typ_of("let f x = 1 == x")),
-     ?_assertMatch({error, {cannot_unify, _, _, _, _}}, top_typ_of("1.0 == 1")),
+     ?_assertMatch({error, #cannot_unify{}}, top_typ_of("1.0 == 1")),
      ?_assertMatch({{t_arrow, [t_int], t_atom}, _},
                    top_typ_of(
                      "let f x = match x with\n"
                      " a, a == 0 -> :zero\n"
                      "|b -> :not_zero")),
-     ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+     ?_assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  a -> a + 1\n"
@@ -3220,7 +3275,7 @@ type_guard_test_() ->
                      " | i, is_integer i -> i\n")),
      %% Two results with different types as determined by their guards
      %% should result in a type error:
-     ?_assertMatch({error, {cannot_unify, _, _, t_int, t_float}},
+     ?_assertMatch({error, #cannot_unify{ found = t_int, expected = t_float}},
                    top_typ_of(
                      "beam :a :b [2] with\n"
                      "   i, i == 1.0 -> i\n"
@@ -3242,7 +3297,7 @@ type_guard_test_() ->
 %%%
 %%% Tests for ADTs that are simply unions of existing types:
 union_adt_test_() ->
-    [?_assertMatch({error, {cannot_unify, _, 1, t_int, t_atom}},
+    [?_assertMatch({error, #cannot_unify{line = 1, found = t_int, expected = t_atom}},
                    top_typ_with_types(
                      "let f x = match x with "
                      "  0 -> :zero"
@@ -3417,7 +3472,7 @@ type_constructor_test_() ->
                           name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
      ?_assertMatch(
-        {error, {cannot_unify, _, _, t_int, t_float}},
+        {error, #cannot_unify{found = t_int, expected = t_float}},
         top_typ_with_types(
           "let f x = Cons (1, Cons (2.0, Nil))",
           [#alpaca_type{
@@ -3496,7 +3551,8 @@ type_constructor_with_arrow_arg_test() ->
     Invalid = Base ++
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
-     ?assertMatch({error,{cannot_unify, constructor, _, t_bool, t_int}},
+     ?assertMatch({error, #cannot_unify{module = constructor,
+                                        found = t_bool, expected =t_int}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_with_aliased_arrow_arg_test() ->
@@ -3507,14 +3563,16 @@ type_constructor_with_aliased_arrow_arg_test() ->
     Valid = Base ++ "let f (W b) = b 1 1\n\n",
     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
-    ?assertMatch({error, {cannot_unify,constructor,7,
-                         #adt{name = <<"intbinop">>,
-                              vars=[],
-                              members=[#adt{name = <<"binop">>,
-                                            vars=[{_, t_int}],
-                                            members=[{t_arrow,[t_int,t_int],t_int}]}]},
-                          {t_arrow,[t_int,t_atom],t_rec}}},
-                  module_typ_and_parse(Invalid)).
+    ?assertMatch(
+       {error, #cannot_unify{
+                  module = constructor, line = 7,
+                  found = #adt{name = <<"intbinop">>,
+                                  vars=[],
+                                  members=[#adt{name = <<"binop">>,
+                                                vars=[{_, t_int}],
+                                                members=[{t_arrow,[t_int,t_int],t_int}]}]},
+                  expected = {t_arrow,[t_int,t_atom],t_rec}}},
+       module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
     Code =
@@ -3528,11 +3586,11 @@ type_constructor_multi_level_type_alias_arg_test() ->
     BadVal = Code ++ "let make () = Constructor [(:test_passed, 1)]",
     BadArg = Code ++ "let make () = Constructor 1",
     ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Valid)),
-    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+    ?assertMatch({error, #cannot_unify{}},
                  module_typ_and_parse(BadKey)),
-    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+    ?assertMatch({error, #cannot_unify{}},
                  module_typ_and_parse(BadVal)),
-    ?assertMatch({error, {cannot_unify, _, _, _, _}},
+    ?assertMatch({error, #cannot_unify{}},
                  module_typ_and_parse(BadArg)).
 
 type_var_replacement_test_() ->
@@ -3619,7 +3677,7 @@ module_with_adt_map_error_test() ->
     [M] = make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch(
-       {error, {cannot_unify, _, _, {t_map, _, _}, {t_list, _}}}, Res).
+       {error, #cannot_unify{found =  {t_map, _, _}, expected = {t_list, _}}}, Res).
 
 json_union_type_test() ->
     Code =
@@ -3703,12 +3761,14 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
 
     [M] = make_modules([Code]),
     Res = type_modules([M]),
-    ?assertMatch({error,
-                  {cannot_unify,tree,15,
-                   #adt{name = <<"tree">>,
-                        vars=[{"a",_}],
-                        members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
-                   t_int}},
+    ?assertMatch(
+       {error,
+        #cannot_unify{
+           module = tree, line = 15,
+           found = #adt{name = <<"tree">>,
+                           vars=[{"a",_}],
+                           members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
+           expected = t_int}},
                  Res).
 
 polymorphic_tree_code() ->
@@ -3819,7 +3879,8 @@ type_var_protection_fail_unify_test() ->
 
     Res = type_modules([M]),
     ?assertMatch(
-       {error, {cannot_unify, module_matching_lists, 5, t_int, t_float}}, Res).
+       {error, #cannot_unify{ module = module_matching_lists, line = 5,
+                              found = t_int, expected = t_float}}, Res).
 
 type_error_in_test_test() ->
     Code =
@@ -3827,8 +3888,10 @@ type_error_in_test_test() ->
         "let add x y = x + y\n\n"
         "test \"add floats\" = add 1.0 2.0",
     Res = module_typ_and_parse(Code),
-    ?assertEqual(
-       {error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
+    %% 753 is the line this was raised
+    ?assertMatch(
+       {error, #cannot_unify{module = type_error_in_test, line = 5,
+                             found = t_int, expected = t_float}}, Res).
 
 %% At the moment we don't care what the type of the test expression is,
 %% only that it type checks.
@@ -3945,7 +4008,8 @@ polymorphic_process_as_return_value_test() ->
         "  let u = send :a p in\n"
         "  p",
     Res = module_typ_and_parse(Code),
-    ?assertMatch({error, {cannot_unify, poly_process, 12, t_float, t_atom}}, Res).
+    ?assertMatch({error, #cannot_unify{module = poly_process, line = 12,
+                                       found = t_float, expected = t_atom}}, Res).
 
 polymorphic_spawn_test() ->
     FunCode =
@@ -3990,7 +4054,7 @@ receive_test_() ->
                    top_typ_of(
                      "receive with "
                      "  i -> i + 1")),
-     ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+     ?_assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
                    top_typ_of(
                      "receive with "
                      "  i -> i + 1 "
@@ -4107,7 +4171,7 @@ receive_test_() ->
                  "  in let z = receive with "
                  "    flt, is_float flt -> flt "
                  "  in x + y + z",
-             ?assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+             ?assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
                           module_typ_and_parse(Code))
      end
 
@@ -4218,9 +4282,9 @@ spawn_test_() ->
                   "  | B xx -> b (xx + x)\n\n"
                   "let start_a init = spawn a [init]",
               ?assertMatch(
-                 {error, {cannot_unify, _, _,
-                          #adt{name = <<"u">>},
-                          #adt{name = <<"t">>}}},
+                 {error, #cannot_unify{
+                            found = #adt{name = <<"u">>},
+                            expected = #adt{name = <<"t">>}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4261,7 +4325,7 @@ send_message_test_() ->
                   "  let p = spawn f 0 in "
                   "  send 1.0 p",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, t_int, t_float}},
+                 {error, #cannot_unify{found = t_int, expected = t_float}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4269,7 +4333,8 @@ send_message_test_() ->
                   "module send_to_non_pid\n\n"
                   "let f x = send 1 2",
               ?assertMatch(
-                 {error, {cannot_unify, send_to_non_pid, _, t_int, {t_pid, _}}},
+                 {error, #cannot_unify{module = send_to_non_pid,
+                                       found = t_int, expected = {t_pid, _}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4280,7 +4345,7 @@ send_message_test_() ->
                   "  let p = spawn f x in "
                   "  send 1 p",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, undefined, t_int}},
+                 {error, #cannot_unify{found = undefined, expected = t_int}},
                  module_typ_and_parse(Code))
       end
     ].
@@ -4559,7 +4624,7 @@ unify_with_error_test_() ->
                    "  | 1 -> :one "
                    "  | _ -> x * 2",
                ?assertMatch(
-                  {error, {cannot_unify, _, _, t_int, t_atom}},
+                  {error, #cannot_unify{ found = t_int, expected = t_atom}},
                   module_typ_and_parse(Code))
        end
     , fun() ->
@@ -4638,7 +4703,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "let foo () = my_map doubler 2",
 
               ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4653,7 +4718,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4668,7 +4733,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4689,7 +4754,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let tup = (1, 2) in "
                   "  my_map doubler (third tup)",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, #adt{}, t_int}},
+                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4844,7 +4909,7 @@ types_in_types_test_() ->
 expression_typing_test_() ->
     [%% `1` is not a function from an int to something else:
      ?_assertMatch(
-        {error, {cannot_unify, _, _, t_int, {t_arrow, [t_int], _}}},
+        {error, #cannot_unify{found = t_int, expected = {t_arrow, [t_int], _}}},
         top_typ_of("1 2")),
      ?_assertMatch({{t_arrow, [t_unit], t_int}, _},
                    top_typ_of(
@@ -4894,9 +4959,9 @@ module_qualified_types_test_() ->
                   "let should_fail () = f (other_a 1)",
               [M1, M2] = make_modules([Code1, Code2]),
               ?assertMatch({error,
-                            {cannot_unify, _, _,
-                             #adt{name = <<"a">>, module=n},
-                             #adt{name = <<"a">>, module=m}}},
+                            #cannot_unify{
+                               found = #adt{name = <<"a">>, module=n},
+                               expected = #adt{name = <<"a">>, module=m}}},
                            type_modules([M1, M2]))
       end
      , fun() ->
@@ -5028,7 +5093,7 @@ concrete_type_parameters_test_() ->
                  "type opt 'a = Some 'a | None "
                  "type uses_opt = Uses opt int "
                  "let f () = Uses Some 1.0",
-             ?assertMatch({error, {cannot_unify, _, _, t_int, t_float}},
+             ?assertMatch({error, #cannot_unify{found = t_int, expected = t_float}},
                           module_typ_and_parse(Code))
      end,
      fun() ->
@@ -5420,7 +5485,7 @@ records_and_type_constructors_test_() ->
                   "type t = T {x: int} \n"
                   "let main () = T {x=1.0}",
               ?assertMatch(
-                 {error, {cannot_unify, _, _, t_int, t_float}},
+                 {error, #cannot_unify{found = t_int, expected = t_float}},
                  module_typ_and_parse(Code))
       end
     ].

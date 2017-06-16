@@ -19,6 +19,7 @@
 -ignore_xref([ fmt/2 ]).
 
 -compile({parse_transform, epo_gettext}).
+-include("alpaca_ast.hrl").
 
 %% number of lines to show before or after the errorrous line
 -define(CTX_AREA, 2).
@@ -59,6 +60,10 @@ fmt({error, Err}, Locale) ->
 ident(S) ->
     re:replace(S, "^", "  ", [multiline, global | ?RE_OPTS]).
 
+
+fmt_parse_error(#cannot_unify{path = Path, ast = Ast, expected = E, found =F}, _Locale) ->
+    {ok, R} = alpaca_walker:walk(Path, Ast),
+    cf("Error in: ~ts\nexpected a ~p but got a ~p", [alpaca_walker:fmt(R), E, F]);
 fmt_parse_error({duplicate_definition, Type, Id, Module, Line}, Locale) ->
     t(__(<<"duplicate_definition %(type) %(id) %(mod) %(line)">>),
       Locale, [{type, a2b(Type)}, {id, red(Id)}, {mod, file(a2b(Module))},
@@ -225,6 +230,24 @@ hl_fn(O) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+pd(Module) ->
+    code:purge(Module),
+    code:delete(Module).
+
+-define(TEST_MODULE, test_comp).
+
+comp_c(Source) ->
+    Src1 = list_to_binary(["module test_comp\n" | Source]),
+    Error = {error, _}  = alpaca:compile({text, Src1}),
+    pd(test_comp),
+    test_fmt_c(Error).
+
+comp(Source) ->
+    Src1 = list_to_binary(["module test_comp\n" | Source]),
+    Error = {error, _}  = alpaca:compile({text, Src1}),
+    pd(test_comp),
+    test_fmt(Error).
+
 test_fmt(Error) ->
     CF = application:get_env(cf, colour_term),
     application:set_env(cf, colour_term, false),
@@ -375,25 +398,41 @@ real_error_test() ->
     ?assertEqual(Expected, Msg).
 
 double_binding_test() ->
-    Source = "module test_error;; let f x y = match x with\n"
+    Source = "let f x y = match x with\n"
         " h :: y -> h",
-    Error = {error, _}  = alpaca:compile({text, Source}),
-    Msg = test_fmt(Error),
-    Expected = <<"<no file>:2\n"
+    Msg = comp(Source),
+    Expected = <<"<no file>:3\n"
                  "  Duplicate definition of binding \"y\".\n"
-                 "  \"y\" was priviously defined in test_error:1\n">>,
+                 "  \"y\" was priviously defined in test_comp:2\n">>,
     ?assertEqual(Expected, Msg).
 
 double_binding_c_test() ->
-    Source = "module test_error;; let f x y = match x with\n"
-        " h :: y -> h",
-    Error = {error, _}  = alpaca:compile({text, Source}),
-    Msg = test_fmt_c(Error),
-    Expected = <<"\e[0;36m\e[4m<no file>\e[0m:\e[0;36m2\e[0m\e[0m\n"
+    Source = "let f x y = match x with\n"
+        " h :: y -> h\n",
+    Msg = comp_c(Source),
+    Expected = <<"\e[0;36m\e[4m<no file>\e[0m:\e[0;36m3\e[0m\e[0m\n"
                  "  Duplicate definition of binding "
                  "\"\e[38;2;208;28;139my\e[0m\".\n"
                  "  \"\e[38;2;208;28;139my\e[0m\" was priviously defined "
-                 "in \e[0;36m\e[4mtest_error\e[0m:\e[0;36m\e[4m1\e[0m\n\e[0m">>,
+                 "in \e[0;36m\e[4mtest_comp\e[0m:\e[0;36m\e[4m2\e[0m\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
+
+type_error_1_test() ->
+    Source = "let add x y = x + y;;\n"
+        "let plus2 x = add x 2.0",
+    Msg = comp(Source),
+    Expected = <<"<no file>:3\n"
+                 "  Duplicate definition of binding \"y\".\n"
+                 "  \"y\" was priviously defined in test_comp:2\n">>,
+    ?assertEqual(Expected, Msg).
+
+%% type_error_2_test() ->
+%%     Source = "let add x y = x + y\n"
+%%         "  add 2 2.0",
+%%     Msg = comp(Source),
+%%     Expected = <<"<no file>:3\n"
+%%                  "  Duplicate definition of binding \"y\".\n"
+%%                  "  \"y\" was priviously defined in test_comp:2\n">>,
+%%     ?assertEqual(Expected, Msg).
 -endif.

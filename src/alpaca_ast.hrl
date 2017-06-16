@@ -524,3 +524,16 @@
           hash=undefined :: binary() | undefined
          }).
 -type alpaca_module() :: #alpaca_module{}.
+
+-type ast_path() :: [atom() | non_neg_integer()].
+
+-record(cannot_unify, {
+          module :: atom(),
+          line :: non_neg_integer(),
+          expected :: typ(),
+          found :: typ(),
+          path :: ast_path(),
+          ast :: alpaca_module()
+         }).
+
+-type error_cannot_unify() :: #cannot_unify{}.
