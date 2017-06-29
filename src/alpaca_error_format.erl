@@ -202,6 +202,9 @@ green(S) ->
 file(S) ->
     cf("~!_c~ts", [S]).
 
+file(S) ->
+    cf("~!_c~ts", [S]).
+
 bold(S) ->
     cf("~!^~ts", [S]).
 
