@@ -2861,7 +2861,7 @@ top_typ_with_types(Code, ADTs) ->
                    type_constructors=constructors(ADTs)},
            E).
 
-%% There are a number of expected "unbound" variables here.  I think this
+%% There are a number of found "unbound" variables here.  I think this
 %% is due to the deallocation problem as described in the first post
 %% referenced at the top.
 typ_of_test_() ->
@@ -2941,19 +2941,19 @@ match_test_() ->
 %% Testing that type errors are reported for the appropriate line when
 %% clauses are unified by match or receive.
 pattern_match_error_line_test_() ->
-    [?_assertMatch({error, #cannot_unify{line = 3, found = t_float, expected = t_int}},
+    [?_assertMatch({error, #cannot_unify{line = 3, expected = t_float, found = t_int}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    i, is_integer i -> :int\n"
                      "  | f, is_float f -> :float")),
-     ?_assertMatch({error, #cannot_unify{line = 4, found = t_float, expected = t_int}},
+     ?_assertMatch({error, #cannot_unify{line = 4, expected = t_float, found = t_int}},
                    top_typ_of(
                      "let f () = receive with\n"
                      "    0 -> :zero\n"
                      "  | 1 -> :one\n"
                      "  | 2.0 -> :two\n"
                      "  | 3 -> :three\n")),
-     ?_assertMatch({error, #cannot_unify{line = 3, found = t_string, expected = t_atom}},
+     ?_assertMatch({error, #cannot_unify{line = 3, expected = t_string, found = t_atom}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    0 -> :zero\n"
@@ -3011,7 +3011,7 @@ list_test_() ->
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
      ?_assertMatch({error, #cannot_unify{module = undefined, line = 3,
-                                         found = t_float, expected = t_int}},
+                                         expected = t_float, found = t_int}},
                    top_typ_of(
                      "let f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
@@ -3026,7 +3026,7 @@ binary_test_() ->
                    top_typ_of(
                      "let f x = match x with "
                      "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
-     ?_assertMatch({error, #cannot_unify{ line = 1, found = t_float, expected = t_int}},
+     ?_assertMatch({error, #cannot_unify{ line = 1, expected = t_float, found = t_int}},
                    top_typ_of("let f () = let x = 1.0 in <<x: type=int>>")),
      ?_assertMatch({{t_arrow, [t_binary], t_string}, _},
                    top_typ_of(
@@ -3040,7 +3040,7 @@ map_test_() ->
                    top_typ_of("#{:one => 1}")),
      ?_assertMatch({{t_map, t_atom, t_int}, _},
                    top_typ_of("#{:one => 1, :two => 2}")),
-     ?_assertMatch({error, #cannot_unify{ line = 2, found = t_atom, expected = t_string}},
+     ?_assertMatch({error, #cannot_unify{ line = 2, expected = t_atom, found = t_string}},
                    top_typ_of(
                      "#{:one => 1,\n"
                      "  \"two\" => 2}")),
@@ -3052,7 +3052,7 @@ map_test_() ->
      ?_assertMatch({{t_map, t_atom, t_int}, _},
                    top_typ_of("#{:a => 1 | #{:b => 2}}")),
      ?_assertMatch({error, #cannot_unify{module = undefined, line = 1,
-                                         found = t_atom, expected = t_string}},
+                                         expected = t_atom, found = t_string}},
                    top_typ_of("#{:a => 1 | #{\"b\" => 2}}"))
     ].
 
@@ -3156,7 +3156,7 @@ recursive_fun_test_() ->
                      "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
      ?_assertMatch({error, #cannot_unify{ module = undefined, line = 3,
-                                          found = t_int, expected = t_atom}},
+                                          expected = t_int, found = t_atom}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  0 -> :zero\n"
@@ -3222,7 +3222,7 @@ ffi_test_() ->
                      "beam :io :format [\"One is ~w~n\", [1]] with\n"
                      " _ -> 1")),
      ?_assertMatch({error, #cannot_unify{module = undefined, line = 1,
-                                         found = t_atom, expected = t_int}},
+                                         expected = t_atom, found = t_int}},
                    top_typ_of(
                      "beam :a :b [1] with\n"
                      "  (:ok, x) -> 1\n"
@@ -3249,7 +3249,7 @@ equality_test_() ->
                      "let f x = match x with\n"
                      " a, a == 0 -> :zero\n"
                      "|b -> :not_zero")),
-     ?_assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
+     ?_assertMatch({error, #cannot_unify{expected = t_float, found = t_int}},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  a -> a + 1\n"
@@ -3275,7 +3275,7 @@ type_guard_test_() ->
                      " | i, is_integer i -> i\n")),
      %% Two results with different types as determined by their guards
      %% should result in a type error:
-     ?_assertMatch({error, #cannot_unify{ found = t_int, expected = t_float}},
+     ?_assertMatch({error, #cannot_unify{ expected = t_int, found = t_float}},
                    top_typ_of(
                      "beam :a :b [2] with\n"
                      "   i, i == 1.0 -> i\n"
@@ -3297,7 +3297,7 @@ type_guard_test_() ->
 %%%
 %%% Tests for ADTs that are simply unions of existing types:
 union_adt_test_() ->
-    [?_assertMatch({error, #cannot_unify{line = 1, found = t_int, expected = t_atom}},
+    [?_assertMatch({error, #cannot_unify{line = 1, expected = t_int, found = t_atom}},
                    top_typ_with_types(
                      "let f x = match x with "
                      "  0 -> :zero"
@@ -3472,7 +3472,7 @@ type_constructor_test_() ->
                           name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
      ?_assertMatch(
-        {error, #cannot_unify{found = t_int, expected = t_float}},
+        {error, #cannot_unify{expected = t_int, found = t_float}},
         top_typ_with_types(
           "let f x = Cons (1, Cons (2.0, Nil))",
           [#alpaca_type{
@@ -3552,7 +3552,7 @@ type_constructor_with_arrow_arg_test() ->
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
      ?assertMatch({error, #cannot_unify{module = constructor,
-                                        found = t_bool, expected =t_int}},
+                                        expected = t_bool, found =t_int}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_with_aliased_arrow_arg_test() ->
@@ -3566,12 +3566,12 @@ type_constructor_with_aliased_arrow_arg_test() ->
     ?assertMatch(
        {error, #cannot_unify{
                   module = constructor, line = 7,
-                  found = #adt{name = <<"intbinop">>,
+                  expected = #adt{name = <<"intbinop">>,
                                   vars=[],
                                   members=[#adt{name = <<"binop">>,
                                                 vars=[{_, t_int}],
                                                 members=[{t_arrow,[t_int,t_int],t_int}]}]},
-                  expected = {t_arrow,[t_int,t_atom],t_rec}}},
+                  found = {t_arrow,[t_int,t_atom],t_rec}}},
        module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
@@ -3677,7 +3677,7 @@ module_with_adt_map_error_test() ->
     [M] = make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch(
-       {error, #cannot_unify{found =  {t_map, _, _}, expected = {t_list, _}}}, Res).
+       {error, #cannot_unify{expected =  {t_map, _, _}, found = {t_list, _}}}, Res).
 
 json_union_type_test() ->
     Code =
@@ -3765,10 +3765,10 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
        {error,
         #cannot_unify{
            module = tree, line = 15,
-           found = #adt{name = <<"tree">>,
+           expected = #adt{name = <<"tree">>,
                            vars=[{"a",_}],
                            members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
-           expected = t_int}},
+           found = t_int}},
                  Res).
 
 polymorphic_tree_code() ->
@@ -3880,7 +3880,7 @@ type_var_protection_fail_unify_test() ->
     Res = type_modules([M]),
     ?assertMatch(
        {error, #cannot_unify{ module = module_matching_lists, line = 5,
-                              found = t_int, expected = t_float}}, Res).
+                              expected = t_int, found = t_float}}, Res).
 
 type_error_in_test_test() ->
     Code =
@@ -3891,7 +3891,7 @@ type_error_in_test_test() ->
     %% 753 is the line this was raised
     ?assertMatch(
        {error, #cannot_unify{module = type_error_in_test, line = 5,
-                             found = t_int, expected = t_float}}, Res).
+                             expected = t_int, found = t_float}}, Res).
 
 %% At the moment we don't care what the type of the test expression is,
 %% only that it type checks.
@@ -4009,7 +4009,7 @@ polymorphic_process_as_return_value_test() ->
         "  p",
     Res = module_typ_and_parse(Code),
     ?assertMatch({error, #cannot_unify{module = poly_process, line = 12,
-                                       found = t_float, expected = t_atom}}, Res).
+                                       expected = t_float, found = t_atom}}, Res).
 
 polymorphic_spawn_test() ->
     FunCode =
@@ -4054,7 +4054,7 @@ receive_test_() ->
                    top_typ_of(
                      "receive with "
                      "  i -> i + 1")),
-     ?_assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
+     ?_assertMatch({error, #cannot_unify{expected = t_float, found = t_int}},
                    top_typ_of(
                      "receive with "
                      "  i -> i + 1 "
@@ -4171,7 +4171,7 @@ receive_test_() ->
                  "  in let z = receive with "
                  "    flt, is_float flt -> flt "
                  "  in x + y + z",
-             ?assertMatch({error, #cannot_unify{found = t_float, expected = t_int}},
+             ?assertMatch({error, #cannot_unify{expected = t_float, found = t_int}},
                           module_typ_and_parse(Code))
      end
 
@@ -4283,8 +4283,8 @@ spawn_test_() ->
                   "let start_a init = spawn a [init]",
               ?assertMatch(
                  {error, #cannot_unify{
-                            found = #adt{name = <<"u">>},
-                            expected = #adt{name = <<"t">>}}},
+                            expected = #adt{name = <<"u">>},
+                            found = #adt{name = <<"t">>}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4325,7 +4325,7 @@ send_message_test_() ->
                   "  let p = spawn f 0 in "
                   "  send 1.0 p",
               ?assertMatch(
-                 {error, #cannot_unify{found = t_int, expected = t_float}},
+                 {error, #cannot_unify{expected = t_int, found = t_float}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4334,7 +4334,7 @@ send_message_test_() ->
                   "let f x = send 1 2",
               ?assertMatch(
                  {error, #cannot_unify{module = send_to_non_pid,
-                                       found = t_int, expected = {t_pid, _}}},
+                                       expected = t_int, found = {t_pid, _}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4345,7 +4345,7 @@ send_message_test_() ->
                   "  let p = spawn f x in "
                   "  send 1 p",
               ?assertMatch(
-                 {error, #cannot_unify{found = undefined, expected = t_int}},
+                 {error, #cannot_unify{expected = undefined, found = t_int}},
                  module_typ_and_parse(Code))
       end
     ].
@@ -4624,7 +4624,7 @@ unify_with_error_test_() ->
                    "  | 1 -> :one "
                    "  | _ -> x * 2",
                ?assertMatch(
-                  {error, #cannot_unify{ found = t_int, expected = t_atom}},
+                  {error, #cannot_unify{ expected = t_int, found = t_atom}},
                   module_typ_and_parse(Code))
        end
     , fun() ->
@@ -4703,7 +4703,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "let foo () = my_map doubler 2",
 
               ?assertMatch(
-                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
+                 {error, #cannot_unify{expected = #adt{}, found = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4718,7 +4718,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
-                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
+                 {error, #cannot_unify{expected = #adt{}, found = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4733,7 +4733,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let rec = {x=1, y=2} in "
                   "  my_map doubler (get_x rec)",
               ?assertMatch(
-                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
+                 {error, #cannot_unify{expected = #adt{}, found = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4754,7 +4754,7 @@ constrain_polymorphic_adt_funs_test_() ->
                   "  let tup = (1, 2) in "
                   "  my_map doubler (third tup)",
               ?assertMatch(
-                 {error, #cannot_unify{found = #adt{}, expected = t_int}},
+                 {error, #cannot_unify{expected = #adt{}, found = t_int}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4909,7 +4909,7 @@ types_in_types_test_() ->
 expression_typing_test_() ->
     [%% `1` is not a function from an int to something else:
      ?_assertMatch(
-        {error, #cannot_unify{found = t_int, expected = {t_arrow, [t_int], _}}},
+        {error, #cannot_unify{expected = t_int, found = {t_arrow, [t_int], _}}},
         top_typ_of("1 2")),
      ?_assertMatch({{t_arrow, [t_unit], t_int}, _},
                    top_typ_of(
@@ -4960,8 +4960,8 @@ module_qualified_types_test_() ->
               [M1, M2] = make_modules([Code1, Code2]),
               ?assertMatch({error,
                             #cannot_unify{
-                               found = #adt{name = <<"a">>, module=n},
-                               expected = #adt{name = <<"a">>, module=m}}},
+                               expected = #adt{name = <<"a">>, module=n},
+                               found = #adt{name = <<"a">>, module=m}}},
                            type_modules([M1, M2]))
       end
      , fun() ->
@@ -5093,7 +5093,7 @@ concrete_type_parameters_test_() ->
                  "type opt 'a = Some 'a | None "
                  "type uses_opt = Uses opt int "
                  "let f () = Uses Some 1.0",
-             ?assertMatch({error, #cannot_unify{found = t_int, expected = t_float}},
+             ?assertMatch({error, #cannot_unify{expected = t_int, found = t_float}},
                           module_typ_and_parse(Code))
      end,
      fun() ->
@@ -5485,7 +5485,7 @@ records_and_type_constructors_test_() ->
                   "type t = T {x: int} \n"
                   "let main () = T {x=1.0}",
               ?assertMatch(
-                 {error, #cannot_unify{found = t_int, expected = t_float}},
+                 {error, #cannot_unify{expected = t_int, found = t_float}},
                  module_typ_and_parse(Code))
       end
     ].

@@ -408,10 +408,9 @@ double_binding_c_test() ->
         " h :: y -> h\n",
     Msg = comp_c(Source),
     Expected = <<"\e[0;36m\e[4m<no file>\e[0m:\e[0;36m3\e[0m\e[0m\n"
-                 "  Duplicate definition of binding "
-                 "\"\e[38;2;208;28;139my\e[0m\".\n"
-                 "  \"\e[38;2;208;28;139my\e[0m\" was priviously defined "
-                 "in \e[0;36m\e[4mtest_comp\e[0m:\e[0;36m\e[4m2\e[0m\n\e[0m">>,
+                 "  Duplicate definition of binding \"\e[0;31my\e[0m\".\n"
+                 "  \"\e[0;31my\e[0m\" was priviously defined in"
+                 " \e[0;36m\e[4mtest_comp\e[0m:\e[0;36m\e[4m2\e[0m\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
 
