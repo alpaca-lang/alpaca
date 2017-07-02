@@ -657,6 +657,6 @@ built_in_adt_exhaustiveness_test() ->
 type_signature_test() ->
     Files = ["test_files/basic_type_signature.alp"],
     [M] = compile_and_load(Files, [test]),
-    ?assertMatch(4, M:add(2, 3)).
+    ?assertMatch(4, M:add(1, 3)).
 
 -endif.

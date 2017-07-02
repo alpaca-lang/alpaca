@@ -1136,7 +1136,10 @@ inst_constructor_arg(none, _, _, Env) ->
 inst_constructor_arg(AtomType, _, _, Env) when is_atom(AtomType) ->
     {Env, AtomType};
 inst_constructor_arg({type_var, _, N}, Vs, _, Env) ->
-    {Env, proplists:get_value(N, Vs)};
+    case proplists:get_value(N, Vs) of
+        undefined -> throw({error, {unknown_type_var, N}});
+        V -> {Env, V}
+    end;
 inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types, Env) ->
     F = fun(#t_record_member{type=T}=M) ->
                 case inst_constructor_arg(T, Vs, Types, Env) of
@@ -2235,10 +2238,15 @@ typ_of(Env, Lvl, #alpaca_binding{
                         _ -> lists:foldl(VarFolder, {[], Env2}, Vs)
                     end,
 
-                    {_, ArgCons} = inst_constructor_arg(TS, Vars2, Types, Env3),
-                    case unify(TypE, ArgCons, Env3, Line) of
-                        ok -> {ArgCons, NextVar};
-                        Err -> Err
+                    try inst_constructor_arg(TS, Vars2, Types, Env3) of
+                        {_, ArgCons} -> 
+                            case unify(TypE, ArgCons, Env3, Line) of
+                                ok -> {ArgCons, NextVar};
+                                Err -> Err
+                            end
+                        catch
+                            throw:{error, {unknown_type_var, BadVar}} ->
+                            {error, {unknown_type_var, module_name(Env), Line, BadVar}}
                     end; 
                 _ -> {TypE, NextVar}
              end;
@@ -5529,6 +5537,16 @@ beam_with_signatures_test() ->
 
     ?assertMatch({ok, _},
                  module_typ_and_parse(Code ++ Good)).
+
+missing_type_var_in_signature_test() ->
+    Code =
+      "module sig \n"
+      "--type bob = Hello 'a\n"
+      "val missingTypeVar : fn 'a -> ('a, 'a)\n"
+      "let missingTypeVar x = (x, x)\n"
+      "let main () = missingTypeVar 10",
+    ?assertMatch({error,{unknown_type_var,sig,3,"a"}},
+                 module_typ_and_parse(Code)).  
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
