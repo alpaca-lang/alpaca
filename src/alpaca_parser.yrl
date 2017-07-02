@@ -21,7 +21,7 @@ type poly_type poly_type_decl type_vars type_member type_members type_expr
 sub_type_expr type_expressions type_tuple comma_separated_type_list
 module_qualified_type module_qualified_type_name
 type_apply module_qualified_type_constructor
-type_import type_export types_to_export
+type_import type_export types_to_export type_signature
 
 test_case
 
@@ -68,7 +68,7 @@ comment_line comment_lines
 module export import
 import_type export_type
 
-type_declare type_constructor type_var
+type_declare type_constructor type_var val
 
 test
 
@@ -129,6 +129,24 @@ type_export -> export_type types_to_export :
   {_, L}  = '$1',
   Names = [symbol_name(S) || S <- '$2'],
   #alpaca_type_export{line=L, names=Names}.
+
+type_signature -> val symbol ':' sub_type_expr :
+                      {L, N} = symbol_line_name('$2'),
+                  #alpaca_type_signature{name=N, line=L, type='$4'}.
+
+type_signature -> val symbol type_vars ':' sub_type_expr :
+                      %% TODO - attach type vars to sub type_expr!!
+  {L, N} = symbol_line_name('$2'),
+  TV = make_vars_for_concrete_types('$3', L),
+  #alpaca_type_signature{name=N, line=L, type='$5', vars=TV}.
+
+type_signature -> val '(' infixl ')' ':' sub_type_expr :
+  {L, N} = symbol_line_name('$3'),
+  #alpaca_type_signature{name=N, line=L, type='$6'}.
+
+type_signature -> val '(' infixr ')' ':' sub_type_expr :
+  {L, N} = symbol_line_name('$3'),
+  #alpaca_type_signature{name=N, line=L, type='$6'}.
 
 type_expressions -> sub_type_expr : ['$1'].
 type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
@@ -759,6 +777,7 @@ expr -> type : '$1'.
 expr -> test_case : '$1'.
 expr -> defn : '$1'.
 expr -> definfix : '$1'.
+expr -> type_signature : '$1'.
 
 %% I'm not sure these should be actually classifed as "expressions", something
 %% to revisit:
@@ -934,7 +953,11 @@ symbol_name({'Symbol', _}=S) ->
     alpaca_ast:symbol_name(S).
 
 symbol_line_name({symbol, S}) ->
-    {alpaca_ast:line(S), alpaca_ast:symbol_name(S)}.
+    {alpaca_ast:line(S), alpaca_ast:symbol_name(S)};
+symbol_line_name({infixl, L, N}) ->
+    {L, infix_name(N)};
+symbol_line_name({infixr, L, N}) ->
+    {L, infix_name(N)}.
 
 line({symbol, S}) ->
     alpaca_ast:line(S);

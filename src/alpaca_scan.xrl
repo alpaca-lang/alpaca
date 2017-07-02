@@ -55,6 +55,7 @@ Rules.
 let         : {token, {'let', TokenLine}}.
 in          : {token, {in, TokenLine}}.
 fn          : {token, {fn, TokenLine}}.
+val         : {token, {val, TokenLine}}.
 \x{03BB}    : {token, {fn, TokenLine}}.         % unicode lower-case lambda
 match       : {token, {match, TokenLine}}.
 with        : {token, {with, TokenLine}}.
@@ -101,7 +102,7 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 
 %% Atom
 {ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
-{ATOM}"(\\"*|\\.|[^"\\])*" : 
+{ATOM}"(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 3, TokenLen - 3),
   {token, {atom, TokenLine, S}}.
 

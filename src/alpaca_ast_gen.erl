@@ -143,7 +143,9 @@ parse_module({FileName, Text}) when is_list(Text) ->
     Version = proplists:get_value(version, alpaca:compiler_info()),
     Hash = crypto:hash(md5, unicode:characters_to_binary(Text ++ Version)),
     StartMod = #alpaca_module{filename=FileName, hash=Hash},
-    parse_module(Tokens, StartMod).
+    Mod = parse_module(Tokens, StartMod),
+    {ok, Mod2} = apply_signatures(Tokens, Mod),
+    Mod2.
 
 parse_module([], #alpaca_module{name=no_module}=M) ->
     parse_error(M, 1, no_module);
@@ -421,6 +423,8 @@ update_memo(#alpaca_module{function_exports=Exports}=M, {export, Es}) ->
     M#alpaca_module{function_exports=Es ++ Exports};
 update_memo(#alpaca_module{function_imports=Imports}=M, {import, Is}) ->
     M#alpaca_module{function_imports=Imports ++ Is};
+update_memo(#alpaca_module{}=M, #alpaca_type_signature{}) ->
+    M;
 update_memo(#alpaca_module{functions=Funs}=M, #alpaca_binding{} = Def) ->
     M#alpaca_module{functions=[Def|Funs]};
 update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
@@ -918,6 +922,62 @@ scan_tokens_for_deps(Tokens, Deps, Mod) ->
                     scan_tokens_for_deps(Rem, Deps, Mod)
             end
     end.
+
+apply_signatures([], Mod) ->
+    {ok, Mod};
+apply_signatures(Tokens, Mod) ->
+    case next_batch(Tokens, []) of
+        {[], Rem} -> apply_signatures(Rem, Mod);
+        {NextBatch, Rem} ->
+            case parse(NextBatch) of
+                {ok, #alpaca_type_signature{} = S} ->
+                    Mod2 = attach_signature(S, Mod),
+                    apply_signatures(Rem, Mod2);
+                _ -> apply_signatures(Rem, Mod)
+        end
+    end.
+
+attach_signature(Sig, #alpaca_module{functions=Funs}=M) ->
+    case attach_signature(Sig, Funs, []) of
+        {ok, NewFuns} -> M#alpaca_module{functions=NewFuns};
+        {error, {L, E}} -> parse_error(M, L, E)
+    end.
+attach_signature(#alpaca_type_signature{line=L, name=N}, [], _Acc) ->
+    {error, {L, {signature_missing_def, N}}};
+attach_signature(Sig, [Fun|Rem], Acc) ->
+    #alpaca_type_signature{name=SN, type=ST, line=L} = Sig,
+    #alpaca_binding{name=FN, signature=ET} = Fun,
+    Attach = fun () ->
+        %% Only attach signature if not already present
+        case ET of
+            undefined -> 
+                FunWithSig = Fun#alpaca_binding{signature=Sig},
+                {ok, lists:reverse([FunWithSig | Acc] ++ Rem)};
+
+            _ ->
+                {error, {L, {duplicate_signature, SN}}}
+        end
+    end,
+
+    case {FN, SN} of
+        {{_, #{name := N}}, N} ->
+            %% Multi-arity means for t_arrow we need to match
+            %% on the length of args
+            case ST of
+                {t_arrow, Args} ->
+                    case Fun of
+                        #alpaca_binding{bound_expr=#alpaca_fun{arity=Arity}}
+                        when length(Args) =:= Arity ->
+                            Attach();
+                        _ -> 
+                            attach_signature(Sig, Rem, [Fun | Acc])
+                    end;
+                _ ->
+                    Attach()
+                end;
+
+        _ -> attach_signature(Sig, Rem, [Fun | Acc])
+    end.  
 
 find_deps({import, Is}, Deps) ->
     lists:foldl(
@@ -2252,8 +2312,56 @@ infer_modules_test_() ->
        {a_mod, [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r]},
        list_dependencies(Src)).
 
+valid_signature_test() ->
+    Src = "module sigs;;"
+           "val add : fn int int -> int;;"
+           "let add x y = x + y\n",
+    {ok, [#alpaca_module{functions=Funs}]} = test_make_modules([Src]),
+    ?assertMatch([#alpaca_binding{
+                     signature=#alpaca_type_signature{
+                                  name = <<"add">>,
+                                  type = {t_arrow, [t_int, t_int], t_int}}}], 
+                 Funs).
+
+multi_arity_signature_test() ->
+    Src = "module sigs\n"
+          "val add : fn int -> int\n"
+          "let add x = x + 1\n\n"
+          "val add : fn int int -> int\n"
+          "let add x y = x + y\n",
+    {ok, [#alpaca_module{functions=Funs}]} = test_make_modules([Src]),
+    ?assertMatch(
+       [#alpaca_binding{
+           signature=#alpaca_type_signature{
+                        name = <<"add">>,
+                        type = {t_arrow, [t_int], t_int}}},
+        #alpaca_binding{
+           signature=#alpaca_type_signature{
+                        name = <<"add">>,
+                        type = {t_arrow, [t_int, t_int], t_int}}}
+       ],
+       Funs).
+
+mismatched_signature_test() ->
+    Src = "module sigs\n"
+          "val bad : fn int int -> int\n"
+          "let add x y = x + y\n",
+    ?assertMatch(
+      {error, {parse_error, ?FILE, 2, {signature_missing_def, <<"bad">>}}},
+      test_make_modules([Src])).
+
+duplicate_signature_test() ->
+    Src = "module sigs\n"
+          "val num : int\n"
+          "val num : int\n"
+          "let num = 42\n",
+    ?assertMatch(
+       {error, {parse_error, ?FILE, 3, {duplicate_signature, <<"num">>}}},
+       test_make_modules([Src])).
+
 test_make_modules(Sources) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
     make_modules(NamedSources).
 
 -endif.
+ 

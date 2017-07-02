@@ -1445,7 +1445,7 @@ type_modules([M|Ms], Env, Acc) ->
 -spec type_module(M::alpaca_module(), Env::env()) -> {ok, alpaca_module()} |
                                                    {error, term()}.
 type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
-    {ok, M};                                       
+    {ok, M};
 type_module(#alpaca_module{functions=Fs,
                         name=Name,
                         types=Ts,
@@ -2207,19 +2207,47 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
 typ_of(Env, Lvl, #alpaca_binding{
                     name={'Symbol', _}=Sym,
                     bound_expr=#alpaca_fun{}=E,
+                    signature=Sig,
                     body=E2}) ->
     N = alpaca_ast:symbol_name(Sym),
     {TypE, NextVar} = typ_of(Env, Lvl, E#alpaca_fun{name=N}),
     Env2 = update_counter(NextVar, Env),
     case E2 of
         undefined ->
-            {TypE, NextVar};
+            %% If we have a type signature and we can unify it with the given
+            %% binding we have typed, replace our inferred type with the sig
+            case Sig of
+                #alpaca_type_signature{type=TS, line=Line, vars=Vs} -> 
+                    %% Type signatures may need to fully instantiated
+                    Types = Env#env.current_types,
+                    
+                    VarFolder = fun({type_var, _, VN}, {Vars, E_}) ->
+                                        {TVar, E3} = new_var(0, E_),
+                                        {[{VN, TVar}|Vars], E3};
+                                   ({{type_var, _, VN}, Expr}, {Vars, E_}) ->
+                                        %% copy_cell/1 should put every nested member properly
+                                        %% into its own reference cell:
+                                        {Celled, _} = copy_cell(Expr, maps:new()),
+                                        {[{VN, Celled}|Vars], E_}
+                                end,
+                    {Vars2, Env3} = case Vs of
+                        undefined -> {[], Env2};
+                        _ -> lists:foldl(VarFolder, {[], Env2}, Vs)
+                    end,
+
+                    {_, ArgCons} = inst_constructor_arg(TS, Vars2, Types, Env3),
+                    case unify(TypE, ArgCons, Env3, Line) of
+                        ok -> {ArgCons, NextVar};
+                        Err -> Err
+                    end; 
+                _ -> {TypE, NextVar}
+             end;
         _ ->
             typ_of(update_binding(N, gen(Lvl, TypE), Env2), Lvl+1, E2)
     end;
 
 %% A var binding inside a function:
-typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}) ->
+typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2, signature=Sig}) ->
     N = alpaca_ast:symbol_name(Sym),
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
@@ -2227,7 +2255,13 @@ typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}
         {TypE, NextVar} ->
             case E2 of
                 undefined ->
-                    {TypE, NextVar};
+                    case Sig of
+                        #alpaca_type_signature{type=ST} -> 
+                            %% TODO: verify these types are compatible
+                            {ST, NextVar};
+                        _ -> {TypE, NextVar}
+                    end;
+
                 _ ->
                     Gen = gen(Lvl, TypE),
                     Env2 = update_counter(NextVar, Env),
@@ -2583,7 +2617,8 @@ filter_to_curryable_funs(Funs, FN, MinArity) ->
                case {Arity >= MinArity, N =:= FN} of
                     {true, true} -> true;
                     _ -> false
-               end
+               end;
+              (_) -> false
            end,
     lists:filter(Pred, Funs).
 
@@ -5457,6 +5492,43 @@ literal_fun_test_() ->
                  module_typ_and_parse(Code))
       end
     ].
+
+bad_signature_unify_fail_test() ->
+    Code =
+      "module sig \n"
+      "val double : fn string -> string\n"
+      "let double x = x * x",
+    ?assertMatch({error,{cannot_unify,sig,2,t_int,t_string}},
+                 module_typ_and_parse(Code)).
+
+poly_specialization_unify_fail_test() ->
+    Code =
+      "module sig \n"
+      "-- Without the sig this types as `fn 'a -> 'a`\n"
+      "val intsOnly : fn int -> int\n"
+      "let intsOnly x = x\n"
+      "-- Without the type signature, the below would succeed\n"
+      "let tryWithString () = intsOnly \"hello world\"",
+    ?assertMatch({error,{cannot_unify,sig,6,t_int,t_string}},
+                 module_typ_and_parse(Code)). 
+
+beam_with_signatures_test() ->
+    Code =
+      "module sig \n"
+      "-- signatures with 'beam' FFI allows us to guard against bad input\n"
+      "val atomToBinary : fn atom -> binary\n"
+      "let atomToBinary b = beam :erlang :atom_to_binary [b, :utf8] with\n"
+      "  | res, is_binary res -> res\n"
+      "let main () = \n",
+
+    Good = "atomToBinary :hello",
+    Fail = "atomToBinary 42",
+    
+    ?assertMatch({error,{cannot_unify,sig,7,t_atom,t_int}},
+                 module_typ_and_parse(Code ++ Fail)),
+
+    ?assertMatch({ok, _},
+                 module_typ_and_parse(Code ++ Good)).
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

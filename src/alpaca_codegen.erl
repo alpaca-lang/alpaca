@@ -872,7 +872,7 @@ infix_fun_test() ->
         "export adder/1 \n\n"
         "let (|>) v f = f v\n\n"
         "let add_ten x = x + 10\n\n"
-        "let adder val = val |> add_ten",
+        "let adder v = v |> add_ten",
     {ok, _, Bin} = parse_and_gen(Code),
     {module, Name} = code:load_binary(Name, FN, Bin),
     ?assertEqual(20, Name:adder(10)),

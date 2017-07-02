@@ -8,10 +8,10 @@ let hof_fail () =
     apply add10 5
 
 let val_fail () =
-    10 + val
+    10 + value
 
 -- As these are both declared AFTER their usage, neither
 -- of the above functions will compile
 
 let add10 x = x + 10
-let val = 5
+let value = 5

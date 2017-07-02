@@ -488,6 +488,15 @@
          }).
 -type alpaca_fun() :: #alpaca_fun{}.
 
+-record(alpaca_type_signature, {
+          line=0 :: integer(),
+          name=undefined :: undefined | alpaca_symbol(),
+          type=undefined :: typ(),
+          vars=undefined :: list(alpaca_type_var())
+         }).
+
+-type alpaca_type_signature() :: #alpaca_type_signature{}.
+
 %% `body` remains `undefined` for top-level expressions and otherwise for
 %% things like function and variable bindings within a top-level function.
 -record(alpaca_binding, {
@@ -495,8 +504,10 @@
           name=undefined :: undefined | alpaca_symbol(),
           type=undefined :: typ(),
           bound_expr=undefined :: undefined | alpaca_expression(),
-          body=undefined :: undefined | alpaca_expression()
+          body=undefined :: undefined | alpaca_expression(),
+          signature=undefined :: alpaca_type_signature()
          }).
+
 -type alpaca_binding() :: #alpaca_binding{}.
 
 -record(alpaca_type_import, {module=undefined :: atom(),
