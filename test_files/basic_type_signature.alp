@@ -27,8 +27,12 @@ let return x = Just x
 val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b 
 let apply f x = f x
 
--- TODO: Infix functions (!)
+-- Infix functions
+val (<|) 'a 'b : fn (fn 'a -> 'b) 'a -> 'b
 let (<|) f x = apply f x
+
+val (|>) 'a 'b : fn 'a (fn 'a -> 'b) -> 'b
+let (|>) x f = f x
 
 -- Concrete typing of a polymorphic ADT
 val maybeDouble : fn (maybe int) -> (maybe int)

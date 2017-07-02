@@ -135,7 +135,6 @@ type_signature -> val symbol ':' sub_type_expr :
                   #alpaca_type_signature{name=N, line=L, type='$4'}.
 
 type_signature -> val symbol type_vars ':' sub_type_expr :
-                      %% TODO - attach type vars to sub type_expr!!
   {L, N} = symbol_line_name('$2'),
   TV = make_vars_for_concrete_types('$3', L),
   #alpaca_type_signature{name=N, line=L, type='$5', vars=TV}.
@@ -144,9 +143,19 @@ type_signature -> val '(' infixl ')' ':' sub_type_expr :
   {L, N} = symbol_line_name('$3'),
   #alpaca_type_signature{name=N, line=L, type='$6'}.
 
+type_signature -> val '(' infixl ')' type_vars ':' sub_type_expr :
+  {L, N} = symbol_line_name('$3'),
+  TV = make_vars_for_concrete_types('$5', L),
+  #alpaca_type_signature{name=N, line=L, type='$7', vars=TV}.
+
 type_signature -> val '(' infixr ')' ':' sub_type_expr :
   {L, N} = symbol_line_name('$3'),
   #alpaca_type_signature{name=N, line=L, type='$6'}.
+
+type_signature -> val '(' infixr ')' type_vars ':' sub_type_expr :
+  {L, N} = symbol_line_name('$3'),
+  TV = make_vars_for_concrete_types('$5', L),
+  #alpaca_type_signature{name=N, line=L, type='$7', vars=TV}.
 
 type_expressions -> sub_type_expr : ['$1'].
 type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
