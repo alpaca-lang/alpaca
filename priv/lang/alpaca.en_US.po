@@ -21,7 +21,7 @@ msgstr ""
 msgid "duplicate_definition %(type) %(id) %(mod) %(line)"
 msgstr ""
 "Duplicate definition of %(type) \"%(id)\".\n"
-"\"%(id)\" was priviously defined in %(mod):%(line)"
+"\"%(id)\" was previously defined in %(mod):%(line)"
 
 msgid "duplicate_type_definition %(id)"
 msgstr "Type \"%(id)\" has already been defined."

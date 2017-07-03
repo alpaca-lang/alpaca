@@ -400,7 +400,7 @@ double_binding_test() ->
     Msg = comp(Source),
     Expected = <<"<no file>:3\n"
                  "  Duplicate definition of binding \"y\".\n"
-                 "  \"y\" was priviously defined in test_comp:2\n">>,
+                 "  \"y\" was previously defined in test_comp:2\n">>,
     ?assertEqual(Expected, Msg).
 
 double_binding_c_test() ->
@@ -409,7 +409,7 @@ double_binding_c_test() ->
     Msg = comp_c(Source),
     Expected = <<"\e[0;36m\e[4m<no file>\e[0m:\e[0;36m3\e[0m\e[0m\n"
                  "  Duplicate definition of binding \"\e[0;31my\e[0m\".\n"
-                 "  \"\e[0;31my\e[0m\" was priviously defined in"
+                 "  \"\e[0;31my\e[0m\" was previously defined in"
                  " \e[0;36m\e[4mtest_comp\e[0m:\e[0;36m\e[4m2\e[0m\n\e[0m">>,
     ?assertEqual(Expected, Msg).
 
@@ -420,7 +420,7 @@ type_error_1_test() ->
     Msg = comp(Source),
     Expected = <<"<no file>:3\n"
                  "  Duplicate definition of binding \"y\".\n"
-                 "  \"y\" was priviously defined in test_comp:2\n">>,
+                 "  \"y\" was previously defined in test_comp:2\n">>,
     ?assertEqual(Expected, Msg).
 
 %% type_error_2_test() ->
@@ -429,6 +429,6 @@ type_error_1_test() ->
 %%     Msg = comp(Source),
 %%     Expected = <<"<no file>:3\n"
 %%                  "  Duplicate definition of binding \"y\".\n"
-%%                  "  \"y\" was priviously defined in test_comp:2\n">>,
+%%                  "  \"y\" was previously defined in test_comp:2\n">>,
 %%     ?assertEqual(Expected, Msg).
 -endif.
