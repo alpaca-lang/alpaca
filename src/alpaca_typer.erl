@@ -562,8 +562,8 @@ unify(T1, T2, Env, Line) ->
                 {error, _}=Err -> Err;
                 ok ->
                     NewTyp = {t_receiver, Recv, {t_arrow, Args, ResA}},
-                    set_cell(T1, NewTyp),
-                    set_cell(T2, {link, T1}),
+                    set_cell(new_cell(T1), NewTyp),
+                    set_cell(new_cell(T2), {link, T1}),
                     ok
             end;
         {{t_arrow, _, _}, {t_receiver, _, _}} ->
@@ -2223,7 +2223,7 @@ typ_of(Env, Lvl, #alpaca_binding{
                 #alpaca_type_signature{type=TS, line=Line, vars=Vs} -> 
                     %% Type signatures may need to fully instantiated
                     Types = Env#env.current_types,
-                    
+
                     VarFolder = fun({type_var, _, VN}, {Vars, E_}) ->
                                         {TVar, E3} = new_var(0, E_),
                                         {[{VN, TVar}|Vars], E3};
@@ -2241,7 +2241,7 @@ typ_of(Env, Lvl, #alpaca_binding{
                     try inst_constructor_arg(TS, Vars2, Types, Env3) of
                         {_, ArgCons} -> 
                             case unify(TypE, ArgCons, Env3, Line) of
-                                ok -> {ArgCons, NextVar};
+                                ok -> {unwrap_cell(ArgCons), NextVar};
                                 Err -> Err
                             end
                         catch
@@ -2255,7 +2255,7 @@ typ_of(Env, Lvl, #alpaca_binding{
     end;
 
 %% A var binding inside a function:
-typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2, signature=Sig}) ->
+typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2}) ->
     N = alpaca_ast:symbol_name(Sym),
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
@@ -2263,13 +2263,7 @@ typ_of(Env, Lvl, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=E1, body=E2,
         {TypE, NextVar} ->
             case E2 of
                 undefined ->
-                    case Sig of
-                        #alpaca_type_signature{type=ST} -> 
-                            %% TODO: verify these types are compatible
-                            {ST, NextVar};
-                        _ -> {TypE, NextVar}
-                    end;
-
+                    {TypE, NextVar};
                 _ ->
                     Gen = gen(Lvl, TypE),
                     Env2 = update_counter(NextVar, Env),
