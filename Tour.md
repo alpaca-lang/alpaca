@@ -369,7 +369,7 @@ Most of the time, you can safely omit type signatures. They can be useful in get
 
 By forcing `print_string` to take only strings, we guard against passing types that Erlang's `io:put_chars` can't understand, preventing a runtime error.
 
-While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
+While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign function interface here to call an Erlang io function:
 
     let print_hello () =
       beam :io :format ["Hello~n", []] with _ -> ()
