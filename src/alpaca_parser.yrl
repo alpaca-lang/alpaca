@@ -84,7 +84,7 @@ match with '|' '->' '&&' '||'
 raise_error
 
 send
-receive after
+receive after receiver
 spawn
 
 beam
@@ -131,8 +131,8 @@ type_export -> export_type types_to_export :
   #alpaca_type_export{line=L, names=Names}.
 
 type_signature -> val symbol ':' sub_type_expr :
-                      {L, N} = symbol_line_name('$2'),
-                  #alpaca_type_signature{name=N, line=L, type='$4'}.
+  {L, N} = symbol_line_name('$2'),
+  #alpaca_type_signature{name=N, line=L, type='$4'}.
 
 type_signature -> val symbol type_vars ':' sub_type_expr :
   {L, N} = symbol_line_name('$2'),
@@ -176,8 +176,6 @@ poly_type -> symbol type_expressions :
       {<<"list">>, Params}           -> type_arity_error(L, t_list, Params);
       {<<"map">>, [K, V]}            -> {t_map, K, V};
       {<<"map">>, Params}            -> type_arity_error(L, t_map, Params);
-      {<<"receiver">>, [MsgT, ExpT]} -> {t_receiver, MsgT, ExpT};
-      {<<"receiver">>, Params}       -> type_arity_error(L, t_receiver, Params);
       {<<"pid">>, [T]}               -> {t_pid, T};
       {<<"pid">>, Params}            -> type_arity_error(L, t_pid, Params);
       {<<"string">>, Params}         -> type_arity_error(L, t_string, Params);
@@ -267,6 +265,14 @@ sub_type_expr -> '(' type_expr ')': '$2'.
 sub_type_expr -> fn type_expressions '->' type_expr :
 
     {t_arrow, '$2', '$4'}.
+
+sub_type_expr -> receiver type_expressions :
+    {receiver, L} = '$1',
+    case '$2' of
+        [MArg, MRet] -> {t_receiver, MArg, MRet};
+        Params       -> type_arity_error(L, t_receiver, Params)
+    end.
+
 sub_type_expr -> unit : t_unit.
 
 comma_separated_type_list -> type_expr ',' type_expr:

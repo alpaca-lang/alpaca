@@ -51,3 +51,19 @@ let getName { name = n } = n
 val hd 'a : fn (list 'a) -> (maybe 'a)
 let hd [] = Nothing
 let hd (first :: _) = Just first
+
+-- Pids
+
+-- (receivers are typed with their 'receive' type and a function with its input
+--  and return value; return can also be 'rec' if it recurses infinitely)
+
+val make_receiver : receiver (int) (fn () -> int)
+let make_receiver () = receive with
+    v -> v
+
+val make_pid : fn () -> pid int
+let make_pid () = spawn make_receiver ()
+
+let run_pid () =
+    let p = make_pid () in
+    send 35 p
