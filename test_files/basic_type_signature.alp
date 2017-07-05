@@ -57,7 +57,7 @@ let hd (first :: _) = Just first
 -- (receivers are typed with their 'receive' type and a function with its input
 --  and return value; return can also be 'rec' if it recurses infinitely)
 
-val make_receiver : receiver (int) (fn () -> int)
+val make_receiver : receiver int (fn () -> int)
 let make_receiver () = receive with
     v -> v
 
