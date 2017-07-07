@@ -654,4 +654,9 @@ built_in_adt_exhaustiveness_test() ->
        M1:make_export(1, <<"make_export">>)),
     pd(M1).
 
+type_signature_test() ->
+    Files = ["test_files/basic_type_signature.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(4, M:add(1, 3)).
+
 -endif.

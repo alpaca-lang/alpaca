@@ -280,9 +280,34 @@ As Alpaca is an expression-oriented language, there are no return statements.  J
 -}
 let double x = x *. 2.0
 #+END_SRC
-Explicit type specifications for variables and functions is a planned feature for version 0.3.0.
+Type signatures can be set on top level functions and values, e.g.:
 
-While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term ~()~ if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
+#+BEGIN_SRC
+val add : fn int int -> int
+let add x y = x + y
+#+END_SRC
+
+The signatures look a little different to the other MLs, while resembling OCaml the most; they are consistent with Alpaca's type definitions in ADTs. Another example, demonstrating polymorphic parameters:
+
+#+BEGIN_SRC
+val apply 'a 'b : fn (fn 'a -> 'b) a -> 'b
+let apply f x = f x
+#+END_SRC
+
+Note the explicit listing of type variables ~'a~ and ~'b~ after the name of the signature, and that arguments are not separated by ~->~ but listed simply with a space between them, with the arguments separated from the return type by a single ~->~. For fairly exhaustive examples of type signatures, please see ~basic_signature_test.alp~ in the test suite.
+
+Most of the time, you can safely omit type signatures. They can be useful in getting early feedback from the compiler that your types infer as you expect. They are also useful in making generic, unbounded functions and types more specific (specialization). They are essential when writing functions that wrap ~beam~ FFI calls, where the inputs are always unbounded, e.g:
+
+#+BEGIN_SRC
+val print_string : fn string -> unit
+let print_string str =
+  beam :io :put_chars [str] with
+  | _ -> ()
+#+END_SRC
+
+By forcing ~print_string~ to take only strings, we guard against passing types that Erlang's ~io:put_chars~ can't understand, preventing a runtime error.
+
+While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term ~()~ if we don't need or want to pass anything specific.  Let's introduce the basic foreign function interface here to call an Erlang io function:
 #+BEGIN_SRC
 let print_hello () =
   beam :io :format ["Hello~n", []] with _ -> ()

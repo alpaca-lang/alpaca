@@ -1,0 +1,69 @@
+module basic_type_signature
+
+export add
+
+-- Primitive top level 'constant' bindings
+val name : string
+let name = "Alpaca"
+
+val birthday : int
+let birthday = 2701
+
+-- Simple functions
+val add : fn int int -> int
+let add x y = x + y
+
+-- Polymorphic functions
+val identity 'a : fn 'a -> 'a
+let identity x = x
+
+-- ADTs as params and return values
+type maybe 'a = Just 'a | Nothing
+
+val return 'a : fn 'a -> maybe 'a
+let return x = Just x
+
+-- Higher order functions
+val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b 
+let apply f x = f x
+
+-- Infix functions
+val (<|) 'a 'b : fn (fn 'a -> 'b) 'a -> 'b
+let (<|) f x = apply f x
+
+val (|>) 'a 'b : fn 'a (fn 'a -> 'b) -> 'b
+let (|>) x f = f x
+
+-- Concrete typing of a polymorphic ADT
+val maybeDouble : fn (maybe int) -> (maybe int)
+let maybeDouble (Just x) = return <| x * 2
+let maybeDouble Nothing = Nothing
+
+-- Tuples
+val fst 'a 'b: fn ('a, 'b) -> 'a
+let fst (x, y) = x
+
+-- Records
+val getName : fn { name : string } -> string
+let getName { name = n } = n
+
+-- Arrays
+val hd 'a : fn (list 'a) -> (maybe 'a)
+let hd [] = Nothing
+let hd (first :: _) = Just first
+
+-- Pids
+
+-- (receivers are typed with their 'receive' type and a function with its input
+--  and return value; return can also be 'rec' if it recurses infinitely)
+
+val make_receiver : receiver int (fn () -> int)
+let make_receiver () = receive with
+    v -> v
+
+val make_pid : fn () -> pid int
+let make_pid () = spawn make_receiver ()
+
+let run_pid () =
+    let p = make_pid () in
+    send 35 p
