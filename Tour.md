@@ -374,12 +374,6 @@ While functions with no arguments aren't supported ("nullary" or arity of zero) 
     let print_hello () =
       beam :io :format ["Hello~n", []] with _ -> ()
 
-
-While functions with no arguments aren't supported ("nullary" or arity of zero) we can use the unit term `()` if we don't need or want to pass anything specific.  Let's introduce the basic foreign-function interface here to call an Erlang printing method:
-
-    let print_hello () =
-      beam :io :format ["Hello~n", []] with _ -> ()
-
 ## The Foreign Function Interface<a id="sec-4-1" name="sec-4-1"></a>
 
 The FFI is how we call any non-Alpaca code in the Erlang VM (e.g. Erlang, [Elixir](http://elixir-lang.org/), [LFE](http://lfe.io/), and more).  Since our compiler can't type-check other languages, we combine a call to another module and function with a set of pattern match clauses to figure out what the actual type is that we're returning from it.
