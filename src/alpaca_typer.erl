@@ -676,7 +676,11 @@ unify_adt(C1, C2, #adt{}=A, #t_record{}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
 unify_adt(C1, C2, #adt{}=A, {t_arrow, _, _}=ToCheck, Env, L) ->
     unify_adt_and_poly(C1, C2, A, ToCheck, Env, L);
+unify_adt(C1, C2, #adt{}=A, #alpaca_type{}=T, Env, L) ->
+    {ok, Env2, B, _} = inst_type(T, Env),
+    unify_adt(C1, C2, A, get_cell(B), Env2, L);
 unify_adt(_, _, A, B, Env, L) ->
+    io:format("*** The failed ADT unification candidates were:~n~p ~p~n~p ~p~n", [A, unwrap(A), B, unwrap(B)]),
     unify_error(Env, L, A, B).
 
 unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) when is_pid(ToCheck) ->
@@ -891,18 +895,36 @@ flatten_record(#t_record{}=R) ->
                        {error, {bad_variable, integer(), alpaca_type_var()}}.
 inst_type(Typ, EnvIn) ->
     #alpaca_type{name={type_name, _, N}, module=Mod, vars=Vs, members=Ms} = Typ,
-    VarFolder = fun({type_var, _, VN}, {Vars, E}) ->
-                        {TVar, E2} = new_var(0, E),
-                        {[{VN, TVar}|Vars], E2};
-                   ({{type_var, _, VN}, Expr}, {Vars, E}) ->
-                        %% copy_cell/1 should put every nested member properly
-                        %% into its own reference cell:
-                        {Celled, _} = copy_cell(Expr, maps:new()),
-                        {[{VN, Celled}|Vars], E}
-                end,
-    {Vars, Env} = lists:foldl(VarFolder, {[], EnvIn}, Vs),
-    ParentADT = #adt{name=N, module=Mod, vars=lists:reverse(Vars)},
+    {Vars, Env} = inst_type_vars(Vs, [], EnvIn),
+    F = fun(#alpaca_type{name={_, _, NN}, module=M}, undefined) when NN =:= N ->
+                M;
+           (_, M) ->
+                M
+        end,
+    Mod2 = lists:foldl(F, Mod, Env#env.current_types),
+    ParentADT = #adt{name=N, module=Mod2, vars=lists:reverse(Vars)},
     inst_type_members(ParentADT, Ms, Env, []).
+
+inst_type_vars([], DoneVars, Env) ->
+    {DoneVars, Env};
+inst_type_vars([{type_var, _, VN}|Rem], DoneVars, Env) ->
+    {TVar, E2} = new_var(0, Env),
+    inst_type_vars(Rem, [{VN, TVar}|DoneVars], E2);
+inst_type_vars([{{type_var, _, VN}, #alpaca_type{}=T}|Rem], DoneVars, Env) ->
+    {ok, Env2, ADT, _} = inst_type(T, Env),
+    inst_type_vars(Rem, [{VN, new_cell(ADT)}|DoneVars], Env2);
+inst_type_vars([{{type_var, _, VN}, Expr}|Rem], DoneVars, E) ->
+    %% copy_cell/1 should put every nested member properly
+    %% into its own reference cell:
+    {E2, Cell} = case get_cell(Expr) of
+                     #alpaca_type{}=AT ->
+                         {ok, Env2, Typ, _} = inst_type(AT, E),
+                         {Env2, Typ};
+                     _ ->
+                         {Celled, _} = copy_cell(Expr, maps:new()),
+                         {E, Celled}
+                 end,
+    inst_type_vars(Rem, [{VN, Cell}|DoneVars], E2).
 
 inst_type_members(ParentADT, [], Env, FinishedMembers) ->
     {ok,
@@ -1009,7 +1031,7 @@ inst_type_members(ADT,
         {ok, Env2, _, Members} ->
             Names = [VN || {type_var, _, VN} <- Vs],
             NewMember = #adt{name=N, module=Mod, vars=lists:zip(Names, Members)},
-            inst_type_members(ADT, T, Env2, [NewMember|Memo])
+            inst_type_members(ADT, T, Env2, [new_cell(NewMember)|Memo])
     end;
 inst_type_members(ADT, [#alpaca_constructor{}=C|T], Env, Memo) ->
     #alpaca_constructor{name=#type_constructor{name=N}, arg=A}=C,
@@ -1191,8 +1213,16 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
 
     F = fun({type_var, _, VN}) ->
                 {VN, proplists:get_value(VN, Vs)};
-           ({{type_var, _, _}, _}=ConcreteType) ->
-                ConcreteType
+           ({{type_var, _, _}=VN, CT}=_ConcreteType) ->
+                %% the "concrete" type might actually be an as-yet
+                %% uninstantiated type which will lead to unification
+                %% failures later.  Instead of assuming it's one of our base
+                %% types we instantiate it like anything else.  Here I haven't
+                %% worried about the returned environment as I think we're
+                %% safely covered by using the already known variables and
+                %% existing environment:
+                {_, InstCT} = inst_constructor_arg(CT, VarsToUse, Types, Env),
+                {VN, InstCT}
         end,
     ADT_Vars = lists:map(F, VarsToUse),
     Vs2 = replace_vars(M1, V2, Vs),
@@ -1203,12 +1233,13 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
                         end,
                         {Env, []},
                         M2),
-    {Env2,
-     new_cell(#adt{
-                 name=N,
-                 vars=ADT_Vars,
-                 members=lists:reverse(Members),
-                 module=Mod})};
+
+    ADT = #adt{
+             name=N,
+             vars=ADT_Vars,
+             members=lists:reverse(Members),
+             module=Mod},
+    {Env2, new_cell(ADT)};
 
 inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types, Env) ->
     F = fun(A, {E, Memo}) ->
@@ -1246,6 +1277,7 @@ unify_list([], _, _, Env, L) ->
 unify_list(_, [], _, Env, L) ->
     arity_error(Env, L);
 unify_list([A|TA], [B|TB], {MA, MB}, Env, L) ->
+    %true = is_pid(A),
     case unify(A, B, Env, L) of
         {error, _} = E -> E;
         ok -> unify_list(TA, TB, {[A|MA], [B|MB]}, Env, L)
@@ -5541,6 +5573,31 @@ missing_type_var_in_signature_test() ->
       "let main () = missingTypeVar 10",
     ?assertMatch({error,{unknown_type_var,sig,3,"a"}},
                  module_typ_and_parse(Code)).  
+
+nested_adt_test() ->
+    Code =
+        "module nested_adt\n"
+        "type opt 'a = None | Some 'a\n"
+        "type w = W opt (opt int)\n"
+        "let make_w () = W (Some (Some 1))\n",
+    ?assertMatch(
+       {ok, #alpaca_module{
+               types=[#alpaca_type{
+                         name={type_name, _, <<"w">>},
+                         vars=[],
+                         members=[#alpaca_constructor{
+                                     arg=#alpaca_type{
+                                            name={type_name, _, <<"opt">>},
+                                            vars=[{{type_var, _, _},
+                                                  #alpaca_type{
+                                                     name={type_name, _, <<"opt">>},
+                                                     vars=[{{type_var, _, _}, t_int}]
+                                                    }}]
+                                           }}]},
+                      #alpaca_type{name={type_name, _, <<"opt">>}}],
+               functions=[#alpaca_binding{
+                            type={t_arrow, [t_unit], #adt{name = <<"w">>}}}]}},
+       module_typ_and_parse(Code)).
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
