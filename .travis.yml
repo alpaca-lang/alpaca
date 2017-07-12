@@ -1,30 +1,32 @@
 language: erlang
 install: 'true'
 otp_release:
-  - 19.2
-
+- 19.2
 env:
   global:
-    - REBAR_VSN=3.3.5
-    - PATH=./rebar3-$REBAR_VSN:$PATH
-
+  - REBAR_VSN=3.3.5
+  - PATH=./rebar3-$REBAR_VSN:$PATH
 cache:
   directories:
-    - .rebar3-$REBAR_VSN
-    - /home/travis/.cache/rebar3
-
+  - .rebar3-$REBAR_VSN
+  - /home/travis/.cache/rebar3
 before_install:
-  - if [ ! -f rebar3-$REBAR_VSN/rebar3 ]; then wget --no-check-certificate https://github.com/erlang/rebar3/archive/$REBAR_VSN.tar.gz; fi
-  - if [ -f $REBAR_VSN.tar.gz ]; then tar xvzf $REBAR_VSN.tar.gz; fi
-  - cd rebar3-$REBAR_VSN
-  - if [ ! -f ./rebar3 ]; then ./bootstrap; fi
-  - cd ..
-
-before_script: [] # Need to do this, or travis will use rebar2!
-
+- if [ ! -f rebar3-$REBAR_VSN/rebar3 ]; then wget --no-check-certificate https://github.com/erlang/rebar3/archive/$REBAR_VSN.tar.gz;
+  fi
+- if [ -f $REBAR_VSN.tar.gz ]; then tar xvzf $REBAR_VSN.tar.gz; fi
+- cd rebar3-$REBAR_VSN
+- if [ ! -f ./rebar3 ]; then ./bootstrap; fi
+- cd ..
+before_script: []
 script:
-  - rebar3 xref
-  - rebar3 eunit
-  - rebar3 eunit
-  - rebar3 ct
-
+- rebar3 xref
+- rebar3 eunit
+- rebar3 eunit
+- rebar3 ct
+deploy:
+  provider: releases
+  api_key:
+    secure: BAZxkGa98jJ6+JurzaUuGKO9pcuatjh0TMKLxSnYarVrikb9xWnM/wmmn2ajCvTgcl8wYppbQEpcgCJLb6m6ZI9L9ZBksii9ECacp2x2vDrGZ0QBhM/0tg9aHvUAhn7U2FRszqZwGnYlx/7Vb2hZ7Y8S3ojqLuuzturjRjtMkEPhLuLcHEAB/BPiqkdF/b0BRHGvYH2OhIyK4LKejSVL59sSRMzpt9x1c8r9+p6z12IHcsgek0vjQsmUJP3f4bE10FKRQkHBkzIOIqfSMFQ3+Ss/oVhWdHFRq47yfcPHiDAdU3UeVREHjMElRoqi6smJ7YSiyNMGWWS8ZmWjAi+nz/HNM4hdkCwy/GYlyjHjnjZR+fpHAyblHG3cphrpT6sBKZ2I9aC7sjoVIJWd6MShlaI929zKSxnqTzchPc8RL1qHD2vLaTtYiQ0tI7vJ01sCm9X2QpaYMvm46awhEmf3yl4b+Be0vUW/BLNvKBNQzmQ7Q+RaSrkA4USGu4Ilb4mH9jAX3evngJ0zkua/E4bWZ19oD0BJXoui2wzRiNhXJR8VCHVESji9R0Rp6yVhE3Mme0j1ssCMUDbQvBXptKe7HNDIpFcpGgTitWJZKXAE6+wUe8kadeMsU1nVhMkMFrVganrKZvieHIXWLsCYZqseGWOKkDYlaWvezljFbHzpGLU=
+  file: alpaca.tgz
+  on:
+    repo: alpaca-lang/alpaca
