@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # If travis-ci is building a tag then use that as the version, otherwise mark
-# this release with the current git hash:
-VERSION=${TRAVIS_TAG:-`git rev-parse HEAD`}
+# this release with the hash from travis-ci:
+VERSION=${TRAVIS_TAG:-${TRAVIS_COMMIT:-unversioned}}
 
 # Where we're copying .beam files from:
 ALPACA_BEAMS=_build/test/lib/alpaca/ebin
