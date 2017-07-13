@@ -32,4 +32,5 @@ deploy:
   file: alpaca.tgz
   on:
     repo: alpaca-lang/alpaca
+    skip_cleanup: true
     tags: true
