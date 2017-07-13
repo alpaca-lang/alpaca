@@ -98,7 +98,10 @@ compile_phase_2(Mods, Opts) ->
     end.
 
 compile_phase_3(Mods, Opts) ->
-    ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(Mods),
+    %% Don't check precompiled modules - as the AST is stripped, they will not
+    %% have function bodies and so will always fail these checks
+    ToCheckMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
+    ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(ToCheckMods),
     maybe_print_exhaustivess_warnings(ExhaustivenessWarnings, Opts),
     compile_phase_4(Mods, Opts).
 
