@@ -5,7 +5,7 @@
 VERSION=${TRAVIS_TAG:-${TRAVIS_COMMIT:-unversioned}}
 
 # Where we're copying .beam files from:
-ALPACA_BEAMS=_build/test/lib/alpaca/ebin
+ALPACA_BEAMS=_build/default/lib/alpaca/ebin
 
 echo "Building release with version $VERSION"
 

@@ -23,6 +23,7 @@ script:
 - rebar3 eunit
 - rebar3 eunit
 - rebar3 ct
+- rebar3 as default compile
 - bash ./make-release.sh
 deploy:
   provider: releases
