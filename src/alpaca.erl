@@ -662,4 +662,11 @@ type_signature_test() ->
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(4, M:add(1, 3)).
 
+use_lambda_test() ->
+    Files = ["test_files/use_lambda.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(15, M:useLambda(5)),
+    ?assertMatch(13, M:useLambdaTuple(3)),
+    pd(M).
+
 -endif.

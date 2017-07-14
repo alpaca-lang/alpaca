@@ -549,30 +549,15 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                                  parse_error(Mod, L, {duplicate_definition, Name})
                          end,
 
-    F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
-                #alpaca_fun_version{args=Args, body=FunBody, guards=Gs} = FV,
-                {Env2, M3, Args2} = rebind_args(Env, Map, Args),
-                {Env3, M4, FunBody2} = rename_bindings(Env2, M3, FunBody),
-                {Env4, _M5, Gs2} = rename_binding_list(Env3, M4, Gs),
-                FV2 = FV#alpaca_fun_version{
-                        args=Args2,
-                        guards=Gs2,
-                        body=FunBody2},
-                %% As with patterns and clauses we deliberately
-                %% throw away the rename map here so that the
-                %% same symbols can be reused by distinctly
-                %% different function definitions.
-                {Env4, Map, [FV2|NewVersions]}
-           end,
     case Expr of
-        #alpaca_fun{versions=Vs}=Def ->
-            {Env3, Map2, Vs2} = lists:foldl(F, {En2, M2, []}, Vs),
+        #alpaca_fun{versions=_Vs}=Def ->
+            {Env3, Map2, Vs2} = rewrite_fun_versions(En2, M2, Def),
             {Env4, Map3, Body2} = rename_bindings(Env3, Map2, Body),
 
             NewDef = Binding#alpaca_binding{
                        name=alpaca_ast:symbol_rename(NameSym, NewName),
                        bound_expr=Def#alpaca_fun{
-                                    versions=lists:reverse(Vs2)},
+                                    versions=Vs2},
                        body=Body2},
             {Env4, Map3, NewDef};
         _ ->
@@ -583,6 +568,10 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
                            bound_expr=Expr2,
                            body=Body2}}
     end;
+
+rename_bindings(Env, Map, #alpaca_fun{}=F) ->
+    {Env2, Map2, Vs2} = rewrite_fun_versions(Env, Map, F),
+    {Env2, Map2, F#alpaca_fun{versions=Vs2}};
 
 rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
     %% Functions to extract the locally defined top-level functions and
@@ -799,6 +788,28 @@ rename_clause_list(Env, M, Cs) ->
         end,
     {Env2, M2, Cs2} = lists:foldl(F, {Env, M, []}, Cs),
     {Env2, M2, lists:reverse(Cs2)}.
+
+%% Renaming/rewriting functions used to occur only within explicit bindings but
+%% we need to do it for lambdas (anonymous functions) as well so it's pulled out
+%% here now:
+rewrite_fun_versions(E, M, #alpaca_fun{versions=Vs}) ->
+    F = fun(#alpaca_fun_version{}=FV, {Env, Map, NewVersions}) ->
+                #alpaca_fun_version{args=Args, body=FunBody, guards=Gs} = FV,
+                {Env2, M3, Args2} = rebind_args(Env, Map, Args),
+                {Env3, M4, FunBody2} = rename_bindings(Env2, M3, FunBody),
+                {Env4, _M5, Gs2} = rename_binding_list(Env3, M4, Gs),
+                FV2 = FV#alpaca_fun_version{
+                        args=Args2,
+                        guards=Gs2,
+                        body=FunBody2},
+                %% As with patterns and clauses we deliberately
+                %% throw away the rename map here so that the
+                %% same symbols can be reused by distinctly
+                %% different function definitions.
+                {Env4, Map, [FV2|NewVersions]}
+        end,
+    {E2, M2, Vs2} = lists:foldl(F, {E, M, []}, Vs),
+    {E2, M2, lists:reverse(Vs2)}.
 
 %%% Used for pattern matches so that we're sure that the patterns in each
 %%% clause contain unique bindings.
