@@ -1,0 +1,25 @@
+{- Tests for the compilation and use of a lambda defined and applied in the same
+   expression.  For fix of issue #196.
+
+   With thanks to https://github.com/lepoetemaudit for the initial test cases.
+ -}
+module use_lambda
+
+export useLambda, useLambdaTuple
+
+val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b
+let apply f x = f x
+
+-- Used to fail:
+let useLambda x =
+  apply (fn y -> x + y) 10
+
+let useLambdaTuple x =
+  apply (fn (_, y) -> x + y) (:ignored, 10)
+
+let boundLambda x =
+  let lambda = (fn y -> x + y) in
+  apply lambda 10
+
+let useLet x =
+  apply (let f y = x + y in f) 10

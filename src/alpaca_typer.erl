@@ -5599,6 +5599,40 @@ nested_adt_test() ->
                             type={t_arrow, [t_unit], #adt{name = <<"w">>}}}]}},
        module_typ_and_parse(Code)).
 
+direct_lambda_application_test_() ->
+    Prelude =
+        "module lambdas\n"
+        "val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b\n"
+        "let apply f x = f x\n",
+
+    [fun() ->
+             Code = Prelude ++
+                 "let useLambda x =\n"
+                 "  apply (fn y -> x + y) 10",
+             ?assertMatch({ok, _}, module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = Prelude ++
+                 "let useLambda x =\n"
+                 "  apply (fn (_, y) -> x + y) (:ignored, 10)",
+             ?assertMatch({ok, _}, module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = Prelude ++
+                 "let boundLambda x =\n"
+                 "  let lambda = (fn y -> x + y) in\n"
+                 "  apply lambda 10",
+             ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
+     end,
+     fun() ->
+             Code = Prelude ++
+                 "let useLet x =\n"
+                 "  apply (let f y = x + y in f) 10",
+             ?assertMatch({ok, #alpaca_module{}}, module_typ_and_parse(Code))
+     end
+    ].
+    
+
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
   {ok, Mods} = alpaca_ast_gen:make_modules(NamedSources),
