@@ -183,6 +183,19 @@ rewrite_lambdas(#alpaca_record{members=Ms}=R, NextFun, Memo) ->
 rewrite_lambdas(#alpaca_record_member{val=V}=RM, NextFun, Memo) ->
     {NF, V2, NewBinds} = rewrite_lambdas(V, NextFun, []),
     {NF, RM#alpaca_record_member{val=V2}, NewBinds ++ Memo};
+rewrite_lambdas(#alpaca_match{clauses=Cs}=M, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, M#alpaca_match{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_ffi{clauses=Cs}=F, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, F#alpaca_ffi{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_receive{clauses=Cs}=R, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, R#alpaca_receive{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_clause{result=R}=C, NextFun, Memo) ->
+    {NF, R2, NewBinds} = rewrite_lambdas(R, NextFun, []),
+    {NF, C#alpaca_clause{result=R2}, NewBinds ++ Memo};
+
 rewrite_lambdas(X, NextFun, Memo) ->
     {NextFun, X, Memo}.
 
