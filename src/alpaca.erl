@@ -136,7 +136,7 @@ maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   end.
 
 load_files(Filenames) ->
-    lists:foldl(
+    Loaded = lists:foldl(
       fun(FN, Acc) ->
           Res = case filename:extension(FN) of
                     ".alp" ->
@@ -151,7 +151,9 @@ load_files(Filenames) ->
                 end,
 
               [{FN, Res}|Acc]
-      end, [], Filenames).
+      end, [], Filenames),
+    %% Ensure original order is preserved; This helps with incremental builds
+    lists:reverse(Loaded).
 
 compile_module(#alpaca_module{name=N}=Mod, Opts) ->
     {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
