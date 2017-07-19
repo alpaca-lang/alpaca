@@ -1659,7 +1659,7 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
 
     Funs = case Module#alpaca_module.typed of
         true ->
-            Module;
+            Module#alpaca_module.functions;
         false ->
             %% Type the called function in its own module:
             Env2 = Env#env{current_module=Module,
