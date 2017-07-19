@@ -136,7 +136,7 @@ maybe_print_exhaustivess_warnings(Warnings, Opts) ->
   end.
 
 load_files(Filenames) ->
-    lists:foldl(
+    Loaded = lists:foldl(
       fun(FN, Acc) ->
           Res = case filename:extension(FN) of
                     ".alp" ->
@@ -151,7 +151,9 @@ load_files(Filenames) ->
                 end,
 
               [{FN, Res}|Acc]
-      end, [], Filenames).
+      end, [], Filenames),
+    %% Ensure original order is preserved; This helps with incremental builds
+    lists:reverse(Loaded).
 
 compile_module(#alpaca_module{name=N}=Mod, Opts) ->
     {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
@@ -405,7 +407,7 @@ radius_test() ->
             ["test_files/radius.alp",
              "test_files/use_radius.alp"],
             []),
-    ?assertEqual(1, M2:test_radius({})),
+    ?assertEqual(1, M1:test_radius({})),
     pd(M1),
     pd(M2).
 
@@ -439,9 +441,9 @@ own_formatter_test() ->
 export_import_test() ->
     Files = ["test_files/export_all_arities.alp", "test_files/import_test.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    ?assertEqual(12, M2:test_pipe({})),
-    ?assertEqual(12, M2:test_pipe_far_call({})),
-    ?assertEqual(5, M2:test_specified_arity({})),
+    ?assertEqual(12, M1:test_pipe({})),
+    ?assertEqual(12, M1:test_pipe_far_call({})),
+    ?assertEqual(5, M1:test_specified_arity({})),
     pd(M1),
     pd(M2).
 
@@ -460,7 +462,7 @@ curry_test() ->
 curry_import_export_test() ->
     Files = ["test_files/curry.alp", "test_files/curry_import.alp"],
     [M1, M2] = compile_and_load(Files, []),
-    ?assertEqual([3], M2:run_filter({})),
+    ?assertEqual([3], M1:run_filter({})),
     pd(M1),
     pd(M2).
 
@@ -476,18 +478,18 @@ record_update_test() ->
              "test_files/use_update_record.alp"],
     [M1, M2] = compile_and_load(Files, []),
 
-    ?assertEqual(#{'__struct__' => record, x => 5, b => 2}, M2:main({})),
-    ?assertEqual(#{'__struct__' => record, x => 2}, M2:overwrite_x({})),
+    ?assertEqual(#{'__struct__' => record, x => 5, b => 2}, M1:main({})),
+    ?assertEqual(#{'__struct__' => record, x => 2}, M1:overwrite_x({})),
     ?assertEqual(#{'__struct__' => record,
                    a => 1,
                    b => 2,
-                   c => 3}, M2:add_2_members({})),
+                   c => 3}, M1:add_2_members({})),
     ?assertEqual(#{'__struct__' => record,
                    a => 1,
                    b => 2,
                    c => 3,
                    x => 1.0,
-                   z => <<"this is z">>}, M2:add_3_members({})),
+                   z => <<"this is z">>}, M1:add_3_members({})),
     pd(M1),
     pd(M2).
 
@@ -495,7 +497,7 @@ option_map_test() ->
     %% Including asserts now to check a bug found when experimenting for the
     %% beginning of alpaca_lib:
     Files = ["test_files/option_example.alp", "test_files/asserts.alp"],
-    [M, _] = compile_and_load(Files, [test]),
+    [_, M] = compile_and_load(Files, [test]),
     ?assertEqual({'Some', 1}, M:some(1)),
     ?assertEqual({'Some', 2}, M:map(fun(X) -> X + 1 end, M:some(1))),
     ?assertEqual('None', M:map(fun(X) -> X + 1 end, 'None')),
@@ -557,7 +559,7 @@ lambda_in_test_test() ->
 tests_in_imports_test() ->
     Files = ["test_files/asserts.alp", "test_files/tests_and_imports.alp"],
     [M1, M2] = compile_and_load(Files, [test]),
-    ?assertMatch(true, M2:example_test()),
+    ?assertMatch(true, M1:example_test()),
     pd(M1),
     pd(M2).
 
@@ -634,7 +636,7 @@ default_imports_test() ->
         [{default, <<"identity">>}, {default, <<"always">>, 2}],
         [{default, <<"box">>}]},
 
-    {ok, [Default, Compiled]} = alpaca:compile(
+    {ok, [Compiled, Default]} = alpaca:compile(
         {files, Files},
         [{default_imports, DefaultImports}]),
 
