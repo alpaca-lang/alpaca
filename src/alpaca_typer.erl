@@ -1533,7 +1533,7 @@ type_module(#alpaca_module{functions=Fs,
                                 {error, _} = Err        ->
                                     Err;
                                 Funs when is_list(Funs) ->
-                                    {ok, M#alpaca_module{functions=Funs}}
+                                    {ok, M#alpaca_module{functions=Funs, typed=true}}
                             end
                     end
             end
@@ -1657,10 +1657,16 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
     EnteredModules = [Mod | Env#env.entered_modules],
     {ok, Module, _} = extract_module_bindings(Env, Mod, N),
 
-    %% Type the called function in its own module:
-    Env2 = Env#env{current_module=Module,
-                   entered_modules=EnteredModules},
-    {ok, #alpaca_module{functions=Funs}} = type_module(Module, Env2),
+    Funs = case Module#alpaca_module.typed of
+        true ->
+            Module;
+        false ->
+            %% Type the called function in its own module:
+            Env2 = Env#env{current_module=Module,
+                          entered_modules=EnteredModules},
+            {ok, #alpaca_module{functions=F}} = type_module(Module, Env2),
+            F
+    end,
 
     [Typ] = [Typ || #alpaca_binding{
                        name={'Symbol', #{name := X}},
@@ -1896,10 +1902,19 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, {'Symbol', _}=Sym, Arity}, args=Args})
                     {error, _} = E -> E;
                     {ok, Module, _Fun} ->
                         EnteredModules = [Mod | Env#env.entered_modules],
-                        Env2 = Env#env{current_module=Module,
-                                       entered_modules=EnteredModules},
+                        FarMod = case Module#alpaca_module.typed of
+                            true ->
+                                {ok, Module};
+                            false ->
+                                %% Type the called function in its own module:
+                                Env2 = Env#env{current_module=Module,
+                                               entered_modules=EnteredModules},
+                                type_module(Module, Env2)
+                        end,
+
+
                         %% Type the called function in its own module:
-                        case type_module(Module, Env2) of
+                        case FarMod of
                             {ok, #alpaca_module{functions=Funs}} ->
                                 [T] = [Typ ||
                                           #alpaca_binding{

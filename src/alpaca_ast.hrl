@@ -532,6 +532,7 @@
           functions=[] :: list(alpaca_binding()),
           tests=[] :: list(alpaca_test()),
           precompiled=false :: boolean(),
-          hash=undefined :: binary() | undefined
+          hash=undefined :: binary() | undefined,
+          typed=false :: boolean()
          }).
 -type alpaca_module() :: #alpaca_module{}.
