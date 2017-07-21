@@ -5,7 +5,7 @@
  -}
 module use_lambda
 
-export useLambda, useLambdaTuple
+export useLambda, useLambdaTuple, matchLambda, ffiLambda
 
 val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b
 let apply f x = f x
@@ -23,3 +23,27 @@ let boundLambda x =
 
 let useLet x =
   apply (let f y = x + y in f) 10
+
+-- Used to fail
+val matchLambda : fn bool -> fn int -> int
+let matchLambda v =
+  match v with
+    | true -> fn x -> x * x
+    | false -> fn x -> (x + x) + 1
+
+val boundMatchLambda : fn bool -> fn int -> int
+let boundMatchLambda v =
+  match v with
+    | true -> (let f y = y * y in f)
+    | false -> (let f y = y + y in f)
+
+-- FFI and receive expressions are similar to match expressions
+val ffiLambda 'a : fn 'a -> fn int -> int
+let ffiLambda r =
+  beam :io :format [r] with
+    _ -> fn x -> x * x
+
+let wait () =
+  receive with
+      x, is_integer x -> fn y -> y * 10
+

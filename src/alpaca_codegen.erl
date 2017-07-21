@@ -154,7 +154,7 @@ rewrite_lambdas(#alpaca_fun{line=L, versions=Vs}=Fun, NextFun, Memo) ->
     FunName = ":synth_lambda_" ++ integer_to_list(NextFun2),
     FunSym = alpaca_ast:symbol(L, unicode:characters_to_binary(FunName, utf8)),
     Fun2 = Fun#alpaca_fun{versions=VMemo},
-    {NextFun2, FunSym, [{FunSym, Fun2} | [BMemo | Memo]]};
+    {NextFun2 + 1, FunSym, [{FunSym, Fun2} | [BMemo | Memo]]};
 rewrite_lambdas(#alpaca_binding{bound_expr=BE, body=Body}=AB, NextFun, Memo) ->
     {NextFun2, BE2, Binds} = case BE of
                                  #alpaca_fun{versions=Vs}=Fun ->
@@ -183,6 +183,19 @@ rewrite_lambdas(#alpaca_record{members=Ms}=R, NextFun, Memo) ->
 rewrite_lambdas(#alpaca_record_member{val=V}=RM, NextFun, Memo) ->
     {NF, V2, NewBinds} = rewrite_lambdas(V, NextFun, []),
     {NF, RM#alpaca_record_member{val=V2}, NewBinds ++ Memo};
+rewrite_lambdas(#alpaca_match{clauses=Cs}=M, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, M#alpaca_match{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_ffi{clauses=Cs}=F, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, F#alpaca_ffi{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_receive{clauses=Cs}=R, NextFun, Memo) ->
+    {NF, Cs2, BMemo} = rewrite_seq_lambdas(Cs, NextFun),
+    {NF, R#alpaca_receive{clauses=Cs2}, [Memo ++ BMemo]};
+rewrite_lambdas(#alpaca_clause{result=R}=C, NextFun, Memo) ->
+    {NF, R2, NewBinds} = rewrite_lambdas(R, NextFun, []),
+    {NF, C#alpaca_clause{result=R2}, NewBinds ++ Memo};
+
 rewrite_lambdas(X, NextFun, Memo) ->
     {NextFun, X, Memo}.
 
@@ -1097,6 +1110,26 @@ curry_test() ->
     {module, Mod} = code:load_binary(Mod, "alpaca_autocurry.beam", Bin),
     ?assertEqual(Mod:main(unit), 11),
     true = pd(Mod).
+
+unique_synth_lambda_test() ->
+    %% Previously, the synth numbers weren't being incremented,
+    %% Meaning that in the below applying f1 would always apply f2
+    Code =
+        "module lambdas\n"
+        "export main\n"
+        "-- apply two functions to `value`, return a tuple of each result\n"
+        "let apply2 f1 f2 value = \n"
+        "  (f1 value, f2 value)\n"
+        "let main () = "
+        "  apply2 (fn x -> x + 1) (fn x -> x + 2) 1\n",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_lambdas,
+    {module, Mod} = code:load_binary(Mod, "alpaca_lambdas.beam", Bin),
+    %% Used to result in {3, 3}
+    ?assertEqual(Mod:main(unit), {2, 3}),
+    true = pd(Mod).
+
+
 
 unit_as_value_test() ->
     Code =
