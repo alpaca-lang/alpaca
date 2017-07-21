@@ -669,6 +669,11 @@ use_lambda_test() ->
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(15, M:useLambda(5)),
     ?assertMatch(13, M:useLambdaTuple(3)),
+    MatchFun = M:matchLambda(true),
+    Res = MatchFun(16),
+    ?assertMatch(256, Res),
+    FFIFun = M:ffiLambda("alpaca"),
+    ?assertMatch(64, FFIFun(8)),
     pd(M).
 
 -endif.

@@ -5,7 +5,7 @@
  -}
 module use_lambda
 
-export useLambda, useLambdaTuple
+export useLambda, useLambdaTuple, matchLambda, ffiLambda
 
 val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b
 let apply f x = f x
@@ -28,8 +28,8 @@ let useLet x =
 val matchLambda : fn bool -> fn int -> int
 let matchLambda v =
   match v with
-    | true -> fn y -> y * y
-    | false -> fn y -> y + y
+    | true -> fn x -> x * x
+    | false -> fn x -> (x + x) + 1
 
 val boundMatchLambda : fn bool -> fn int -> int
 let boundMatchLambda v =
