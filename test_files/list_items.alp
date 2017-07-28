@@ -1,0 +1,14 @@
+module list_items
+
+export getList, getMatrix
+
+let get_seventeen () = 17
+
+-- Simple expressions / function application
+let getList () = [2 + 2, get_seventeen ()]
+
+-- Sublists
+let getMatrix () = [ [0, 0, 0, 0]
+                   , [0, 1, 0, 0]
+                   , [0, 0, 1, 0]
+                   , [0, 0, 0, 1] ]

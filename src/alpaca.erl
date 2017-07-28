@@ -676,4 +676,16 @@ use_lambda_test() ->
     ?assertMatch(64, FFIFun(8)),
     pd(M).
 
+list_item_expression_test() ->
+    Files = ["test_files/list_items.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch([4, 17], M:getList({})),
+
+    Matrix = [[0, 0, 0, 0],
+              [0, 1, 0, 0],
+              [0, 0, 1, 0],
+              [0, 0, 0, 1]],
+    ?assertMatch(Matrix, M:getMatrix({})),
+    pd(M).
+
 -endif.

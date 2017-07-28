@@ -395,13 +395,13 @@ module_fun -> symbol '.' symbol :
   #alpaca_far_ref{line=L, module=binary_to_atom(Mod, utf8), name=Fun}.
 
 %% ----- Lists  ------------------------
-literal_cons_items -> term : ['$1'].
-literal_cons_items -> term ',' literal_cons_items: ['$1' | '$3'].
+literal_cons_items -> simple_expr : ['$1'].
+literal_cons_items -> simple_expr ',' literal_cons_items: ['$1' | '$3'].
 
 cons -> '[' ']' :
   {_, L} = '$1',
   {nil, L}.
-cons -> '[' term ']' :
+cons -> '[' simple_expr ']' :
   {_, L} = '$3',
   #alpaca_cons{head='$2', tail={nil, L}, line=L}.
 cons -> term cons_infix term : #alpaca_cons{head='$1', tail='$3'}.
