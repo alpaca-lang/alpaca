@@ -1764,7 +1764,10 @@ binary_test_() ->
                              value={'Symbol', #{line := 1, name := <<"a">>}}},
                           #alpaca_bits{
                              value={'Symbol', #{line := 1, name := <<"b">>}}}]}},
-        parse(alpaca_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>")))
+        parse(alpaca_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>"))),
+     ?_assertMatch(
+        {error, {1, alpaca_parser, unsized_binary_before_end}},
+        parse(alpaca_scanner:scan("match <<1>> with <<a: type=binary, b: type=utf8>> -> (a, b)")))
     ].
 
 string_test_() ->
