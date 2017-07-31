@@ -613,7 +613,7 @@ guard -> type_check : '$1'.
 guards -> guard : ['$1'].
 guards -> guard ',' guards : ['$1'|'$3'].
 
-match_pattern -> term : '$1'.
+match_pattern -> term : validate_match_pattern('$1').
 match_clause -> match_pattern '->' simple_expr :
   #alpaca_clause{pattern='$1', result='$3', line=term_line('$1')}.
 match_clause -> match_pattern ',' guards '->' simple_expr :
@@ -982,6 +982,24 @@ line(X) ->
 infix_name(C) ->
   BinC = unicode:characters_to_binary(C, utf8),
   <<"("/utf8, BinC/binary, ")"/utf8>>.
+
+%% Some patterns may be illegal, such as unsized binaries before the final segment
+validate_match_pattern(#alpaca_binary{segments=Segments}=Ptn) ->
+    case validate_bin_segments(Segments) of
+        ok -> Ptn;
+        E -> E
+    end;
+validate_match_pattern(Ptn) -> Ptn.
+
+validate_bin_segments([_Ptn]) -> ok;
+validate_bin_segments([Ptn | Rem]) ->
+    case Ptn of
+        #alpaca_bits{default_sizes=true, type=T, value={'Symbol', _}=S}
+        when T == binary; T == utf8 ->
+            return_error(line(S), unsized_binary_before_end);
+        _ -> validate_bin_segments(Rem)
+    end.
+
 
 %% Yecc requires tuples to start with a token name it can recognize so we can't
 %% actually product and use Alpaca AST nodes straight from Leex.

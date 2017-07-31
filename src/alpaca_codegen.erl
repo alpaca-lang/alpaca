@@ -721,13 +721,15 @@ gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 
 gen_bits(Env, [], AllSegs) ->
     {Env, lists:reverse(AllSegs)};
-gen_bits(Env, [#alpaca_bits{type=T, default_sizes=true}=TailBits], Segs)
+
+gen_bits(Env, [#alpaca_bits{type=T, value={'Symbol', _}, default_sizes=true}=Bits | Rem], Segs)
   when T == binary; T == utf8 ->
-    #alpaca_bits{value=V, type=T, sign=Sign, endian=E} = TailBits,
+    #alpaca_bits{value=V, type=T, sign=Sign, endian=E} = Bits,
     {Env2, VExp} = gen_expr(Env, V),
     B = cerl:c_bitstr(VExp, cerl:c_atom('all'), cerl:c_int(8),
                       get_bits_type(T), bits_flags(Sign, E)),
-    {Env2, lists:reverse([B|Segs])};
+
+    gen_bits(Env2, Rem, [B|Segs]);
 
 gen_bits(Env,
          [#alpaca_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
@@ -1129,8 +1131,6 @@ unique_synth_lambda_test() ->
     ?assertEqual(Mod:main(unit), {2, 3}),
     true = pd(Mod).
 
-
-
 unit_as_value_test() ->
     Code =
         "module unit_test\n\n"
@@ -1140,6 +1140,22 @@ unit_as_value_test() ->
     Mod = alpaca_unit_test,
     {module, Mod} = code:load_binary(Mod, "alpaca_unit_test.beam", Bin),
     ?assertEqual({}, Mod:return_unit({})),
+    true = pd(Mod).
+
+binary_symbol_concat_test() ->
+    Code =
+        "module bin_concat\n"
+        "export run\n"
+        "val (^^) : fn string string -> string\n"
+        "let (^^) str1 str2 = \n"
+        "  match <<str1: type=utf8, str2: type=utf8>> with \n"
+        "    << result: type=utf8 >> -> result\n"
+        "let run () = \"one\" ^^ \" \" ^^ \"two\" ^^ \" \" ^^ \"three\"",
+    {ok, _, Bin} = parse_and_gen(Code),
+    Mod = alpaca_bin_concat,
+    {module, Mod} = code:load_binary(Mod, "alpaca_bin_concat.beam", Bin),
+    %% Used to result in <<"othree">>
+    ?assertEqual(<<"one two three">>, Mod:run({})),
     true = pd(Mod).
 
 run_expr(Expr) ->
