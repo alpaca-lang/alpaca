@@ -1,5 +1,3 @@
--module(alpaca_printer).
-
 %%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 %%%
@@ -16,13 +14,21 @@
 %%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %%% See the License for the specific language governing permissions and
 %
-%%% This module pretty prints alpaca types. TODO: explain philosophy.
+%%% This module pretty prints Alpaca types from their AST representation.
+%%% This is useful for error messages, pretty printing module documentation,
+%%% shells and debugging. User defined types are also supported.
+
+-module(alpaca_printer).
+
+-export([format_type/1]).
 
 -include("alpaca_ast.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+-ignore_xref([format_type/1]).
 
 %% If a type has multiple parts, we may need to add parens so it is
 %% unambigious for types like t_arrow, t_list etc.,
@@ -94,6 +100,15 @@ format_t({t_map, Key, Val}) ->
     ValRepr = infer_parens(format_t(Val)),
     <<"map ", KeyRepr/binary, " ", ValRepr/binary>>;
 
+format_t({t_pid, Type}) ->
+    TypeRepr = infer_parens(format_t(Type)),
+    <<"pid ", TypeRepr/binary>>;
+
+format_t({t_receiver, Initial, ReceiveFun}) ->
+    InitialRepr = infer_parens(format_t(Initial)),
+    ReceiveFunRepr = infer_parens(format_t(ReceiveFun)),
+    <<"receiver ", InitialRepr/binary, " ", ReceiveFunRepr/binary>>;
+
 %% Catch all
 format_t(Unknown) -> io:format("unknown type ~p", [Unknown]).
 
@@ -158,26 +173,37 @@ function_test_() ->
        <<"fn int -> rec">>,
        format_type({t_arrow, [t_int], t_rec}))].
 
+pid_test() ->
+    ?assertMatch(<<"pid int">>, format_type({t_pid, t_int})).
+
 from_module_test() ->
     Code = "module types\n"
            "val apply 'a 'b : fn (fn 'a -> 'b) 'a -> 'b\n"
            "let apply f x = f x\n"
            "type maybe 'a = Just 'a | Nothing\n"
            "let just something = Just something\n"
-           "let make_map x = #{\"key\" => x * x}\n",
+           "let make_map x = #{\"key\" => x * x}\n"
+           "let make_receiver x = receive with y -> x * y\n"
+           "let make_pid () = spawn make_receiver 10",
     {ok, Res} = alpaca:compile({text, Code}),
     [{compiled_module, N, FN, Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
     Attrs = N:module_info(attributes),
     Types = proplists:get_value(alpaca_typeinfo, Attrs),
+
     #alpaca_module{functions=Funs} = Types,
-    [#alpaca_binding{type=MapType}, 
+    [#alpaca_binding{type=PidType},
+     #alpaca_binding{type=ReceiverType},
+     #alpaca_binding{type=MapType}, 
      #alpaca_binding{type=JustType}, 
      #alpaca_binding{type=ApplyType}] = Funs,
+
     ?assertMatch(<<"fn (fn 'a -> 'b) 'a -> 'b">>, format_type(ApplyType)),
     ?assertMatch(<<"fn 'a -> maybe 'a">>, format_type(JustType)),
-    ?assertMatch(<<"fn int -> map string int">>, format_type(MapType)).
+    ?assertMatch(<<"fn int -> map string int">>, format_type(MapType)),
+    ?assertMatch(<<"fn () -> pid int">>, format_type(PidType)),
+    ?assertMatch(<<"receiver int (fn int -> int)">>, format_type(ReceiverType)),
 
-
+    code:purge(N).
 
 -endif.
