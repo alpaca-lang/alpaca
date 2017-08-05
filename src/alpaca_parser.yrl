@@ -79,7 +79,7 @@ assign int_math float_math minus plus
 bin_open bin_close
 open_brace close_brace
 map_open map_arrow
-match with '|' '->' '&&' '||'
+match with '|' '->' '&&' '||' '^'
 
 raise_error
 
@@ -514,6 +514,26 @@ tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
 tuple -> '(' tuple_list ')' :
   #alpaca_tuple{arity=length('$2'), values='$2'}.
 
+
+infix -> term '^' term :
+         L1 = term_line('$1'),
+         FalseC1 = #alpaca_clause{
+                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
+                      result={boolean, L1, false}, line=L1},
+         FalseC2 = #alpaca_clause{
+                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, true}, {boolean, L1, true}]},
+                     result={boolean, L1, false}, line=L1},
+         TrueC1 = #alpaca_clause{
+                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, true}, {boolean, L1, false}]},
+                     result={boolean, L1, true}, line=L1},
+         TrueC2 = #alpaca_clause{
+                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, false}, {boolean, L1, true}]},
+                     result={boolean, L1, true}, line=L1},
+         #alpaca_match{
+            match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
+            clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
+            line=L1
+           }.
 infix -> term '&&' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),

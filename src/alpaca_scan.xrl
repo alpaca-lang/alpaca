@@ -72,6 +72,8 @@ receive     : {token, {'receive', TokenLine}}.
 receiver    : {token, {receiver, TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 test        : {token, {'test', TokenLine}}.
+xor         : {token, {'xor', TokenLine}}.
+
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
 true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
@@ -137,7 +139,8 @@ c"(\\"*|\\.|[^"\\])*" :
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->       : {token, {'->', TokenLine}}.
 &&       : {token, {'&&', TokenLine}}.
-\|\|       : {token, {'||', TokenLine}}.
+\^       : {token, {'^', TokenLine}}.
+\|\|     : {token, {'||', TokenLine}}.
 \x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow
 _        : {token, {'_', TokenLine}}.
 

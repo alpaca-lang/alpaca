@@ -861,17 +861,25 @@ bif_infix_test() ->
 
     %% (&&) -> logical and short circute
     ?assertEqual(false, run_expr("false && false")),
-    ?assertEqual(false, run_expr("true && false")),
-    ?assertEqual(true,  run_expr("true && true")),
+    ?assertEqual(false, run_expr("false && true")),
+    ?assertEqual(false, run_expr("true  && false")),
+    ?assertEqual(true,  run_expr("true  && true")),
     %% prove short circuting by throwing as 2nd part of the expression
     ?assertEqual(false, run_expr("false && (error \"oh no and failed!\")")),
 
     %% (||) -> logical and short circute
     ?assertEqual(false, run_expr("false || false")),
-    ?assertEqual(true, run_expr("true || false")),
-    ?assertEqual(true,  run_expr("true || true")),
+    ?assertEqual(true,  run_expr("false || true")),
+    ?assertEqual(true,  run_expr("true  || false")),
+    ?assertEqual(true,  run_expr("true  || true")),
     %% prove short circuting by throwing as 2nd part of the expression
-    ?assertEqual(true, run_expr("true || (error \"oh no or failed!\")")),
+    ?assertEqual(true,  run_expr("true  || (error \"oh no or failed!\")")),
+    %% (^) logical xor
+    ?assertEqual(false, run_expr("false ^ false")),
+    ?assertEqual(true,  run_expr("true  ^ false")),
+    ?assertEqual(true,  run_expr("false ^ true")),
+    ?assertEqual(false, run_expr("true  ^ true")),
+
 
     ok.
 
