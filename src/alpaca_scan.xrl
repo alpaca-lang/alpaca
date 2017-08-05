@@ -72,7 +72,6 @@ receive     : {token, {'receive', TokenLine}}.
 receiver    : {token, {receiver, TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 test        : {token, {'test', TokenLine}}.
-xor         : {token, {'xor', TokenLine}}.
 
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
