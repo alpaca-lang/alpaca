@@ -79,7 +79,7 @@ assign int_math float_math minus plus
 bin_open bin_close
 open_brace close_brace
 map_open map_arrow
-match with '|' '->' '&&' '||' '^'
+match with '|' '->'  'and' 'or' 'xor'
 
 raise_error
 
@@ -515,7 +515,7 @@ tuple -> '(' tuple_list ')' :
   #alpaca_tuple{arity=length('$2'), values='$2'}.
 
 
-infix -> term '^' term :
+infix -> term 'xor' term :
          L1 = term_line('$1'),
          FalseC1 = #alpaca_clause{
                       pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
@@ -534,7 +534,7 @@ infix -> term '^' term :
             clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
             line=L1
            }.
-infix -> term '&&' term :
+infix -> term 'and' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
          FalseC = #alpaca_clause{
@@ -549,7 +549,7 @@ infix -> term '&&' term :
             line=L1
            }.
 
-infix -> term '||' term :
+infix -> term 'or' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
          TrueC = #alpaca_clause{
