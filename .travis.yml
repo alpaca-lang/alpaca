@@ -1,10 +1,11 @@
 language: erlang
 install: 'true'
 otp_release:
-- 19.2
+- 20.0
+- 19.3
 env:
   global:
-  - REBAR_VSN=3.3.5
+  - REBAR_VSN=3.4.3
   - PATH=./rebar3-$REBAR_VSN:$PATH
 cache:
   directories:
@@ -20,7 +21,6 @@ before_install:
 before_script: []
 script:
 - rebar3 xref
-- rebar3 eunit
 - rebar3 eunit
 - rebar3 ct
 - rebar3 as default compile
