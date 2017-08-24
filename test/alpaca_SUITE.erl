@@ -1,6 +1,22 @@
 -module(alpaca_SUITE).
 
--compile(export_all).
+%%-compile(export_all).
+
+-export([
+         all/0,
+         proper_compile/1,
+         g_function/0,
+         g_function_name/0,
+         g_function_body/0,
+         g_basic_value/0,
+         g_boolean/0,
+         g_number/0,
+         g_float/0,
+         g_atom/0,
+         g_string/0,
+         g_char_list/0,
+         g_binary/0
+        ]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("proper/include/proper.hrl").
