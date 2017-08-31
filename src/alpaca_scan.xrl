@@ -56,7 +56,7 @@ let         : {token, {'let', TokenLine}}.
 in          : {token, {in, TokenLine}}.
 fn          : {token, {fn, TokenLine}}.
 val         : {token, {val, TokenLine}}.
-\x{03BB}    : {token, {fn, TokenLine}}.         % unicode lower-case lambda
+\x{03BB}    : {token, {fn, TokenLine}}.           % unicode lower-case lambda
 match       : {token, {match, TokenLine}}.
 with        : {token, {with, TokenLine}}.
 beam        : {token, {beam, TokenLine}}.
@@ -72,6 +72,10 @@ receive     : {token, {'receive', TokenLine}}.
 receiver    : {token, {receiver, TokenLine}}.
 after       : {token, {'after', TokenLine}}.
 test        : {token, {'test', TokenLine}}.
+and         : {token, {'and', TokenLine}}.
+or          : {token, {'or', TokenLine}}.
+xor         : {token, {'xor', TokenLine}}.
+
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
 true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
@@ -136,8 +140,6 @@ c"(\\"*|\\.|[^"\\])*" :
 [\*\/\%]   : {token, {int_math, TokenLine, TokenChars}}.
 {FLOAT_MATH} : {token, {float_math, TokenLine, TokenChars}}.
 ->       : {token, {'->', TokenLine}}.
-&&       : {token, {'&&', TokenLine}}.
-\|\|       : {token, {'||', TokenLine}}.
 \x{2192} : {token, {'->', TokenLine}}.          % unicode rightwards arrow
 _        : {token, {'_', TokenLine}}.
 
