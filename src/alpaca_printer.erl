@@ -32,12 +32,13 @@
 
 %% If a type has multiple parts, we may need to add parens so it is
 %% unambigious for types like t_arrow, t_list etc.,
-infer_parens(<<"(", _Rest>> = TypeRep) -> TypeRep;
-infer_parens(<<"{", _Rest>> = TypeRep) -> TypeRep;
+infer_parens(<<"(", _Rest/binary>> = TypeRep) -> TypeRep;
+infer_parens(<<"{", _Rest/binary>> = TypeRep) -> TypeRep;
 infer_parens(TypeRepr) ->
     case binary:split(TypeRepr, <<" ">>) of
         [_] -> TypeRepr;
-        [_, _] -> <<"(", TypeRepr/binary, ")">>
+        [_, _] ->
+            <<"(", TypeRepr/binary, ")">>
     end.
 
 %% Simple primitive types
@@ -58,7 +59,7 @@ format_t({t_tuple, TupleTypes}) ->
     <<"(", TupleList/binary, ")">>;
 
 format_t({t_list, ListType}) ->
-    SubTypeRepr = infer_parens(format_t(ListType)),
+    SubTypeRepr = infer_parens(format_type_arg(ListType)),
     <<"list ", SubTypeRepr/binary>>;
 
 format_t(#t_record{members=Members}) ->
@@ -109,6 +110,7 @@ format_t({t_receiver, Initial, ReceiveFun}) ->
     ReceiveFunRepr = infer_parens(format_t(ReceiveFun)),
     <<"receiver ", InitialRepr/binary, " ", ReceiveFunRepr/binary>>;
 
+
 %% Catch all
 format_t(Unknown) -> io:format("unknown type ~p", [Unknown]).
 
@@ -139,30 +141,53 @@ format_binding(#alpaca_binding{type=Type, name={'Symbol', #{name := Name}}}) ->
 
         {match, Vars} ->
             TypeVars = lists:usort(lists:map(fun([M]) -> M end, Vars)),
-            io:format("Typevars: ~p~n", [TypeVars]),
             list_to_binary(lists:join(" ", TypeVars) ++ " ")
     end,
     <<"val ", Name/binary, " ", TypeVarsRepr/binary, ": ", TypeSigRepr/binary>>.
 
-format_type_arg({type_var, _, TVName}) -> " '" ++ TVName;
-format_type_arg(none) -> "";
+format_type_arg({type_var, _, TVName}) -> list_to_binary("'" ++ TVName);
+format_type_arg(none) -> <<"">>;
 format_type_arg({alpaca_type_tuple, Args}) ->
-    "(" ++ lists:join(", ", lists:map(fun format_type_arg/1, Args)) ++ ")";
-format_type_arg(Other) -> binary_to_list(format_type(Other)).
+    ArgsFmt = lists:map(fun format_type_arg/1, Args),
+    Joined = lists:join(", ", ArgsFmt),
+    list_to_binary("(" ++ Joined ++ ")");
+format_type_arg(#alpaca_type{vars=Vars, name={_, _, Name}}) ->
+    TypeVars = case length(Vars) > 0 of
+                   true ->
+                       VarsFmt = lists:map(fun({type_var, _, TVName}) ->
+                                                 "'" ++ TVName;
+                                              ({{type_var, _, _}, T}) ->
+                                                 format_type_arg(T)
+                                           end,
+                                           Vars),
+                       list_to_binary(" " ++ lists:join(" ", VarsFmt));
+                   false ->
+                       <<"">>
+               end,
+    <<Name/binary, TypeVars/binary>>;
+
+
+format_type_arg(Other) -> format_type(Other).
 
 format_type_def(#alpaca_type{vars=Vars, name={_, _, Name}, members=Members}) ->
     TypeVars = case length(Vars) > 0 of
         true -> list_to_binary(
-            " " ++ lists:join(" ", lists:map(fun({type_var, _, TVName}) ->
-                                                "'" ++ TVName
+            lists:join(" ", lists:map(fun({type_var, _, TVName}) ->
+
+                                                " '" ++ TVName
                                             end,
                                             Vars)));
         false -> <<"">>
     end,
     MemberRepr = list_to_binary(lists:join(" | ", lists:map(
-        fun(#alpaca_constructor{name=#type_constructor{name=N}, arg=Arg}) ->
-                N ++ format_type_arg(Arg);
-            (Other) -> format_type_arg(Other)
+        fun
+            (#alpaca_constructor{name=#type_constructor{name=N}, arg=none}) ->
+                list_to_binary(N);
+            (#alpaca_constructor{name=#type_constructor{name=N}, arg=Arg}) ->
+                list_to_binary(N ++ " " ++ infer_parens(format_type_arg(Arg)));
+            ({type_var, _, _, T}) -> format_type(T);
+            (Other) ->
+                format_type_arg(Other)
         end,
         Members))),
     <<"type ", Name/binary, TypeVars/binary, " = ", MemberRepr/binary>>.
@@ -170,39 +195,84 @@ format_type_def(#alpaca_type{vars=Vars, name={_, _, Name}, members=Members}) ->
 format_module(#alpaca_module{functions=Funs,
                              name=Name,
                              types=ModTypes,
-                             function_exports=FunExports}, _Opts) ->
+                             type_exports=TypeExports,
+                             function_exports=FunExports}, Opts) ->
 
     ModName = atom_to_binary(Name, utf8),
-    PublicFuns = lists:filter(
+    %% Sort funs by line
+    SortedFuns = lists:sort(
+        fun(#alpaca_binding{name={'Symbol', #{line := L1}}},
+            #alpaca_binding{name={'Symbol', #{line := L2}}}) ->
+                L1 =< L2
+        end,
+        Funs),
+    {PublicFuns, PrivateFuns} = lists:partition(
         fun(#alpaca_binding{name={'Symbol', #{name := FunName}}, type=T}) ->
             lists:any(fun(N) when is_binary(N) -> N == FunName;
                          ({N, Arity}) ->
                              case T of
-                                {t_arrow, Args, _} -> 
+                                {t_arrow, Args, _} ->
                                     (N == FunName) and (length(Args) == Arity);
                                 _ -> N == FunName
                              end;
-                         (O) -> false 
-                      end, 
+                         (_O) -> false
+                      end,
                       FunExports)
         end,
-        Funs),
+        SortedFuns),
+
+    %% WIP - PARTITION PUBLIC AND PRIVATE TYPES
+    {PublicTypes, PrivateTypes} = lists:partition(
+        fun(#alpaca_type{name={_, _, TName}}) ->
+                lists:member(TName, TypeExports)
+        end,
+        ModTypes),
     Bindings = lists:map(fun format_binding/1, PublicFuns),
     BindingsRepr = list_to_binary(lists:join("\n\n", Bindings)),
 
-    Types = lists:reverse(lists:map(fun format_type_def/1, ModTypes)),
+    Types = lists:reverse(lists:map(fun format_type_def/1, PublicTypes)),
     TypesRepr = list_to_binary(lists:join("\n\n", Types)),
     PublicTypeHeader = <<"-- Exported types\n",
                          "-----------------\n\n">>,
     PublicFunHeader = <<"-- Exported functions\n"
                         "---------------------\n\n">>,
-    <<"module ", ModName/binary, "\n\n",
+    ModAndPublic = <<"module ", ModName/binary, "\n\n",
       PublicTypeHeader/binary,
       TypesRepr/binary,
       "\n\n",
       PublicFunHeader/binary,
       BindingsRepr/binary,
-      "\n">>;
+      "\n">>,
+
+    case lists:member(internal, Opts) of
+        false ->
+            ModAndPublic;
+        true  ->
+            PrivateTypeHeader =
+                <<"\n-- Internal types\n"
+                  "-----------------\n\n">>,
+
+            PrivateFunHeader =
+                <<"-- Internal functions\n"
+                  "---------------------\n\n">>,
+
+            PrivateTypesMap =
+                lists:reverse(lists:map(fun format_type_def/1, PrivateTypes)),
+            PrivateTypesRepr =
+                list_to_binary(lists:join("\n\n", PrivateTypesMap)),
+
+            PrivateBindings = lists:map(fun format_binding/1, PrivateFuns),
+            PrivateBindingsRepr = list_to_binary(lists:join("\n\n", PrivateBindings)),
+
+            <<ModAndPublic/binary,
+              PrivateTypeHeader/binary,
+              PrivateTypesRepr/binary,
+              "\n\n",
+              PrivateFunHeader/binary,
+              PrivateBindingsRepr/binary,
+              "\n">>
+    end;
+
 
 format_module(Name, Opts) when is_atom(Name) ->
     Attrs = Name:module_info(attributes),
@@ -268,32 +338,58 @@ parameterized_binding_test() ->
 
 format_module_test() ->
     Code = "module my_lovely_lovely_mod\n"
-           "export hello, add\n"
+           "export hello, add, pair, identity\n"
            "export_type maybe\n"
            "export_type alias\n"
            "export_type my_tuple\n"
+           "export_type others\n"
            "type maybe 'a = Just 'a | Nothing\n"
            "type alias = int\n"
            "type my_tuple = (int, int)\n"
+           "type others = (maybe int, alias)\n"
+          " type compound = MyList (string, (list alias))\n"
+           "type mixed = HaveTuple (maybe my_tuple)\n"
            "let hello = \"hello world\""
            "let add x y = x + y\n"
-           "let private () = :private" ,
+           "val pair : fn int -> my_tuple\n"
+           "let pair x = (x, x)\n"
+           "let identity x = x\n"
+           "let private () = :private",
     {ok, Res} = alpaca:compile({text, Code}),
     [{compiled_module, N, FN, Bin}] = Res,
     {module, N} = code:load_binary(N, FN, Bin),
-    ?assertMatch(
+    ModAndExported =
         <<"module my_lovely_lovely_mod\n\n"
           "-- Exported types\n"
           "-----------------\n\n"
           "type maybe 'a = Just 'a | Nothing\n\n"
           "type alias = int\n\n"
           "type my_tuple = (int, int)\n\n"
+          "type others = (maybe int, alias)\n\n"
           "-- Exported functions\n"
           "---------------------\n\n"
           "val hello : string\n\n"
-          "val add : fn int int -> int\n"
+          "val add : fn int int -> int\n\n"
+          "val pair : fn int -> my_tuple\n\n"
+          "val identity 'a : fn 'a -> 'a\n"
         >>,
-        format_module(N)).
+
+    ?assertEqual(ModAndExported, format_module(N)),
+
+    Internal =
+        <<"\n-- Internal types\n"
+          "-----------------\n\n"
+          "type compound = MyList (string, list alias)\n\n"
+          "type mixed = HaveTuple (maybe my_tuple)\n\n"
+          "-- Internal functions\n"
+          "---------------------\n\n"
+          "val private : fn () -> atom\n"
+        >>,
+
+    ModExportedAndInternal =
+        <<ModAndExported/binary, Internal/binary>>,
+
+    ?assertEqual(ModExportedAndInternal, format_module(N, [internal])).
 
 from_module_test() ->
     Code = "module types\n"
