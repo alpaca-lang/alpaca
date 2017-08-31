@@ -110,7 +110,6 @@ format_t({t_receiver, Initial, ReceiveFun}) ->
     ReceiveFunRepr = infer_parens(format_t(ReceiveFun)),
     <<"receiver ", InitialRepr/binary, " ", ReceiveFunRepr/binary>>;
 
-
 %% Catch all
 format_t(Unknown) -> io:format("unknown type ~p", [Unknown]).
 
@@ -221,7 +220,6 @@ format_module(#alpaca_module{functions=Funs,
         end,
         SortedFuns),
 
-    %% WIP - PARTITION PUBLIC AND PRIVATE TYPES
     {PublicTypes, PrivateTypes} = lists:partition(
         fun(#alpaca_type{name={_, _, TName}}) ->
                 lists:member(TName, TypeExports)
