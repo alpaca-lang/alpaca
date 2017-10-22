@@ -33,10 +33,7 @@
 %%% API
 -export([type_modules/1]).
 
--export_type([t_cell/0]).
-
-%%% Internal
--export([cell/1]).
+-export_type([cell/0]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -54,38 +51,45 @@
 %%% its own, preventing others from doing the same (see Types And Programming
 %%% Languages (Pierce), chapter 22).
 
-%%% A t_cell is just a reference cell for a type.
--type t_cell() :: pid().
+-type cell() :: {cell, {cell_name, integer()}}.
 
-%%% A cell can be sent the message `'stop'` to let the reference cell halt
-%%% and be deallocated.
-cell(TypVal) ->
-    receive
-        {get, Pid} ->
-            Pid ! TypVal,
-            cell(TypVal);
-        {set, NewVal} ->
-            cell(NewVal);
-        stop ->
-            ok
-    end.
+-define(CELL_TABLE, alpaca_typer_cells).
+-define(CELL_COUNTER, alpaca_cell_counter).
 
--spec new_cell(typ()) -> pid().
+-spec new_cell(typ()) -> cell().
 new_cell(Typ) ->
-    Pid = spawn_link(?MODULE, cell, [Typ]),
-    Pid.
+    [{?CELL_COUNTER, CellCounter}] = try
+                         ets:lookup(?CELL_TABLE, ?CELL_COUNTER)
+                     catch
+                         error:badarg ->
+                             ets:new(?CELL_TABLE, [set, named_table, public]),
+                             Initial = {?CELL_COUNTER, 0},
+                             ets:insert(?CELL_TABLE, Initial),
+                             [Initial]
+                     end,
 
--spec get_cell(t_cell()|typ()) -> typ().
-get_cell(Cell) when is_pid(Cell) ->
-    Cell ! {get, self()},
-    receive
-        Val -> Val
+    %% TODO:  does tuple construction time have a negative impact in larger
+    %%        code bases?
+    N = {cell_name, CellCounter},
+    ets:insert(?CELL_TABLE, {?CELL_COUNTER, CellCounter + 1}),
+    true = ets:insert_new(?CELL_TABLE, {N, Typ}),
+    {cell, N}.
+
+-spec get_cell(cell()|typ()) -> typ().
+get_cell({cell, CellName}) ->
+    case ets:lookup(?CELL_TABLE, CellName) of
+        [{CellName, {cell, _}=NextCell}] ->
+            get_cell(NextCell);
+        [{CellName, Val}] ->
+            Val
     end;
 get_cell(NotACell) ->
     NotACell.
 
-set_cell(Cell, Val) ->
-    Cell ! {set, Val},
+set_cell(?CELL_COUNTER, _) ->
+    erlang:error(badarg);
+set_cell({cell, CellName}, Val) ->
+    true = ets:insert(?CELL_TABLE, {CellName, Val}),
     ok.
 
 %%% The `map` is a map of `unbound type variable name` to a `t_cell()`.
@@ -94,10 +98,10 @@ set_cell(Cell, Val) ->
 %%% variable.  Failing to do so causes problems with unification since
 %%% unifying one variable with another type should impact all occurrences
 %%% of that variable.
--spec copy_cell(t_cell(), map()) -> {t_cell(), map()}.
+-spec copy_cell(cell(), map()) -> {cell(), map()}.
 copy_cell(Cell, RefMap) ->
     case get_cell(Cell) of
-        {link, C} when is_pid(C) ->
+        {link, {cell, _}=C} ->
             {NC, NewMap} = copy_cell(C, RefMap),
             {new_cell({link, NC}), NewMap};
         {t_arrow, Args, Ret} ->
@@ -164,8 +168,8 @@ copy_cell(Cell, RefMap) ->
             {MsgT2, Map2} = copy_cell(MsgT, RefMap),
             {BodyT2, Map3} = copy_cell(BodyT, Map2),
             {new_cell({t_receiver, MsgT2, BodyT2}), Map3};
-        P when is_pid(P) ->
-            copy_cell(P, RefMap);
+        {cell, _}=Cell ->
+            copy_cell(Cell, RefMap);
         V ->
             {new_cell(V), RefMap}
     end.
@@ -205,7 +209,7 @@ copy_cell(Cell, RefMap) ->
           current_types=[]     :: list(alpaca_type()),
           type_constructors=[] :: list({string(), alpaca_constructor()}),
           type_bindings=[]     :: list({string(), t_adt()}),
-          bindings=[]          :: list({term(), typ()|t_cell()}),
+          bindings=[]          :: list({term(), typ()|cell()}),
           modules=[]           :: list(alpaca_module())
          }).
 
@@ -293,8 +297,8 @@ deep_copy_type({t_receiver, A, B}, RefMap) ->
 deep_copy_type(T, M) ->
     {T, M}.
 
-copy_type(P, RefMap) when is_pid(P) ->
-    copy_cell(P, RefMap);
+copy_type({cell, _}=Cell, RefMap) ->
+    copy_cell(Cell, RefMap);
 copy_type({t_arrow, _, _}=A, M) ->
     deep_copy_type(A, M);
 copy_type({unbound, _, _}=U, M) ->
@@ -304,8 +308,8 @@ copy_type(T, M) ->
 
 %%% ## Type Inferencer
 
-occurs(Label, Level, P) when is_pid(P) ->
-    occurs(Label, Level, get_cell(P));
+occurs(Label, Level, {cell, _}=Cell) ->
+    occurs(Label, Level, get_cell(Cell));
 occurs(Label, _Level, {unbound, Label, _}) ->
     {error_circular, Label};
 occurs(Label, Level, {link, Ty}) ->
@@ -319,8 +323,8 @@ occurs(Label, Level, {t_arrow, Params, RetTyp}) ->
 occurs(_L, _Lvl, T) ->
     T.
 
-unwrap_cell(C) when is_pid(C) ->
-    unwrap_cell(get_cell(C));
+unwrap_cell({cell, _}=Cell) ->
+    unwrap_cell(get_cell(Cell));
 unwrap_cell(Typ) ->
     Typ.
 
@@ -407,7 +411,7 @@ unify(T1, T2, Env, Line) ->
 %%% other operator that moves the receiver to the outside should be.
 %%% Smells like a functor or monad to me.
         {{t_arrow, _, A2}, {t_arrow, _, B2}} ->
-            ArrowArgCells = fun(C) when is_pid(C) ->
+            ArrowArgCells = fun({cell, _}=C) ->
                                     {t_arrow, Xs, _}=get_cell(C),
                                     Xs;
                                ({t_arrow, Xs, _}) -> Xs
@@ -417,11 +421,11 @@ unify(T1, T2, Env, Line) ->
                 _ ->
                     %% Unwrap cells and links down to the first non-cell level.
                     %% Super gross.
-                    F = fun(C) when is_pid(C) ->
+                    F = fun({cell, _}=C) ->
                                 case get_cell(C) of
                                     {t_receiver, _, _}=R ->
                                         R;
-                                    {link, CC} when is_pid(CC) ->
+                                    {link, {cell, _}=CC} ->
                                         case get_cell(CC) of
                                             {t_receiver, _, _}=R2 -> R2;
                                             _ -> none
@@ -429,7 +433,7 @@ unify(T1, T2, Env, Line) ->
                                     {link, {t_receiver, _, _}=R2} -> R2;
                                     _ -> none
                                 end;
-                           ({link, CC}) when is_pid(CC) ->
+                           ({link, {cell, _}=CC}) ->
                                 case get_cell(CC) of
                                     {t_receiver, _, _}=R2 -> R2;
                                     _ -> none
@@ -438,7 +442,7 @@ unify(T1, T2, Env, Line) ->
                            (_) -> none
                         end,
                     AArgs = case T1 of
-                                _ when is_pid(T1) ->
+                                {cell, _} ->
                                     {t_arrow, Xs, _}=get_cell(T1),
                                     Xs;
                                 _ ->
@@ -446,9 +450,10 @@ unify(T1, T2, Env, Line) ->
                                     Xs
                             end,
 
-                    StripCell = fun(C) when is_pid(C) -> get_cell(C);
-                                   ({link, C}) when is_pid(C) -> get_cell(C);
-                                   ({link, X}) -> X;
+                    StripCell = fun({cell, _}=C)         -> get_cell(C);
+                                   ({link, {cell, _}=C}) -> get_cell(C);
+                                   %% TODO:  un-celled link?  Seems bad.  Verify and fix.
+                                   ({link, X})           -> X;
                                    (X) -> X
                                 end,
                     NoCellArgs = lists:map(StripCell, lists:map(StripCell, AArgs)),
@@ -536,13 +541,13 @@ unify(T1, T2, Env, Line) ->
 %%% something else, the receiver unifies its result type with the other
 %%% expression and both become receivers.
         {{t_receiver, _, _}, {t_receiver, _, _}} ->
-            RecvRes = fun(C) when is_pid(C) ->
+            RecvRes = fun({cell, _}=C) ->
                               {t_receiver, _, X} = get_cell(C),
                               X;
                          ({t_receiver, _, X}) ->
                               X
                       end,
-            RecvR = fun(C) when is_pid(C) ->
+            RecvR = fun({cell, _}=C) ->
                             {t_receiver, X, _} = get_cell(C),
                             X;
                        ({t_receiver, X, _}) ->
@@ -591,7 +596,7 @@ unify(T1, T2, Env, Line) ->
 %%% Here we're checking for membership of one party in another or for an
 %%% exact match.  ADTs with the same name are checked as the same only if
 %%% they also come from the same module.
--spec unify_adt(t_cell(), t_cell(), t_adt(), typ(), env(), Line::integer()) ->
+-spec unify_adt(cell(), cell(), t_adt(), typ(), env(), Line::integer()) ->
                        ok |
                        {error, {cannot_unify, typ(), typ()}}.
 unify_adt(C1,
@@ -683,7 +688,7 @@ unify_adt(_, _, A, B, Env, L) ->
     io:format("*** The failed ADT unification candidates were:~n~p ~p~n~p ~p~n", [A, unwrap(A), B, unwrap(B)]),
     unify_error(Env, L, A, B).
 
-unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, ToCheck, Env, L) when is_pid(ToCheck) ->
+unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, {cell, _}=ToCheck, Env, L) ->
     %% Try to find an ADT member that will unify with the passed in
     %% polymorphic type:
     F = fun(_, ok) -> ok;
@@ -821,7 +826,9 @@ unify_records(LowerBound, Target, Env, Line) ->
     end.
 
 unify_record_members(_IsPattern, [], TargetRem, _Env, _Line) ->
-    lists:map(fun({_, X}) -> X end, TargetRem);
+    lists:map(fun({cell, _}=X) -> X;
+                 ({_, X}) -> X
+              end, TargetRem);
 unify_record_members(IsPattern, [LowerBound|Rem], TargetRem, Env, Line) ->
     #t_record_member{name=N, type=T} = LowerBound,
     case proplists:get_value(N, TargetRem) of
@@ -863,8 +870,8 @@ flatten_record(#t_record{members=Ms, row_var=#t_record{}=Inner}) ->
     RecMems = [#t_record_member{name=N, type=T} || {N, T} <- maps:to_list(Deduped)],
     Rec = #t_record{members=RecMems, row_var=InnerRow},
     flatten_record(Rec);
-flatten_record(#t_record{row_var=P}=R) when is_pid(P) ->
-    case get_cell(P) of
+flatten_record(#t_record{row_var={cell, _}=Cell}=R) ->
+    case get_cell(Cell) of
         #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
         {link, L}=_Link   -> flatten_record(R#t_record{row_var=L});
         _                 -> R
@@ -1277,7 +1284,6 @@ unify_list([], _, _, Env, L) ->
 unify_list(_, [], _, Env, L) ->
     arity_error(Env, L);
 unify_list([A|TA], [B|TB], {MA, MB}, Env, L) ->
-    %true = is_pid(A),
     case unify(A, B, Env, L) of
         {error, _} = E -> E;
         ok -> unify_list(TA, TB, {[A|MA], [B|MB]}, Env, L)
@@ -1368,7 +1374,7 @@ inst({t_receiver, Recv, Body}=_R, Lvl, Env, CachedMap) ->
 inst(Typ, _Lvl, Env, Map) ->
     {Typ, Env, Map}.
 
--spec new_var(Lvl :: integer(), Env :: env()) -> {t_cell(), env()}.
+-spec new_var(Lvl :: integer(), Env :: env()) -> {cell(), env()}.
 new_var(Lvl, #env{next_var=VN} = Env) ->
     N = list_to_atom("t" ++ integer_to_list(VN)),
     TVar = new_cell({unbound, N, Lvl}),
@@ -1397,8 +1403,8 @@ typ_list([H|T], Lvl, Env, Memo) ->
             typ_list(T, Lvl, update_counter(NextVar, Env), [Typ|Memo])
     end.
 
-unwrap(P) when is_pid(P) ->
-    unwrap(get_cell(P));
+unwrap({cell, _}=Cell) ->
+    unwrap(get_cell(Cell));
 unwrap({link, Ty}) ->
     unwrap(Ty);
 unwrap({t_arrow, A, B}) ->
@@ -1736,9 +1742,11 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                     typ_of(update_counter(NV1, Env), Lvl, S),
                 {TL, #env{next_var=Next2}} =
                     new_var(Lvl, update_counter(Next, Env)),
-                case unify(new_cell({t_list, TL}), STyp, Env, L) of
+                NC = new_cell({t_list, TL}),
+                case unify(NC, STyp, Env, L) of
                     {error, _} = E -> E;
-                    ok -> {STyp, Next2}
+                    ok ->
+                        {STyp, Next2}
                 end;
             #alpaca_apply{}=Apply ->
                 {TApp, Next} = typ_of(update_counter(NV1, Env), Lvl, Apply),
@@ -1754,14 +1762,14 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
 
     %% TODO:  there's no error check here:
     ListType = case TTyp of
-                   P when is_pid(P) ->
+                   {cell, _} ->
                        %% TODO:  this is kind of a gross tree but previously
                        %% there were cases above that would instantiate list
                        %% types that were not celled, leading to some badarg
                        %% exceptions when unifying with ADTs:
                        case get_cell(TTyp) of
                            {link, {t_list, LT}} -> LT;
-                           {link, C} when is_pid(C) ->
+                           {link, {cell, _}=C} ->
                                case get_cell(C) of
                                    {t_list, LT} -> LT
                                end;
@@ -1861,8 +1869,8 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
     %% to unify/4 which requires both arguments to be in cells while other parts
     %% of the typer balk at things being immediately celled.  An overhaul of the
     %% inferencer is in order pretty soon I think.
-    EnsureCelled = fun(X) when is_pid(X) -> X;
-                      (X) -> new_cell(X)
+    EnsureCelled = fun({cell, _}=X) -> X;
+                      (X)           -> new_cell(X)
                    end,
 
     case inst_type_arrow(Env, N) of
@@ -2452,15 +2460,15 @@ collapse_error({error, _}=Err, _) ->
 collapse_error(Res, F) ->
     F(Res).
 
-collapse_receivers(C, Env, Line) when is_pid(C) ->
+collapse_receivers({cell, _}=C, Env, Line) ->
     collapse_error(
       collapse_receivers(get_cell(C), Env, Line),
       fun(R) -> set_cell(C, R), C end);
-collapse_receivers({link, C}, Env, Line) when is_pid(C) ->
+collapse_receivers({link, {cell, _}=C}, Env, Line) ->
     collapse_error(
       collapse_receivers(C, Env, Line),
       fun(Res) -> {link, Res} end);
-collapse_receivers({t_receiver, Typ, C}=Recv, Env, Line) when is_pid(C) ->
+collapse_receivers({t_receiver, Typ, {cell, _}=C}=Recv, Env, Line) ->
     case get_cell(C) of
         {t_receiver, _, _}=Nested ->
             case collapse_receivers(Nested, Env, Line) of
@@ -2473,7 +2481,7 @@ collapse_receivers({t_receiver, Typ, C}=Recv, Env, Line) when is_pid(C) ->
                         {error, _} = Err -> Err
                     end
             end;
-        {link, CC} when is_pid(CC) ->
+        {link, {cell, _}=CC} ->
             collapse_receivers({t_receiver, Typ, CC}, Env, Line);
         _Other ->
             Recv
@@ -2526,7 +2534,7 @@ apply_line(#alpaca_apply{line=L}) ->
 typ_apply(Env, Lvl, TypF, NextVar, Args, Line) ->
     Result =
         case TypF of
-            _ when is_pid(TypF) ->
+            {cell, _} ->
                 case get_cell(TypF) of
                     {t_receiver, Recv, _App} ->
                         {App, _} = deep_copy_type(_App, maps:new()),
