@@ -1,0 +1,7 @@
+module destructuring
+
+export test_it, g
+
+let f r = let {x=x, y=y} = r in x + y
+let g t = let (x, y) = t in f {x=x, y=y}
+let test_it () = g (5, 6)

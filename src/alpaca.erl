@@ -688,4 +688,11 @@ list_item_expression_test() ->
     ?assertMatch(Matrix, M:getMatrix({})),
     pd(M).
 
+destructuring_test() ->
+    Files = ["test_files/destructuring.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(11, M:test_it({})),
+    ?assertMatch(6, M:g({3, 3})),
+    pd(M).
+
 -endif.

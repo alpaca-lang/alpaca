@@ -688,7 +688,6 @@ binding -> let defn in simple_expr : make_binding('$2', '$4').
 binding -> let terms assign simple_expr in simple_expr :
     make_binding(make_define('$2', '$4', 'let'), '$6').
 
-
 ffi_call -> beam atom atom cons with match_clauses:
   #alpaca_ffi{module='$2',
             function_name='$3',
@@ -886,6 +885,11 @@ make_define([{'Symbol', _}=Name|A], Expr, Level) ->
                                           args=Args,
                                           body=Expr}]}}
     end;
+make_define([SingleTerm], Expr, _Lvl) ->
+    #alpaca_match{
+       line=term_line(SingleTerm),
+       match_expr=Expr,
+       clauses=[#alpaca_clause{pattern=SingleTerm}]};
 make_define([BadName|Args], _Expr, _) ->
     {error, {invalid_function_name, BadName, Args}}.
 
@@ -950,7 +954,12 @@ all_literals([M|Rest]) ->
     end.
 
 make_binding(Def, Expr) ->
-    Def#alpaca_binding{body=Expr}.
+    case Def of
+	#alpaca_binding{} ->
+	    Def#alpaca_binding{body=Expr};
+	#alpaca_match{clauses=[C]} ->
+	    Def#alpaca_match{clauses=[C#alpaca_clause{result=Expr}]}
+    end.
 
 term_line(Term) ->
     alpaca_ast_gen:term_line(Term).
