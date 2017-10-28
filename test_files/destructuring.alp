@@ -1,7 +1,11 @@
 module destructuring
 
-export test_it, g
+export test_it, g, add_first_2_in_list, fail_on_tuple_without_1
 
 let f r = let {x=x, y=y} = r in x + y
 let g t = let (x, y) = t in f {x=x, y=y}
 let test_it () = g (5, 6)
+
+let add_first_2_in_list l = let x :: y :: _ = l in x + y
+
+let fail_on_tuple_without_1 t = let (1, _) = t in "got 1!"
