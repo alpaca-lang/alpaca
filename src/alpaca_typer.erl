@@ -5655,6 +5655,43 @@ direct_lambda_application_test_() ->
      end
     ].
     
+destructuring_test_() ->
+    [fun() ->
+             Code = "module m let f() = let (x, _) = (1, 2) in x + 1",
+             ?assertMatch({ok, #alpaca_module{
+                                  functions=[#alpaca_binding{
+                                                type={t_arrow, [t_unit], t_int}}]}},
+                          module_typ_and_parse(Code))
+     end
+    , fun() ->
+              Code = "module m let f t = let (x, y) = t in x + y",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow, [{t_tuple, [t_int, t_int]}],
+                                             t_int}}]}},
+                 module_typ_and_parse(Code))
+      end
+     , fun() ->
+               Code =
+                   "module m \n"
+                   "let f r = let {x=x, y=y} = r in x + y \n"
+                   "let g t = let (x, y) = t in f {x=x, y=y} \n"
+                   "let test_it () = g (5, 6)",
+               ?assertMatch(
+                  {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow, 
+                                             [#t_record{members=[#t_record_member{type=t_int},
+                                                                 #t_record_member{type=t_int}
+                                                                ]}], t_int}},
+                                    #alpaca_binding{
+                                       type={t_arrow, [{t_tuple, [t_int, t_int]}], t_int}},
+                                    #alpaca_binding{
+                                       type={t_arrow, [t_unit], t_int}}]}},
+                  module_typ_and_parse(Code))
+       end
+    ].
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

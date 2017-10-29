@@ -688,4 +688,14 @@ list_item_expression_test() ->
     ?assertMatch(Matrix, M:getMatrix({})),
     pd(M).
 
+destructuring_test() ->
+    Files = ["test_files/destructuring.alp"],
+    [M] = compile_and_load(Files, [test]),
+    ?assertMatch(11, M:test_it({})),
+    ?assertMatch(6, M:g({3, 3})),
+    ?assertMatch(12, M:add_first_2_in_list([7, 5, 54, 32, not_an_int])),
+    ?assertError(if_clause, M:fail_on_tuple_without_1({2, "twelve"})),
+    ?assertMatch(<<"got 1!">>, M:fail_on_tuple_without_1({1, 1})),
+    pd(M).
+
 -endif.
