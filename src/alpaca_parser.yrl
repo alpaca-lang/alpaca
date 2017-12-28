@@ -572,6 +572,7 @@ literal_fun -> fn terms '->' simple_expr:
   #alpaca_fun{line=L,
               arity=length('$2'),
               versions=[#alpaca_fun_version{
+			   line=L,
                            args=Args,
                            body='$4'}]}.
 
