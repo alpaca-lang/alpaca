@@ -5843,7 +5843,11 @@ record_unification_test_() ->
                   "let foo :a A s = A {a=true | s} \n"
                   "let foo :b A s = A {b=1 | s}",
 
-              ?assertMatch({ok, #alpaca_module{}},
+              ?assertMatch({ok, #alpaca_module{
+                                  functions=[#alpaca_binding{
+                                               type={t_arrow,
+                                                    [t_atom, #adt{name = <<"s">>}],
+                                                    #adt{name = <<"s">>}}}]}},
                            module_typ_and_parse(Code))
       end
 ].
