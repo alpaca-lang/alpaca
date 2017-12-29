@@ -57,6 +57,8 @@
 -define(CELL_COUNTER, alpaca_cell_counter).
 
 -spec new_cell(typ()) -> cell().
+new_cell({cell, _}=C) ->
+    throw({error, cell_in_cell, C});
 new_cell(Typ) ->
     [{?CELL_COUNTER, CellCounter}] = try
                          ets:lookup(?CELL_TABLE, ?CELL_COUNTER)
@@ -78,6 +80,8 @@ new_cell(Typ) ->
 -spec get_cell(cell()|typ()) -> typ().
 get_cell({cell, CellName}) ->
     case ets:lookup(?CELL_TABLE, CellName) of
+        [{CellName, {cell, CellName}}] ->
+            throw({recursive_cell, CellName});
         [{CellName, {cell, _}=NextCell}] ->
             get_cell(NextCell);
         [{CellName, Val}] ->
@@ -88,6 +92,11 @@ get_cell(NotACell) ->
 
 set_cell(?CELL_COUNTER, _) ->
     erlang:error(badarg);
+set_cell({cell, CellName}, {cell, TriedToCell}) ->
+    T = {error, cell_in_cell, CellName, TriedToCell},
+    throw(T);
+set_cell({cell, CellName}, {link, {cell, CellName}}) ->
+    throw({error, recursive_link, CellName});
 set_cell({cell, CellName}, Val) ->
     true = ets:insert(?CELL_TABLE, {CellName, Val}),
     ok.
@@ -294,6 +303,18 @@ deep_copy_type({t_receiver, A, B}, RefMap) ->
     {A2, M3} = copy_type(A, M2),
     {{t_receiver, A2, B2}, M3};
 
+deep_copy_type(#t_record{members=Ms, row_var=V}=R, RefMap) ->
+    {Ms2, RefMap2} = lists:foldl(fun(M, {Memo, Map}) ->
+                                         {M2, Map2} = deep_copy_type(M, Map),
+                                         {[M2|Memo], Map2}
+                                 end,
+                                 {[], RefMap}, Ms),
+    {V2, RefMap3} = deep_copy_type(V, RefMap2),
+    {R#t_record{members=lists:reverse(Ms2), row_var=V2}, RefMap3};
+deep_copy_type(#t_record_member{type=T}=M, RefMap) ->
+    {T2, RefMap2} = deep_copy_type(T, RefMap),
+    {M#t_record_member{type=T2}, RefMap2};
+
 deep_copy_type(T, M) ->
     {T, M}.
 
@@ -311,7 +332,7 @@ copy_type(T, M) ->
 occurs(Label, Level, {cell, _}=Cell) ->
     occurs(Label, Level, get_cell(Cell));
 occurs(Label, _Level, {unbound, Label, _}) ->
-    {error_circular, Label};
+    {error, {circular, Label}};
 occurs(Label, Level, {link, Ty}) ->
     occurs(Label, Level, Ty);
 occurs(_Label, Level, {unbound, N, Lvl}) ->
@@ -320,6 +341,13 @@ occurs(Label, Level, {t_arrow, Params, RetTyp}) ->
     {t_arrow,
      lists:map(fun(T) -> occurs(Label, Level, T) end, Params),
      occurs(Label, Level, RetTyp)};
+occurs(Label, Level, #t_record{members=Ms, row_var=RV}) ->
+    F = fun(_, [{error, {circular, _}}=Err|_]) -> Err;
+           (X, Acc) -> [occurs(Label, Level, X)|Acc]
+        end,
+    lists:foldl(F, [], [RV|Ms]);
+occurs(Label, Level, #t_record_member{type=T}) ->
+    occurs(Label, Level, T);
 occurs(_L, _Lvl, T) ->
     T.
 
@@ -366,8 +394,23 @@ unify_error(Env, Line, Typ1, Typ2) ->
 %%%
 %%% Some of the packing into and unpacking from row variables is likely to get
 %%% a little hairy in the first implementation here.
--spec unify(typ(), typ(), env(), integer()) -> ok | {error, term()}.
 unify(T1, T2, Env, Line) ->
+    unify(T1, T2, Env, Line, false).
+
+%% `StrictRecords` should be set to `true` whenever unifying the results from
+%% multiple branches, e.g. the results of several match clauses or different
+%% function versions.  It will cause unify_records/5 to require that all records
+%% have precisely the same fields so that a single expression or function will
+%% result in the correct type.  Previously this expression:
+%%
+%%   match sym with
+%%     | :a -> {a=true, b=false}
+%%     | :b -> {b=false}
+%%
+%% would result in the type `{a: bool, b: bool}` which is only true for one of
+%% the branches!  With `StrictRecords` this doesn't happen any more.
+-spec unify(typ(), typ(), env(), integer()) -> ok | {error, term()}.
+unify(T1, T2, Env, Line, StrictRecords) ->
     case {unwrap_cell(T1), unwrap_cell(T2)} of
         {T, T} ->
             ok;
@@ -390,7 +433,7 @@ unify(T1, T2, Env, Line) ->
                     set_cell(T2, T),
                     set_cell(T1, {link, T2});
                 {error, _} = E ->
-                    E;
+                    throw(E);
                 _Other ->
                     set_cell(T1, {link, T2})
             end,
@@ -463,7 +506,7 @@ unify(T1, T2, Env, Line) ->
                     %% makes the entire expression a receiver.
                     case RR of
                         [] ->
-                            unify(A2, B2, Env, Line);
+                            unify(A2, B2, Env, Line, true);
                         %% The received types for each receiver must unify in
                         %% order for the process to be typed correctly.
                         [{t_receiver, H, _}|Tail] ->
@@ -479,7 +522,7 @@ unify(T1, T2, Env, Line) ->
                             case lists:foldl(Unify, H, Tail) of
                                 {error, _}=Err -> Err;
                                 _ ->
-                                    case unify(A2, B2, Env, Line) of
+                                    case unify(A2, B2, Env, Line, true) of
                                         {error, _}=Err -> Err;
                                         ok ->
                                             %% Re-wrapping with fresh cells
@@ -521,7 +564,7 @@ unify(T1, T2, Env, Line) ->
             end;
 
         {#t_record{}=LowerBound, #t_record{}=Target} ->
-            unify_records(LowerBound, Target, Env, Line);
+            unify_records(LowerBound, Target, Env, Line, StrictRecords);
 
         {#adt{}=A, B} -> unify_adt(T1, T2, A, B, Env, Line);
         {A, #adt{}=B} -> unify_adt(T2, T1, B, A, Env, Line);
@@ -532,7 +575,7 @@ unify(T1, T2, Env, Line) ->
             case unify(AC, BC, Env, Line) of
                 {error, _}=Err -> Err;
                 ok ->
-                    set_cell(T1, new_cell({t_pid, AC})),
+                    set_cell(T1, {t_pid, AC}),
                     set_cell(T2, {link, T1}),
                     ok
             end;
@@ -563,7 +606,8 @@ unify(T1, T2, Env, Line) ->
                       end
             end;
         {{t_receiver, Recv, ResA}, {t_arrow, Args, ResB}} ->
-            case unify(ResA, ResB, Env, Line) of
+            %% Use strict record unification for return value typing:
+            case unify(ResA, ResB, Env, Line, true) of
                 {error, _}=Err -> Err;
                 ok ->
                     NewTyp = {t_receiver, Recv, {t_arrow, Args, ResA}},
@@ -587,8 +631,8 @@ unify(T1, T2, Env, Line) ->
                 {error, _}=Err ->
                     Err;
                 {ok, _EnvOut, Union} ->
-                    set_cell(T1, Union),
-                    set_cell(T2, Union),
+%                    set_cell(T1, Union),
+                    set_cell(T2, {link, Union}),
                     ok
             end
     end.
@@ -786,7 +830,18 @@ try_types(T1, T2, [Candidate|Tail], Env, L, {M1, none}=Memo) ->
 try_types(_, _, [], _, _, _) ->
     no_match.
 
-unify_records(LowerBound, Target, Env, Line) ->
+%% See unify/5 for an explanation of `StrictRecords`.  TLDR; it's used to force
+%% an expression with multiple branches to require all returned record types to
+%% have the exact same fields.
+unify_records(
+  #t_record{members=[], row_var=Lower},
+  #t_record{members=[], row_var=Target},
+  Env,
+  Line,
+  StrictRecords
+) ->
+    unify(Lower, Target, Env, Line, StrictRecords);
+unify_records(LowerBound, Target, Env, Line, StrictRecords) ->
     %% Unify each member of the lower bound with the others.  We track whether
     %% or not the type is for a pattern because if we _are_ unifying for
     %% patterns then we don't need to check for missing members.
@@ -803,7 +858,7 @@ unify_records(LowerBound, Target, Env, Line) ->
         [] ->
             %% We use a record with no members to force the row variable of a
             %% record update to be a record.
-            unify_records(LowerBound, Target#t_record{members=LowerM}, Env, Line);
+            unify_records(LowerBound, Target#t_record{members=LowerM}, Env, Line, StrictRecords);
         _ ->
             %% we operate on the target's members so that if the unification
             %% with the lower bound's members succeeds, we have a list of exactly
@@ -811,38 +866,53 @@ unify_records(LowerBound, Target, Env, Line) ->
             KeyedTarget = lists:map(
                             fun(#t_record_member{name=X}=TRM) -> {X, TRM} end,
                             TargetM),
-            RemainingTarget = unify_record_members(P1 or P2, LowerM, KeyedTarget, Env, Line),
+            RemainingTarget = unify_record_members(
+                                P1 or P2,
+                                LowerM,
+                                KeyedTarget,
+                                Env,
+                                Line,
+                                StrictRecords),
 
             %% unify the row variables
             case RemainingTarget of
                 [] ->
-                    unify(LowerRow, TargetRow, Env, Line);
+                    unify(LowerRow, TargetRow, Env, Line, StrictRecords);
                 _ ->
-                    NewTarget = #t_record{
-                                   members=RemainingTarget,
-                                   row_var=TargetRow},
-                    unify(LowerRow, new_cell(NewTarget), Env, Line)
+                    case {LowerRow, TargetRow} of
+                        {A, A} ->
+                            NewTarget = #t_record{members=RemainingTarget},
+                            unify(LowerRow, new_cell(NewTarget), Env, Line, StrictRecords);
+                        _ ->
+                            NewTarget = #t_record{
+                                           members=RemainingTarget,
+                                           row_var=TargetRow},
+                            unify(LowerRow, new_cell(NewTarget), Env, Line, StrictRecords)
+                    end
             end
     end.
 
-unify_record_members(_IsPattern, [], TargetRem, _Env, _Line) ->
+unify_record_members(_IsPattern, [], [TargetRem|_], Env, Line, true) ->
+    {N, #t_record_member{}} = TargetRem,
+    erlang:error({missing_record_field, module_name(Env), Line, N});
+unify_record_members(_IsPattern, [], TargetRem, _Env, _Line, _) ->
     lists:map(fun({cell, _}=X) -> X;
                  ({_, X}) -> X
               end, TargetRem);
-unify_record_members(IsPattern, [LowerBound|Rem], TargetRem, Env, Line) ->
+unify_record_members(IsPattern, [LowerBound|Rem], TargetRem, Env, Line, StrictRecords) ->
     #t_record_member{name=N, type=T} = LowerBound,
     case proplists:get_value(N, TargetRem) of
         undefined when IsPattern =:= false ->
             erlang:error({missing_record_field, module_name(Env), Line, N});
         undefined ->
-            unify_record_members(IsPattern, Rem, TargetRem, Env, Line);
+            unify_record_members(IsPattern, Rem, TargetRem, Env, Line, StrictRecords);
         #t_record_member{type=T2} ->
-            case unify(T, T2, Env, Line) of
+            case unify(T, T2, Env, Line, StrictRecords) of
                 {error, Err} ->
                     erlang:error(Err);
                 ok ->
                     NewTargetRem = proplists:delete(N, TargetRem),
-                    unify_record_members(IsPattern, Rem, NewTargetRem, Env, Line)
+                    unify_record_members(IsPattern, Rem, NewTargetRem, Env, Line, StrictRecords)
             end
     end.
 
@@ -874,7 +944,8 @@ flatten_record(#t_record{row_var={cell, _}=Cell}=R) ->
     case get_cell(Cell) of
         #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
         {link, L}=_Link   -> flatten_record(R#t_record{row_var=L});
-        _                 -> R
+        {unbound, _, _}   -> R;
+        Other                 -> erlang:error({bad_row_var, Other, R})
     end;
 flatten_record(#t_record{}=R) ->
     R.
@@ -965,7 +1036,7 @@ inst_type_members(ADT, [#t_record{}=R|Rem], Env, Memo) ->
     {RVC, Env2} = case RV of
                       undefined ->
                           {V, E} = new_var(0, Env),
-                          {new_cell(V), E};
+                          {V, E};
                       {unbound, _, _}=V ->
                           {new_cell(V), Env};
                       _ ->
@@ -1829,17 +1900,17 @@ typ_of(Env, Lvl, #alpaca_record{is_pattern=IsPattern, members=Members}) ->
                       row_var=RowVar}),
     {Res, Env3#env.next_var};
 
-typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists}) ->
+typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists, line=L}) ->
     {ExistsType, NV} = case typ_of(Env, Lvl, Exists) of
                            {error, _}=Err -> throw(Err);
                            OK -> OK
                        end,
-    {EmptyRecType, NV2} = typ_of(update_counter(NV, Env), Lvl, #alpaca_record{}),
+    {EmptyRecType, NV2} = typ_of(update_counter(NV, Env), Lvl, #alpaca_record{line=L}),
 
     Env2 = update_counter(NV2, Env),
     ok = unify(EmptyRecType, ExistsType, Env2, Lvl),
     #t_record{row_var=RV} = get_cell(EmptyRecType),
-    AddsRec = #alpaca_record{members=Adds},
+    AddsRec = #alpaca_record{members=Adds, line=L},
     {AddsRecCell, NV3} = typ_of(Env2, Lvl, AddsRec),
 
     #t_record{members=AddMs} = get_cell(AddsRecCell),
@@ -2129,8 +2200,7 @@ typ_of(Env, Lvl, #alpaca_type_check{type=T, expr=E, line=L}) ->
             %% with appropriate type variables before getting unified.
             {Env2, ToUnify} = case Typ of
                                   t_pid ->
-                                      {Var, E2} = new_var(Lvl, Env),
-                                      PidT = new_cell(Var),
+                                      {PidT, E2} = new_var(Lvl, Env),
                                       {E2, new_cell({t_pid, PidT})};
                                   _ ->
                                       {Env, new_cell(Typ)}
@@ -2145,8 +2215,7 @@ typ_of(Env, Lvl, #alpaca_send{line=L, message=M, pid=P}) ->
     case typ_of(Env, Lvl, P) of
         {error, _}=Err -> Err;
         {T, NV} ->
-            {Var, Env2} = new_var(Lvl, Env),
-            PidT = new_cell(Var),
+            {PidT, Env2} = new_var(Lvl, Env),
             PC = new_cell({t_pid, PidT}),
             case unify(T, PC, Env2, Lvl) of
                 {error, _}=Err -> Err;
@@ -2174,9 +2243,9 @@ typ_of(Env, Lvl, #alpaca_ffi{args=Args}=FFI) ->
     end;
 
 %% Spawning of functions in the current module:
-typ_of(Env, Lvl, #alpaca_spawn{line=_L, module=undefined, function=F, args=Args}) ->
+typ_of(Env, Lvl, #alpaca_spawn{line=L, module=undefined, function=F, args=Args}) ->
     %% make a function application and type it:
-    Apply = #alpaca_apply{line=0, expr=F, args=Args},
+    Apply = #alpaca_apply{line=L, expr=F, args=Args},
 
     case typ_of(Env, Lvl, F) of
         {error, _}=Err -> Err;
@@ -2250,7 +2319,7 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
                            (T1, T2) ->
                                 case unify(T1, T2, Env2, L) of
                                     {error, _}=Err -> Err;
-                                    ok -> T2
+                                    ok -> T1
                                 end
                         end,
                         H,
@@ -2398,6 +2467,8 @@ type_map(Env, Lvl, #alpaca_map{pairs=Pairs}) ->
         {error, _}=Err -> Err;
         {Type, #env{next_var=NV2}} -> {Type, NV2}
     end.
+unify_map_pairs(Env, _, [], {cell, _}=C) ->
+    {C, Env};
 unify_map_pairs(Env, _, [], T) ->
     {new_cell(T), Env};
 unify_map_pairs(Env, Lvl, [#alpaca_map_pair{line=L, key=KE, val=VE}|Rem], T) ->
@@ -2438,7 +2509,9 @@ unify_clauses(Env, Lvl, Cs) ->
                             {t_clause, PB, _, RB} = TypC ->
                                 case unify(PA, PB, Env, Line) of
                                     ok ->
-                                        case unify(RA, RB, Env, Line) of
+                                        %% All record result types must have the
+                                        %% exact same fields, hence `true`:
+                                        case unify(RA, RB, Env, Line, true) of
                                             ok -> TypC;
                                             {error, _} = Err -> Err
                                         end;
@@ -2492,13 +2565,16 @@ collapse_receivers(E, _, _) ->
     E.
 
 type_receive(Env, Lvl, #alpaca_receive{clauses=Cs, line=Line, timeout_action=TA}) ->
+    EnsureCelled = fun({cell, _}=C) -> C;
+                      (NC) -> new_cell(NC)
+                   end,
     case unify_clauses(Env, Lvl, Cs) of
         {error, _}=Err -> Err;
         {ok, {t_clause, PTyp, _, RTyp}, Env2} ->
             Collapsed = collapse_receivers(RTyp, Env, Line),
             case unwrap(Collapsed) of
                 {t_receiver, _, B} ->
-                    RC = new_cell(Collapsed),
+                    RC = EnsureCelled(Collapsed),
                     case unify(RC, new_cell(B), Env, Line) of
                         %% TODO:  return this error
                         {error, _}=Er -> erlang:error(Er);
@@ -2515,7 +2591,7 @@ type_receive(Env, Lvl, #alpaca_receive{clauses=Cs, line=Line, timeout_action=TA}
                              Err;
                          {Typ, NV} ->
                              Env3 = update_counter(NV, Env2),
-                             CollapsedC = new_cell(Collapsed),
+                             CollapsedC = EnsureCelled(Collapsed),
                              case unify(Typ, CollapsedC, Env3, Line) of
                                  {error, _}=Err ->
                                      Err;
@@ -5692,6 +5768,89 @@ destructuring_test_() ->
                   module_typ_and_parse(Code))
        end
     ].
+
+%% TODO/FIXME:  we have some bad line number reporting in here, lots of zeroes.
+record_unification_test_() ->
+    %% Initial cases taken from https://github.com/alpaca-lang/alpaca/issues/198
+    %% and then expanded on.
+    [fun() ->
+             Code =
+                 "module m \n"
+                 "type s = {a: bool, b: int} \n"
+                 "let foo :a s = {a=true, b=0 | s} \n"
+                 "let foo :b s = {b=1| s} \n",
+
+             ?assertMatch({error, {missing_record_field, m, 0, a}},
+                          module_typ_and_parse(Code))
+     end
+    , fun() ->
+	      Code =
+		  "module mod\n"
+		  "let foo :a = {a=true, b=0}\n"
+		  "let foo :b = {b=0}\n",
+	      ?assertMatch({error, {missing_record_field, mod, 0, a}},
+			   module_typ_and_parse(Code))
+      end
+    , fun() ->
+	      Code =
+		  "module mod\n"
+		  "let foo :b = {b=0}\n"
+		  "let foo :a = {a=true, b=0}\n",
+	      ?assertMatch({error, {missing_record_field, mod, 0, a}},
+			   module_typ_and_parse(Code))
+      end
+    , fun() ->
+	      Code =
+		  "module m \n"
+		  "type s = {a: bool, b: int} \n"
+		  "let foo sym = "
+		  "  match sym with \n"
+		  "  | :b -> {b=1} \n"
+		  "  | :a -> {a=true, b=0} ",
+
+	      %% TODO/FIXME:  this should report line 4!
+	      ?assertMatch({error, {missing_record_field, m, 5, a}},
+			   module_typ_and_parse(Code))
+      end
+    , fun() ->
+	      Code =
+		  "module m \n"
+		  "type s = {a: bool, b: int} \n"
+		  "val foo: fn atom -> {a: bool, b: int}\n"
+		  "let foo sym = "
+		  "  match sym with "
+		  "  | :a -> {a=true, b=0} "
+		  "  | :b -> {b=1}",
+
+	      ?assertMatch({error, {missing_record_field, m, 4, a}},
+			   module_typ_and_parse(Code))
+      end
+    , fun() ->
+	      Code =
+		  "module m \n"
+		  "type s = {a: bool, b: int} \n"
+		  "let foo sym rec = "
+		  "  match sym with "
+		  "  | :a -> {a=true, b=0 | rec } "
+		  "  | :b -> {b=1 | rec}",
+	      ?assertMatch({error, {missing_record_field, m, 3, a}},
+			   module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type s = A {a: bool, b: int} \n"
+                  "let foo :a A s = A {a=true | s} \n"
+                  "let foo :b A s = A {b=1 | s}",
+
+              ?assertMatch({ok, #alpaca_module{
+                                  functions=[#alpaca_binding{
+                                               type={t_arrow,
+                                                    [t_atom, #adt{name = <<"s">>}],
+                                                    #adt{name = <<"s">>}}}]}},
+                           module_typ_and_parse(Code))
+      end
+].
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

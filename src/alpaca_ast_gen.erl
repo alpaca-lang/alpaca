@@ -278,9 +278,10 @@ group_funs(Funs, _ModuleName) ->
               case A of
                   0 ->
                       [OnlyV] = NewVs,
-                      #alpaca_binding{name=NewName, bound_expr=OnlyV};
+                      #alpaca_binding{name=NewName, line=L, bound_expr=OnlyV};
                   _ ->
                       #alpaca_binding{name=NewName,
+                                      line=L,
                                       bound_expr=#alpaca_fun{
                                                     arity=A,
                                                     versions=NewVs}}
@@ -686,11 +687,11 @@ rename_bindings(Env, Map, #alpaca_record{members=Members}=R) ->
     {Env2, Map2, R#alpaca_record{members=lists:reverse(NewMembers)}};
 
 rename_bindings(Env, Map, #alpaca_record_transform{}=Update) ->
-    #alpaca_record_transform{additions=As, existing=E} = Update,
-    FakeRec = #alpaca_record{members=As},
+    #alpaca_record_transform{additions=As, existing=E, line=L} = Update,
+    FakeRec = #alpaca_record{members=As, line=L},
     {Env2, Map2, #alpaca_record{members=Renamed}} = rename_bindings(Env, Map, FakeRec),
     {Env3, Map3, E2} = rename_bindings(Env2, Map2, E),
-    {Env3, Map3, #alpaca_record_transform{additions=Renamed, existing=E2}};
+    {Env3, Map3, #alpaca_record_transform{additions=Renamed, existing=E2, line=L}};
 
 rename_bindings(Env, Map, {'Symbol', _}=S) ->
     N = alpaca_ast:symbol_name(S),
