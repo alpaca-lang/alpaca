@@ -606,6 +606,7 @@ unify(T1, T2, Env, Line, StrictRecords) ->
                       end
             end;
         {{t_receiver, Recv, ResA}, {t_arrow, Args, ResB}} ->
+            %% Use strict record unification for return value typing:
             case unify(ResA, ResB, Env, Line, true) of
                 {error, _}=Err -> Err;
                 ok ->
@@ -830,8 +831,8 @@ try_types(_, _, [], _, _, _) ->
     no_match.
 
 %% See unify/5 for an explanation of `StrictRecords`.  TLDR; it's used to force
-%% an expression with multiple branches to require all records to have the same
-%% fields.
+%% an expression with multiple branches to require all returned record types to
+%% have the exact same fields.
 unify_records(
   #t_record{members=[], row_var=Lower},
   #t_record{members=[], row_var=Target},
@@ -944,7 +945,7 @@ flatten_record(#t_record{row_var={cell, _}=Cell}=R) ->
         #t_record{}=Inner -> flatten_record(R#t_record{row_var=Inner});
         {link, L}=_Link   -> flatten_record(R#t_record{row_var=L});
         {unbound, _, _}   -> R;
-        Other                 -> throw({bad_row_var, Other, R})
+        Other                 -> erlang:error({bad_row_var, Other, R})
     end;
 flatten_record(#t_record{}=R) ->
     R.
@@ -2312,7 +2313,6 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
             Err;
         {RevVersions, Env2} ->
             [H|TypedVersions] = lists:reverse(RevVersions),
-
             Unified = lists:foldl(
                         fun(_, {error, _}=Err) ->
                                 Err;
