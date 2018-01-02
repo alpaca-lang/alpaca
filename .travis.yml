@@ -32,7 +32,7 @@ deploy:
   file:
     - alpaca_19.3.tgz
     - alpaca_20.0.tgz
+  repo: alpaca-lang/alpaca
+  skip_cleanup: true  
   on:
-    repo: alpaca-lang/alpaca
-    skip_cleanup: true
     tags: true
