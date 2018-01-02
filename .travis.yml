@@ -33,4 +33,4 @@ deploy:
   on:
     repo: alpaca-lang/alpaca
     skip_cleanup: true
-    tags: true
+    tags: false
