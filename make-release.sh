@@ -2,7 +2,7 @@
 
 # If travis-ci is building a tag then use that as the version, otherwise mark
 # this release with the hash from travis-ci:
-VERSION=${TRAVIS_TAG:-${TRAVIS_COMMIT:-unversioned}}
+VERSION=${TRAVIS_TAG:-${TRAVIS_COMMIT:-unversioned}}_${TRAVIS_OTP_RELEASE}
 
 # Where we're copying .beam files from:
 ALPACA_BEAMS=_build/default/lib/alpaca/ebin

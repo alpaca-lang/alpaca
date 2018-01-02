@@ -1,3 +1,47 @@
+* v0.2.8
+Newest to oldest additions in each section.
+
+** New
+- destructure/pattern match in ~let~ bindings, [[https://github.com/j14159][j14159]]
+- ~alpaca_printer~, type formatting and printing for compiler feedback, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- build for OTP 20, [[https://github.com/getong][getong]]
+- logical operators (and, or, xor), [[https://github.com/Licenser][Licenser]]
+- explicit type signatures for top-level bindings, e.g. ~val add: fn int int -> int~, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- nicely formatted and humane compiler output with colours, [[https://github.com/Licenser][Licenser]]
+- local/inner functions can be curried, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- able to specify default types and functions to be imported in a project, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- infix functions starting with ~<~ are now right-associative, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- generate a module's dependencies from source to support partial compilation, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- support loading of pre-compiled ~BEAM~ files rather than requiring every module in source form, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- quoted atoms, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- German error message translation, [[https://github.com/ypaq][ypaq]]
+- Spanish error message translation, [[https://github.com/arpunk][arpunk]] and [[https://github.com/yurrriq][yurrriq]]
+- symbol, integer, and float AST nodes defined in Alpaca itself, [[https://github.com/j14159][j14159]]
+- enable internationalization and formatting of error messages, [[https://github.com/danabr][danabr]]
+
+** Fixes
+- partial record matching works, no more cycles in reference cells, [[https://github.com/j14159][j14159]]
+- type inferencer reference cells in ETS, no more processes, [[https://github.com/j14159][j14159]]
+- unsized binaries work correctly when constructing binaries, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- simple expressions don't require parens, e.g. ~[1 + 2, 3 + 4]~, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- lambdas inside match expressions now work correctly, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- don't re-type modules for every module-qualified function call, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- correctly rewrite the internals of unbound lambdas, [[https://github.com/j14159][j14159]]
+- don't perform exhaustiveness checks on already-compiled modules, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- fix unification failure for nested ADTs, [[https://github.com/j14159][j14159]]
+- ~fn~ as a reserved word in tests, [[https://github.com/Licenser][Licenser]]
+- purge warnings removed for cleaner test output, [[https://github.com/Licenser][Licenser]]
+- substantial test and warnings cleanup, [[https://github.com/Licenser][Licenser]]
+- fixed variable lookup failure in exhaustiveness checks, [[https://github.com/j14159][j14159]]
+- broken BIF fixes (~!=~, ~/~), [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- fix lambdas in records, [[https://github.com/j14159][j14159]]
+- properly escape ~\~ sequences in strings, [[https://github.com/lepoetemaudit][lepoetemaudit]]
+- usage example correction, [[https://github.com/monkeygroover][monkeygroover]]
+- rewrite imported functions in tests, [[https://github.com/j14159][j14159]]
+- rewrite lambdas in tests, [[https://github.com/j14159][j14159]]
+- allow forward references to top-level bindings, [[https://github.com/j14159][j14159]]
+- parameterized ~pid~ type fix when using ~is_pid~, [[https://github.com/j14159][j14159]]
+
 * v0.2.7
 ** New
 - parser and AST generation errors report in a uniform manner and are specified, https://github.com/danabr
