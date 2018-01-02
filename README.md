@@ -30,11 +30,13 @@ Make a new project with `rebar3 new app your_app_name` and in the
 `rebar.config` file in your project's root folder
 (e.g. `your_app_name/rebar.config`) add the following:
 
-    {plugins, [
-        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
-    ]}.
+```erlang
+{plugins, [
+    {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
+]}.
 
-    {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
+{provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
+```
 
 Check out
 [the tour for the language basics](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md),
@@ -51,7 +53,7 @@ Rather than using an official build, you can build and test your own version of 
 Then export `ALPACA_ROOT`, e.g. in the Alpaca folder:
 
     export ALPACA_ROOT=`pwd`/alpaca-unversioned_`
-	
+
 The	rebar3 plugin should now find the Alpaca binaries you built above.
 
 # Intentions/Goals
@@ -84,32 +86,34 @@ suggest possible union types if there isn't an appropriate one in scope.
 
 Here's an example module:
 
-    module simple_example
+```elm
+module simple_example
 
-    -- a basic top-level function:
-    let add2 x = x + 2
+-- a basic top-level function:
+let add2 x = x + 2
 
-    let something_with_let_bindings x =
-      -- a function:
-      let adder a b = a + b in
-      -- a variable (immutable):
-      let x_plus_2 = adder x 2 in
-      add2 x
+let something_with_let_bindings x =
+  -- a function:
+  let adder a b = a + b in
+  -- a variable (immutable):
+  let x_plus_2 = adder x 2 in
+  add2 x
 
-    -- a polymorphic ADT:
-    type messages 'x = 'x | Fetch pid 'x
+-- a polymorphic ADT:
+type messages 'x = 'x | Fetch pid 'x
 
-    {- A function that can be spawned to receive `messages int`
-       messages, that increments its state by received integers
-       and can be queried for its state.
-    -}
-    let will_be_a_process x = receive with
-        i -> will_be_a_process (x + i)
-      | Fetch sender ->
-        let sent = send x sender in
-        will_be_a_process x
+{- A function that can be spawned to receive `messages int`
+    messages, that increments its state by received integers
+    and can be queried for its state.
+-}
+let will_be_a_process x = receive with
+    i -> will_be_a_process (x + i)
+  | Fetch sender ->
+    let sent = send x sender in
+    will_be_a_process x
 
-    let start_a_process init = spawn will_be_a_process init
+let start_a_process init = spawn will_be_a_process init
+```
 
 # Licensing
 Alpaca is released under the terms of the Apache License, Version 2.0
@@ -173,22 +177,26 @@ you'd like for `alpaca_example`):
 In the `rebar.config` file in your project's root folder add the
 following (borrowed from @tsloughter's docs):
 
-    {plugins, [
-        {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
-    ]}.
+```erlang
+{plugins, [
+    {rebar_prv_alpaca, ".*", {git, "https://github.com/alpaca-lang/rebar_prv_alpaca.git", {branch, "master"}}}
+]}.
 
-    {provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
+{provider_hooks, [{post, [{compile, {alpaca, compile}}]}]}.
+```
 
 Now any files in the project's source folders that end with the
 extension `.alp` will be compiled and included in Rebar3's output
 folders (provided they type-check and compile successfully of course).
 For a simple module, open `src/example.alp` and add the following:
 
-    module example
+```elm
+module example
 
-    export add/2
+export add/2
 
-    let add x y = x + y
+let add x y = x + y
+```
 
 The above is just what it looks like:  a module named `example` with a
 function that adds two integers.  You can call the function directly
@@ -260,39 +268,49 @@ requires its members to have the types `string`, `atom`, `string`,
 
 On top of that you can define ADTs, e.g.
 
-    type try 'success 'error = Ok 'success | Error 'error
+```elm
+type try 'success 'error = Ok 'success | Error 'error
+```
 
 And ADTs with more basic types in unions work, e.g.
 
-    type json = int | float | string | bool
-              | list json
-              | list (string, json)
+```elm
+type json = int | float | string | bool
+          | list json
+          | list (string, json)
+```
 
 Types start lower-case, type constructors upper-case.
 
 Integer and float math use different symbols as in OCaml, e.g.
 
-    1 + 2      -- ok
-    1.0 + 2    -- type error
-    1.0 + 2.0  -- type error
-    1.0 +. 2.0 --ok
+```elm
+1 + 2      -- ok
+1.0 + 2    -- type error
+1.0 + 2.0  -- type error
+1.0 +. 2.0 -- ok
+```
 
 Basic comparison functions are in place and are type checked, e.g. `>`
 and `<` will work both in a guard and as a function but:
 
-    1 > 2             -- ok
-    1 < 2.0           -- type error
-    "Hello" > "world" -- ok
-    "a" > 1           -- type error
+```elm
+1 > 2             -- ok
+1 < 2.0           -- type error
+"Hello" > "world" -- ok
+"a" > 1           -- type error
+```
 
 See `src/builtin_types.hrl` for the included functions.
 
 ## Pattern Matching
 Pretty simple and straightforward for now:
 
-    let length l = match l with
-        [] -> 0
-      | h :: t -> 1 + (length t)
+```elm
+let length l = match l with
+    [] -> 0
+  | h :: t -> 1 + (length t)
+  ```
 
 The first clause doesn't start with `|` since it's treated like a
 logical OR.
@@ -300,28 +318,36 @@ logical OR.
 Pattern match guards in clauses essentially assert types, e.g. this
 will evaluate to a `t_bool` type:
 
-    match x with
-      b, is_bool b -> b
+```elm
+match x with
+  b, is_bool b -> b
+```
 
 and
 
-    match x with
-      (i, f), is_integer i, is_float f -> :some_tuple
+```elm
+match x with
+  (i, f), is_integer i, is_float f -> :some_tuple
+```
 
 will type to a tuple of `integer`, `float`.
 
 Since strings are currently compiled as UTF-8 Erlang binaries, only the first clause will ever match:
 
-    type my_binary_string_union = binary | string
+```elm
+type my_binary_string_union = binary | string
 
-    match "Hello, world" with
-        b, is_binary b -> b
-      | s, is_string s -> s
+match "Hello, world" with
+    b, is_binary b -> b
+  | s, is_string s -> s
+```
 
 Further, nullary type constructors are encoded as atoms and unary
 constructors in tuples led by atoms, e.g.
 
-    type my_list 'x = Nil | Cons ('x, my_list 'x)
+```elm
+type my_list 'x = Nil | Cons ('x, my_list 'x)
+```
 
 `Nil` will become `'Nil'` after compilation and `Cons (1, Nil)` will
 become `{'Cons', {1, 'Nil'}}`.  Exercise caution with the order of
@@ -331,18 +357,23 @@ your pattern match clauses accordingly.
 No distinction is made syntactically between map literals and map
 patterns (`=>` vs `:=` in Erlang), e.g
 
-    match my_map with
-      #{:a_key => some_val} -> some_val
+```elm
+match my_map with
+  #{:a_key => some_val} -> some_val
+```
 
 You can of course use variables to match into a map so you could write
 a simple get-by-key function as follows:
 
-    type my_opt 'a = Some 'a | None
+```elm
+type my_opt 'a = Some 'a | None
 
-    let get_by_key m k =
-      match m with
-          #{k => v} -> Some v
-        | _ -> None
+let get_by_key m k =
+  match m with
+      #{k => v} -> Some v
+    | _ -> None
+```
+
 
 ## Modules (The Erlang Kind)
 ML-style modules aren't implemented at present.  For now modules in Alpaca are the same as
@@ -359,17 +390,20 @@ bindings.
 
 An example:
 
-    module try
+```elm
+module try
 
-    export map/2  -- separate multiple exports with commas
+export map/2  -- separate multiple exports with commas
 
-    -- type variables start with a single quote:
-    type maybe_success 'error 'ok = Error 'error | Success 'ok
+-- type variables start with a single quote:
+type maybe_success 'error 'ok = Error 'error | Success 'ok
 
-    -- Apply a function to a successful result or preserve an error.
-    let try_map e f = match e with
-        Error _ -> e
-      | Success ok -> Success (f ok)
+-- Apply a function to a successful result or preserve an error.
+let try_map e f = match e with
+    Error _ -> e
+  | Success ok -> Success (f ok)
+```
+
 
 ### Tests
 Tests are expressed in an extremely bare-bones manner right now and
@@ -377,13 +411,16 @@ there aren't even proper assertions available.  If the compiler is
 invoked with options `[test]`, the following will synthesize and
 export a function called `add_2_and_2_test`:
 
-    let add x y = x + y
+```elm
+let add x y = x + y
 
-    test "add 2 and 2" =
-      let res = add 2 2 in
-      match res with
-          4 -> :ok
-        | _ -> beam :erlang :error [no_match] with _ -> meaningless_return
+test "add 2 and 2" =
+  let res = add 2 2 in
+  match res with
+      4 -> :ok
+    | _ -> beam :erlang :error [no_match] with _ -> meaningless_return
+```
+
 
 Any test that throws an exception will fail so the above would work
 but if we replaced `add/2` with `add x y = x + (y + 1)` we'd get a
@@ -398,22 +435,28 @@ checked.  Type errors in a test will always cause a compilation error.
 ## Processes
 An example:
 
-    let f x = receive with
-      (y, sender) ->
-        let z = x + y in
-        let sent = send z sender in
-      f z
+```elm
+let f x = receive with
+  (y, sender) ->
+    let z = x + y in
+    let sent = send z sender in
+  f z
 
-    let start_f init = spawn f init
+let start_f init = spawn f init
+```
+
 
 All of the above is type checked, including the spawn and message sends.
 Any expression that contains a `receive` block becomes a "receiver"
 with an associated type.  The type inferred for `f` above is the
 following:
 
-    {t_receiver,
-      {t_tuple, [t_int, {t_pid, t_int}]},
-      {t_arrow, [t_int], t_rec}}
+```erlang
+{t_receiver,
+  {t_tuple, [t_int, {t_pid, t_int}]},
+  {t_arrow, [t_int], t_rec}}
+```
+
 
 This means that:
 
@@ -431,11 +474,14 @@ support spawning functions in other modules fairly soon.
 
 Note that the following will yield a type error:
 
-    let a x = receive with
-      i -> b x + i
+```elm
+let a x = receive with
+  i -> b x + i
 
-    let b x = receive with
-      f -> a x +. i
+let b x = receive with
+  f -> a x +. i
+```
+
 
 This is because `b` is a `t_float` receiver while `a` is a `t_int`
 receiver.  Adding a union type like `type t = int | float` will solve
@@ -448,9 +494,12 @@ _all_ message sends to that process will be a type error.
 ## Current FFI
 The FFI is quite limited at present and operates as follows:
 
-    beam :a_module :a_function [3, "different", "arguments"] with
-       (ok, _) -> :ok
-     | (error, _) -> :error
+```elm
+beam :a_module :a_function [3, "different", "arguments"] with
+    (ok, _) -> :ok
+  | (error, _) -> :error
+```
+
 
 There's clearly room to provide a version that skips the pattern match and
 succeeds if dialyzer supplies a return type for the function that matches a type
@@ -553,13 +602,15 @@ arrow type and type schema instantiation are concerned.
 
 ## Single Module Typing
 
-    module example
+```elm
+module example
 
-    export add/2
+export add/2
 
-    let add x y = adder x y
+let add x y = adder x y
 
-    let adder x y = x + y
+let adder x y = x + y
+```
 
 The forward reference in `add/2` is permitted but currently leads to some wasted
 work.  When typing `add/2` the typer encounters a reference to `adder/2` that is
@@ -582,9 +633,11 @@ bounding how complicated inferencing a set of mutually recursive functions can
 get.  The case I'm particularly concerned with can be illustrated with the
 following `Module.function` examples:
 
-    let A.x = B.y ()
-    let B.y = C.z ()
-    let C.z = A.x ()
+```elm
+let A.x = B.y ()
+let B.y = C.z ()
+let C.z = A.x ()
+```
 
 This loop, while I belive possible to check, necessitates either a great deal of
 state tracking complexity or an enormous amount of wasted work and likely has
@@ -603,4 +656,3 @@ something like a simple `println`/`printf` function as a simple to use version
 of this would best take a List of Any.  The FFI to Erlang code gets around this
 by not type checking the arguments passed to it and only checking the result
 portion of the pattern matches.
-
