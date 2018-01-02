@@ -2,14 +2,30 @@ Alpaca
 =====
 [![Build Status](https://travis-ci.org/alpaca-lang/alpaca.svg?branch=master)](https://travis-ci.org/alpaca-lang/alpaca)
 
-Alpaca is a statically typed, strict/eagerly evaluated, functional programming language for the Erlang virtual machine (BEAM).  At present it relies on type inference rather than explicit type annotations.  It was formerly known as ML-flavoured Erlang (MLFE).
+Alpaca is a statically typed, strict/eagerly evaluated, functional programming language for the Erlang virtual machine (BEAM).  At present it relies on type inference but does provide a way to add type specifications to top-level function and value bindings.  It was formerly known as ML-flavoured Erlang (MLFE).
 
 # TLDR; How Do I Use It?
 Make sure the following are installed:
 
-- Erlang OTP 19.1 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development at present uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
+- Erlang OTP 19.3 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development at present uses OTP 19.3 and 20.0 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
+- a build of Alpaca itself
 
+## Installing Alpaca
+Releases for OTP 19.3 and 20.0 are built by Travis CI and are [available under this repository's releases page here](https://github.com/alpaca-lang/alpaca/releases).  You will want one of the following:
+
+- `alpaca_19.3.tgz`
+- `alpaca_20.0.tgz`
+
+You can unpack these anywhere and point the environment variable `ALPACA_ROOT` at the base folder, or place the `beams` sub-folder in any of the following locations:
+
+- `/usr/lib/alpaca`
+- `/usr/local/lib/alpaca`
+- `/opt/alpaca`
+
+Please see the [rebar3 plugin documentation](https://github.com/alpaca-lang/rebar_prv_alpaca) for more details.
+
+## Using Alpaca in a Project
 Make a new project with `rebar3 new app your_app_name` and in the
 `rebar.config` file in your project's root folder
 (e.g. `your_app_name/rebar.config`) add the following:
@@ -24,6 +40,19 @@ Check out
 [the tour for the language basics](https://github.com/alpaca-lang/alpaca/blob/master/Tour.md),
 put source files ending in `.alp` in your source folders, run `rebar3
 compile` and/or `rebar3 eunit`.
+
+# Building and Using Your Own Alpaca
+Rather than using an official build, you can build and test your own version of Alpaca.  Please note that Alpaca now needs itself in order to build.  The basic steps are:
+
+- clone and/or modify Alpaca to suit your needs.
+- compile your build with `rebar3 compile`.
+- make a local untagged release for your use with `bash ./make-release.sh` in the root folder of Alpaca.
+
+Then export `ALPACA_ROOT`, e.g. in the Alpaca folder:
+
+    export ALPACA_ROOT=`pwd`/alpaca-unversioned_`
+	
+The	rebar3 plugin should now find the Alpaca binaries you built above.
 
 # Intentions/Goals
 Something that looks and operates a little bit like an ML on the Erlang VM with:
@@ -112,11 +141,8 @@ Pull requests with improvements and bug reports with accompanying
 tests welcome.
 
 # Using It
-It's not very usable yet but the tests should give a relatively clear picture as to
-where we're going.  `test_files` contains some example source files used
-in unit tests.  You can call `alpaca:compile({files,
-[List, Of, File, Names, As, Strings]}, [list, of, options])` or `alpaca:compile({text,
-CodeAsAString}, [options, again])` for now.
+It's still quite early in Alpaca's evolution but the tests should give a relatively clear picture as to where we're going.  `test_files` contains some example source files used in unit tests.  You can call
+`alpaca:compile({files, [List, Of, File, Names, As, Strings]}, [list, of, options])` or `alpaca:compile({text, CodeAsAString}, [options, again])` for now but generally we recommend using the rebar3 plugin.
 
 Supported options are:
 * `'test'` - This option will cause all tests in a module to be type checked and exported
@@ -130,7 +156,7 @@ tests in `alpaca_typer.erl`.
 ## Prerequisites
 You will generally want the following two things installed:
 
-- Erlang/OTP 19.1 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development so far uses OTP 19.1 locally from [kerl](https://github.com/kerl/kerl))
+- Erlang/OTP 19.3 or above ([packages from Erlang Solutions](https://www.erlang-solutions.com/resources/download.html), most development so far uses OTP 19.3 and 20.0 locally from [kerl](https://github.com/kerl/kerl))
 - [Rebar3](https://rebar3.org)
 
 ## Writing Alpaca with Rebar3
