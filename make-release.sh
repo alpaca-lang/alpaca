@@ -22,5 +22,5 @@ cp code_of_conduct.md $REL_BASE
 cp $ALPACA_BEAMS/*.beam $BEAM_TARGET
 cp src/* $SRC_TARGET
 
-tar cvzf alpaca.tgz $REL_BASE
+tar cvzf alpaca_$TRAVIS_OTP_RELEASE.tgz $REL_BASE
 

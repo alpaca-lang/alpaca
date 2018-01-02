@@ -29,7 +29,9 @@ deploy:
   provider: releases
   api_key:
     secure: BAZxkGa98jJ6+JurzaUuGKO9pcuatjh0TMKLxSnYarVrikb9xWnM/wmmn2ajCvTgcl8wYppbQEpcgCJLb6m6ZI9L9ZBksii9ECacp2x2vDrGZ0QBhM/0tg9aHvUAhn7U2FRszqZwGnYlx/7Vb2hZ7Y8S3ojqLuuzturjRjtMkEPhLuLcHEAB/BPiqkdF/b0BRHGvYH2OhIyK4LKejSVL59sSRMzpt9x1c8r9+p6z12IHcsgek0vjQsmUJP3f4bE10FKRQkHBkzIOIqfSMFQ3+Ss/oVhWdHFRq47yfcPHiDAdU3UeVREHjMElRoqi6smJ7YSiyNMGWWS8ZmWjAi+nz/HNM4hdkCwy/GYlyjHjnjZR+fpHAyblHG3cphrpT6sBKZ2I9aC7sjoVIJWd6MShlaI929zKSxnqTzchPc8RL1qHD2vLaTtYiQ0tI7vJ01sCm9X2QpaYMvm46awhEmf3yl4b+Be0vUW/BLNvKBNQzmQ7Q+RaSrkA4USGu4Ilb4mH9jAX3evngJ0zkua/E4bWZ19oD0BJXoui2wzRiNhXJR8VCHVESji9R0Rp6yVhE3Mme0j1ssCMUDbQvBXptKe7HNDIpFcpGgTitWJZKXAE6+wUe8kadeMsU1nVhMkMFrVganrKZvieHIXWLsCYZqseGWOKkDYlaWvezljFbHzpGLU=
-  file: alpaca.tgz
+  file:
+    - alpaca_19.3.tgz
+    - alpaca_20.0.tgz
   on:
     repo: alpaca-lang/alpaca
     skip_cleanup: true
