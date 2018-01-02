@@ -279,10 +279,15 @@ gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
     {FName, cerl:c_fun(Args, B)}.
 
 gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
-    Patt = [Expr || {_, Expr} <- [gen_expr(Env, A) || A <- Args]],
-    {_, BodyExp} = gen_expr(Env, Body),
+    F = fun(Expr, {Exprs, FoldEnv}) ->
+                {FoldEnv2, GenExpr} = gen_expr(FoldEnv, Expr),
+                {[GenExpr|Exprs], FoldEnv2}
+        end,
+    {RevPatt, Env2} = lists:foldl(F, {[], Env}, Args),
+    Patt = lists:reverse(RevPatt),
+    {Env3, BodyExp} = gen_expr(Env2, Body),
 
-    case gen_guards(Env, Gs) of
+    case gen_guards(Env3, Gs) of
         [] ->     cerl:c_clause(Patt, BodyExp);
         _Guards -> cerl:c_clause(Patt, gen_guards(Env, Gs), BodyExp)
     end.

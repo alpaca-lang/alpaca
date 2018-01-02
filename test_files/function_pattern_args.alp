@@ -23,3 +23,11 @@ let double x = x * x
 let doubler x = my_map double (Some x)
 
 let double_maybe_x rec = my_map double (get_opt_x rec)
+
+{-
+ Mimics an issue I ran into working with elli and relatively specific pattern
+ matches.  Underscores/wildcards weren't getting renamed correctly due to the
+ code generator's environment changes being ignored when making patterns.
+ -}
+let handle_event :a b _ = :ok
+let handle_event _ _ _ = :whatever
