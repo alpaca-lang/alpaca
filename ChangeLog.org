@@ -20,6 +20,7 @@ Newest to oldest additions in each section.
 - enable internationalization and formatting of error messages, [[https://github.com/danabr][danabr]]
 
 ** Fixes
+- wildcard variables (the `_` variable) in function head matches are now renamed properly, [[https://github.com/j14159][j14159]]
 - partial record matching works, no more cycles in reference cells, [[https://github.com/j14159][j14159]]
 - type inferencer reference cells in ETS, no more processes, [[https://github.com/j14159][j14159]]
 - unsized binaries work correctly when constructing binaries, [[https://github.com/lepoetemaudit][lepoetemaudit]]
