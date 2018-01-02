@@ -416,9 +416,12 @@ let add x y = x + y
 
 test "add 2 and 2" =
   let res = add 2 2 in
-  match res with
-      4 -> :ok
-    | _ -> beam :erlang :error [no_match] with _ -> meaningless_return
+  assert_equal res 4
+
+let assert_equal x y =
+  match x == y with
+    | true -> :ok
+    | _ -> throw (:not_equal, x, y)
 ```
 
 
