@@ -7,6 +7,9 @@ env:
   global:
   - REBAR_VSN=3.4.3
   - PATH=./rebar3-$REBAR_VSN:$PATH
+  - ALPACA_BASE_URL=https://github.com/alpaca-lang/alpaca/releases/download/v0.2.8
+  - ALPACA_BASE=alpaca_${TRAVIS_OTP_RELEASE}
+  - ALPACA_PKG=${ALPACA_BASE}.tgz
 cache:
   directories:
   - .rebar3-$REBAR_VSN
@@ -18,7 +21,11 @@ before_install:
 - cd rebar3-$REBAR_VSN
 - if [ ! -f ./rebar3 ]; then ./bootstrap; fi
 - cd ..
-before_script: []
+before_script:
+  - export ALPACA_TO_USE=${ALPACA_BASE_URL}/${ALPACA_PKG}
+  - wget $ALPACA_TO_USE
+  - tar xzf $ALPACA_PKG
+  - export ALPACA_ROOT=`pwd`/$ALPACA_BASE
 script:
 - rebar3 xref
 - rebar3 eunit
