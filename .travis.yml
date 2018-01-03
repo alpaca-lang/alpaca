@@ -25,8 +25,9 @@ script:
 - export ALPACA_PKG=${ALPACA_BASE}.tgz
 - export ALPACA_TO_USE=${ALPACA_BASE_URL}/${ALPACA_PKG}
 - wget $ALPACA_TO_USE
-- tar xzf $ALPACA_PKG
-- export ALPACA_ROOT=`pwd`/$ALPACA_BASE
+- tar xvzf $ALPACA_PKG
+- export ALPACA_ROOT=`pwd`/${ALPACA_BASE}
+- echo "ALPACA_ROOT is set to ${ALPACA_ROOT}"
 - rebar3 xref
 - rebar3 eunit
 - rebar3 ct
