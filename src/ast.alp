@@ -18,66 +18,56 @@ type typ = TInt
          | TString
          | TArrow (list typ, typ)
 
-type binding = Binding {  line: int
-                        , name: symbol
-                        , typ: opt typ
-                        , bound: expr
-                        , body: opt expr
-                       }
-
 {- These are the top-level AST nodes that modules are built from.
  -}
 type module_ast = Module {line: int, name: atom}
-                | binding
+                | ModuleBinding {  line: int
+                                , name: expr
+                                , typ: opt typ
+                                , bound: expr
+                                }
 
 let mod line name = Module {line=line, name=name}
 
-type symbol = Symbol {line: int, name: string, original: opt string}
-
-type int_exp = Int {line: int, val: int}
-type float_exp = Float {line: int, val: float}
-
 {- Expressions are only permitted inside of top-level bindings.
  -}
-type expr = int_exp
-          | float_exp
-          | String {line: int, val: string}
-          | symbol
-          | binding
+type expr = Int {line: int, value: int}
+          | Float {line: int, value: float}
+          | String {line: int, value: string}
+          | Symbol {line: int, name: string, original: opt string}
+          | Binding {  line: int
+                    , name: expr
+                    , typ: opt typ
+                    , bound: expr
+                    , body: expr
+                    }
 
-let line String {line=l} = l
 let line Float {line=l} = l
 let line Int {line=l} = l
 let line Symbol {line=l} = l
 let line Binding {line=l} = l
+let line String {line=l} = l
 
-let int line val = Int {line=line, val=val}
 
-let int_val Int {line=_, val=v} = v
+let int line v = Int {line=line, value=v}
 
-let float line val = Float {line=line, val=val}
+let int_val Int {line=_, value=v} = v
 
-let float_val Float {line=_, val=v} = v
+let float line v = Float {line=line, value=v}
 
-let string line val = String {line=line, val=val}
+let float_val Float {line=_, value=v} = v
 
-let bind name line bound =
-  Binding {  line=line
-           , name=name
-           , bound=bound
-           , body=None
-           , typ=None
-          }
+let string line value = String {line=line, value=value}
 
 let bind name line bound body =
   Binding {  line=line
            , name=name
            , bound=bound
-           , body=Some body
+           , body=body
            , typ=None
           }
 
-let bind_body (Binding b_rec) body = Binding {body=Some body | b_rec}
+let bind_body (Binding b_rec) body = Binding {body=body | b_rec}
 
 let bind_expr (Binding b_rec) expr = Binding {bound=expr | b_rec}
 
