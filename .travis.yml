@@ -29,10 +29,7 @@ script:
 - tar xvzf $ALPACA_PKG
 - export ALPACA_ROOT=`pwd`/alpaca-${ALPACA_VERSION_TO_USE}_${TRAVIS_OTP_RELEASE}
 - echo "ALPACA_ROOT is set to ${ALPACA_ROOT}"
-- rebar3 xref
-- rebar3 eunit
-- rebar3 ct
-- rebar3 as default compile
+- make full_build
 - bash ./make-release.sh
 before_deploy:
   - export RELEASE_ARTIFACT=$(ls alpaca*.tgz)
