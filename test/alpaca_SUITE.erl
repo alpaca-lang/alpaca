@@ -372,7 +372,10 @@ keywords() ->
      <<"throw">>,
      <<"true">>,
      <<"false">>,
-     <<"fn">>
+     <<"fn">>,
+     <<"and">>,
+     <<"xor">>,
+     <<"or">>
     ]
     ++ base_types().
 
