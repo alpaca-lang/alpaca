@@ -7,6 +7,8 @@ env:
   global:
   - REBAR_VSN=3.4.3
   - PATH=./rebar3-$REBAR_VSN:$PATH
+  - ALPACA_VERSION_TO_USE=v0.2.8
+  - ALPACA_BASE_URL=https://github.com/alpaca-lang/alpaca/releases/download/$ALPACA_VERSION_TO_USE
 cache:
   directories:
   - .rebar3-$REBAR_VSN
@@ -20,10 +22,14 @@ before_install:
 - cd ..
 before_script: []
 script:
-- rebar3 xref
-- rebar3 eunit
-- rebar3 ct
-- rebar3 as default compile
+- export ALPACA_BASE=alpaca_${TRAVIS_OTP_RELEASE}
+- export ALPACA_PKG=${ALPACA_BASE}.tgz
+- export ALPACA_TO_USE=${ALPACA_BASE_URL}/${ALPACA_PKG}
+- wget $ALPACA_TO_USE
+- tar xvzf $ALPACA_PKG
+- export ALPACA_ROOT=`pwd`/alpaca-${ALPACA_VERSION_TO_USE}_${TRAVIS_OTP_RELEASE}
+- echo "ALPACA_ROOT is set to ${ALPACA_ROOT}"
+- make full_build
 - bash ./make-release.sh
 before_deploy:
   - export RELEASE_ARTIFACT=$(ls alpaca*.tgz)
