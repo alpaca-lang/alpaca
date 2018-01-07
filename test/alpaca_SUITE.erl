@@ -177,7 +177,9 @@ g_type_record(Name, Params, KnownTypes, Size) ->
         {record, Keys, OfTypes}).
 
 g_record_key() ->
-    ?LET(N, integer(1, 255), g_sym(N)).
+    ?LET(N,
+	 integer(1, 255),
+	 ?SUCHTHAT(Name, g_sym(N), not lists:member(Name, keywords()))).
 
 to_binary([], Acc) ->
     g_sprinkle(lists:flatten(lists:reverse(Acc)));
