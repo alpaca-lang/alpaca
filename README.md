@@ -56,6 +56,14 @@ Then export `ALPACA_ROOT`, e.g. in the Alpaca folder:
 
 The	rebar3 plugin should now find the Alpaca binaries you built above.
 
+## Editor Support
+
+Alpaca plugins are available for various editors.
+
+- Emacs: [alpaca-mode](https://github.com/alpaca-lang/alpaca-mode)
+- Vim: [alpaca_vim](https://github.com/lepoetemaudit/alpaca_vim)
+- Visual Studio Code: [alpaca-vscode](https://github.com/alpaca-lang/alpaca-vscode)
+
 # Intentions/Goals
 Something that looks and operates a little bit like an ML on the Erlang VM with:
 
