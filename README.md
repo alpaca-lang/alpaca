@@ -46,9 +46,9 @@ compile` and/or `rebar3 eunit`.
 # Building and Using Your Own Alpaca
 Rather than using an official build, you can build and test your own version of Alpaca.  Please note that Alpaca now needs itself in order to build.  The basic steps are:
 
-- clone and/or modify Alpaca to suit your needs.
-- compile your build with `rebar3 compile`.
-- make a local untagged release for your use with `bash ./make-release.sh` in the root folder of Alpaca.
+- Clone and/or modify Alpaca to suit your needs.
+- Compile your build with `rebar3 compile`.
+- Make a local untagged release for your use with `bash ./make-release.sh` in the root folder of Alpaca.
 
 Then export `ALPACA_ROOT`, e.g. in the Alpaca folder:
 
@@ -67,16 +67,16 @@ Alpaca plugins are available for various editors.
 # Intentions/Goals
 Something that looks and operates a little bit like an ML on the Erlang VM with:
 
-- static typing of itself.  We're deliberately ignoring typing of Erlang
+- Static typing of itself.  We're deliberately ignoring typing of Erlang
   code that calls into Alpaca.
-- parametric polymorphism
-- infinitely recursive functions as a distinct and allowable type for processes
+- Parametric polymorphism
+- Infinitely recursive functions as a distinct and allowable type for processes
 looping on receive.
-- recursive data types
-- syntax somewhere between [OCaml](https://ocaml.org/) and
+- Recursive data types
+- Syntax somewhere between [OCaml](https://ocaml.org/) and
 [Elm](http://elm-lang.org/)
-- FFI to erlang code that does not allow the return of values typed as `term()` or `any()`
-- simple test annotations for something like
+- FFI to Erlang code that does not allow the return of values typed as `term()` or `any()`
+- Simple test annotations for something like
   [eunit](http://erlang.org/doc/apps/eunit/chapter.html), tests live beside the
   functions they test
 
@@ -86,11 +86,11 @@ suggest possible union types if there isn't an appropriate one in scope.
 
 ## What Works Already
 
-- type inferencer with ADTs.  Tuples, maps, and records for product types and
+- Type inferencer with ADTs.  Tuples, maps, and records for product types and
   unions for sum.  Please note that Alpaca's records are not compatible with Erlang records as the former are currently compiled to maps.
-- compile type-checked source to `.beam` binaries
-- simple FFI to Erlang
-- type-safe message flows for processes defined inside Alpaca
+- Compile type-checked source to `.beam` binaries
+- Simple FFI to Erlang
+- Type-safe message flows for processes defined inside Alpaca
 
 Here's an example module:
 
