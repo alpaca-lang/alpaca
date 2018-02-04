@@ -1831,6 +1831,12 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                 {error, {cons_to_non_list, NonList}}
         end,
 
+    %% Imperative nastiness follows:
+    case {TTyp, NV2} of
+        {error, TailTypeError} -> throw(TailTypeError);
+        _ -> ok
+    end,
+
     %% TODO:  there's no error check here:
     ListType = case TTyp of
                    {cell, _} ->
@@ -5851,6 +5857,40 @@ record_unification_test_() ->
                            module_typ_and_parse(Code))
       end
 ].
+
+%% Initial test case courtesy of https://github.com/lpil in issue 223.
+iolist_test_() ->
+    [fun() ->
+             Code =
+                 "module hello_world \n"
+                 "let iolist_to_string iolist = \"\" \n"
+                 "test \"iolist\" = \n"
+                 "let iolist = [\"hello\", \" \", [\"world\"]] in\n"
+                 "match (iolist_to_string iolist) with\n"
+                 "| \"hello world\" -> :ok\n"
+                 "| _ -> throw :not_equal",
+             ?assertMatch({error, {cannot_unify,hello_world,
+                                           4,
+                                           t_string,
+                                           {t_list,t_string}}},
+                          module_typ_and_parse(Code))
+     end
+     %% Checking to make sure that adding a type unifying strings and lists of
+     %% them allows typing to succeed:
+    , fun() ->
+              Code =
+                  "module hello_world \n"
+                  "type iolist = string | list string \n"
+                  "let iolist_to_string iolist = \"\" \n"
+                  "test \"iolist\" = \n"
+                  "let iolist = [\"hello\", \" \", [\"world\"]] in\n"
+                  "match (iolist_to_string iolist) with\n"
+                  "| \"hello world\" -> :ok\n"
+                  "| _ -> throw :not_equal",
+              ?assertMatch({ok, #alpaca_module{}},
+                           module_typ_and_parse(Code))
+     end
+    ].
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),
