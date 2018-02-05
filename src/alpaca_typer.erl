@@ -1801,7 +1801,10 @@ typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {TL, #env{next_var=NV}} = new_var(Lvl, Env),
     {new_cell({t_list, TL}), NV};
 typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
-    {HTyp, NV1} = typ_of(Env, Lvl, H),
+    {HTyp, NV1} = case typ_of(Env, Lvl, H) of
+                      {error, HeadErr} -> throw(HeadErr);
+                      OK -> OK
+                  end,
     {TTyp, NV2} =
         case T of
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
@@ -1857,6 +1860,7 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                end,
     case unify(HTyp, ListType, Env, Line) of
         {error, _} = Err ->
+            io:format("~p ~p~n", [unwrap(HTyp), unwrap(ListType)]),
             Err;
         ok ->
             {TTyp, NV2}
@@ -5887,9 +5891,32 @@ iolist_test_() ->
                   "match (iolist_to_string iolist) with\n"
                   "| \"hello world\" -> :ok\n"
                   "| _ -> throw :not_equal",
-              ?assertMatch({ok, #alpaca_module{}},
+              ?assertMatch({ok, #alpaca_module{
+                                   functions=[#alpaca_binding{
+                                                 type={t_arrow,
+                                                       [{unbound, _, _}],
+                                                       t_string}}]}},
                            module_typ_and_parse(Code))
      end
+     , fun() ->
+               Code =
+                   "module iolist_example \n"
+                   "type iolist \n"
+                   "  = list iolist \n"
+                   "  | string \n"
+                   " \n"
+                   "val my_iolist : iolist \n"
+                   "let my_iolist = \n"
+                   "  [\"h\", [\"i\", [\"!\"]]]",
+
+              ?assertMatch({error, {cannot_unify,
+                                    iolist_example,
+                                    8,
+                                    t_string,
+                                    {t_list,t_string}}},
+                           module_typ_and_parse(Code))
+
+       end
     ].
 
 make_modules(Sources) ->
