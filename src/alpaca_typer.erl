@@ -1801,7 +1801,10 @@ typ_of(#env{next_var=_VarNum}=Env, Lvl, {nil, _Line}) ->
     {TL, #env{next_var=NV}} = new_var(Lvl, Env),
     {new_cell({t_list, TL}), NV};
 typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
-    {HTyp, NV1} = typ_of(Env, Lvl, H),
+    {HTyp, NV1} = case typ_of(Env, Lvl, H) of
+                      {error, HeadErr} -> throw(HeadErr);
+                      OK -> OK
+                  end,
     {TTyp, NV2} =
         case T of
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
@@ -1831,6 +1834,12 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                 {error, {cons_to_non_list, NonList}}
         end,
 
+    %% Imperative nastiness follows:
+    case {TTyp, NV2} of
+        {error, TailTypeError} -> throw(TailTypeError);
+        _ -> ok
+    end,
+
     %% TODO:  there's no error check here:
     ListType = case TTyp of
                    {cell, _} ->
@@ -1851,6 +1860,7 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                end,
     case unify(HTyp, ListType, Env, Line) of
         {error, _} = Err ->
+            io:format("~p ~p~n", [unwrap(HTyp), unwrap(ListType)]),
             Err;
         ok ->
             {TTyp, NV2}
@@ -5851,6 +5861,63 @@ record_unification_test_() ->
                            module_typ_and_parse(Code))
       end
 ].
+
+%% Initial test case courtesy of https://github.com/lpil in issue 223.
+iolist_test_() ->
+    [fun() ->
+             Code =
+                 "module hello_world \n"
+                 "let iolist_to_string iolist = \"\" \n"
+                 "test \"iolist\" = \n"
+                 "let iolist = [\"hello\", \" \", [\"world\"]] in\n"
+                 "match (iolist_to_string iolist) with\n"
+                 "| \"hello world\" -> :ok\n"
+                 "| _ -> throw :not_equal",
+             ?assertMatch({error, {cannot_unify,hello_world,
+                                           4,
+                                           t_string,
+                                           {t_list,t_string}}},
+                          module_typ_and_parse(Code))
+     end
+     %% Checking to make sure that adding a type unifying strings and lists of
+     %% them allows typing to succeed:
+    , fun() ->
+              Code =
+                  "module hello_world \n"
+                  "type iolist = string | list string \n"
+                  "let iolist_to_string iolist = \"\" \n"
+                  "test \"iolist\" = \n"
+                  "let iolist = [\"hello\", \" \", [\"world\"]] in\n"
+                  "match (iolist_to_string iolist) with\n"
+                  "| \"hello world\" -> :ok\n"
+                  "| _ -> throw :not_equal",
+              ?assertMatch({ok, #alpaca_module{
+                                   functions=[#alpaca_binding{
+                                                 type={t_arrow,
+                                                       [{unbound, _, _}],
+                                                       t_string}}]}},
+                           module_typ_and_parse(Code))
+     end
+     , fun() ->
+               Code =
+                   "module iolist_example \n"
+                   "type iolist \n"
+                   "  = list iolist \n"
+                   "  | string \n"
+                   " \n"
+                   "val my_iolist : iolist \n"
+                   "let my_iolist = \n"
+                   "  [\"h\", [\"i\", [\"!\"]]]",
+
+              ?assertMatch({error, {cannot_unify,
+                                    iolist_example,
+                                    8,
+                                    t_string,
+                                    {t_list,t_string}}},
+                           module_typ_and_parse(Code))
+
+       end
+    ].
 
 make_modules(Sources) ->
   NamedSources = lists:map(fun(C) -> {?FILE, C} end, Sources),

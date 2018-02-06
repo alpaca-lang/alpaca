@@ -404,10 +404,13 @@ cons -> '[' ']' :
 cons -> '[' simple_expr ']' :
   {_, L} = '$3',
   #alpaca_cons{head='$2', tail={nil, L}, line=L}.
-cons -> term cons_infix term : #alpaca_cons{head='$1', tail='$3'}.
+cons -> term cons_infix term :
+  L = term_line('$1'),
+  #alpaca_cons{head='$1', tail='$3', line=L}.
 cons -> '[' literal_cons_items ']':
-  F = fun(X, Acc) -> #alpaca_cons{head=X, tail=Acc} end,
-  lists:foldr(F, {nil, 0}, '$2').
+  F = fun(X, Acc) -> #alpaca_cons{head=X, tail=Acc, line=term_line(X)} end,
+  {_, L} = '$3',
+  lists:foldr(F, {nil, L}, '$2').
 
 %% -----  Binaries  --------------------
 bin_qualifier -> type_declare assign symbol :
