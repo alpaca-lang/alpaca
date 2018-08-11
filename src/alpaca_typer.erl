@@ -372,6 +372,12 @@ module_name(_) ->
 unify_error(Env, Line, Typ1, Typ2) ->
     {error, {cannot_unify, module_name(Env), Line, unwrap(Typ1), unwrap(Typ2)}}.
 
+not_enough_type_arguments(Env, #type_constructor{line=L, name=N}) ->
+    {error, {not_enough_type_arguments, module_name(Env), L, N}}.
+
+too_many_type_arguments(Env, #type_constructor{line=L, name=N}) ->
+    {error, {too_many_type_arguments, module_name(Env), L, N}}.
+
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
 %%% errors.
@@ -1232,7 +1238,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
     end.
 
 inst_constructor_arg(none, _, _, Env) ->
-    {Env, t_unit};
+    {Env, undefined};
 inst_constructor_arg(AtomType, _, _, Env) when is_atom(AtomType) ->
     {Env, AtomType};
 inst_constructor_arg({type_var, _, N}, Vs, _, Env) ->
@@ -1930,7 +1936,11 @@ typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists, line=
 typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
-        {Env2, {type_arrow, _CTyp, RTyp}} ->
+        {Env2, {type_arrow, CTyp, RTyp}} ->
+            case unwrap(CTyp) of
+                undefined -> ok;
+                _         -> throw(not_enough_type_arguments(Env, N))
+            end,
             {RTyp, Env2#env.next_var}
     end;
 typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
@@ -1944,19 +1954,28 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
                       (X)           -> new_cell(X)
                    end,
 
+    #type_constructor{line=L} = N,
+
     case inst_type_arrow(Env, N) of
         {error, _}=Err -> Err;
         {Env2, {type_arrow, CTyp, RTyp}} ->
-            case typ_of(Env2, Lvl, A) of
-                {error, _}=Err -> Err;
-                {ATyp, NVNum} ->
-                    #type_constructor{line=L} = N,
-                    case unify(CTyp,
-                               EnsureCelled(ATyp),
-                               update_counter(NVNum, Env2), L)
-                    of
-                        ok             -> {RTyp, NVNum};
-                        {error, _}=Err -> Err
+            case unwrap(CTyp) of
+                %% Type tags/instance constructors (e.g. `None`) with no
+                %% defined arguments should not be able to be instantiated
+                %% with any:
+                undefined ->
+                    throw(too_many_type_arguments(Env, N));
+                _ ->
+                    case typ_of(Env2, Lvl, A) of
+                        {error, _}=Err -> Err;
+                        {ATyp, NVNum} ->
+                            case unify(CTyp,
+                                       EnsureCelled(ATyp),
+                                       update_counter(NVNum, Env2), L)
+                            of
+                                ok             -> {RTyp, NVNum};
+                                {error, _}=Err -> Err
+                            end
                     end
             end
     end;
@@ -3890,6 +3909,36 @@ polymorphic_tree_code() ->
     "  match (a > b) with\n"
     "    true -> a\n"
     "  | false -> b".
+
+type_tag_arity_test_() ->
+    [fun() ->
+             Code =
+                 "module opt \n"
+                 "type opt 'a = Some 'a | None \n"
+                 "let should_fail x = None x \n",
+             [M] = make_modules([Code]),
+             Res = type_modules([M]),
+             %% Nested error because it's thrown and I prefer to use a match
+             %% here rather than explicit full Symbol as its representation will
+             %% change over time.
+             ?assertMatch(
+                {error, {error, {too_many_type_arguments, opt, 3, "None"}}},
+                Res)
+     end
+    , fun() ->
+              %% An instance constructor that expects an argument should require
+              %% one when typing.
+              Code =
+                  "module m \n"
+                  "type x = X int \n"
+                  "let should_fail _ = (X) \n",
+             [M] = make_modules([Code]),
+             Res = type_modules([M]),
+             ?assertMatch(
+                {error, {error, {not_enough_type_arguments, m, 3, "X"}}},
+                Res)
+      end
+    ].
 
 builtin_types_as_type_variables_test() ->
     Code =

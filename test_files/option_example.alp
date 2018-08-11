@@ -19,3 +19,17 @@ test "mapping a Some 1 with identity should result in Some 1" =
 test "mapping a None with identity should result in None" =
   let f x = x in
   asserts.assert_equal (map f None) None
+
+val orElse 'a : fn 'a (option 'a) -> 'a
+let orElse default op =
+  match op with
+  | None -> default
+  | Some value -> value
+
+
+val flatten 'a: fn (option 'a) -> 'a
+let flatten op = orElse (None) op
+
+test "flattening a nested option should remove one layer" =
+  let o = Some Some 2 in
+  asserts.assert_equal (flatten o) (Some 2)
