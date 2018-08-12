@@ -45,6 +45,8 @@ format_pattern('_') -> "_".
 check_exhaustiveness(Mods) ->
     lists:flatmap(fun(M) -> check_exhaustiveness(M, Mods) end, Mods).
 
+check_exhaustiveness(#alpaca_module{precompiled=true}, _AllMods) ->
+    [];
 check_exhaustiveness(#alpaca_module{functions=Funs}=M, AllMods) ->
     lists:flatmap(fun(F) -> check_exhaustiveness(M, F, AllMods) end, Funs).
 

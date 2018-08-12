@@ -1,0 +1,10 @@
+module use_option
+
+export option_to_atom
+
+import_type option_example.option
+
+let option_to_atom opt =
+  match opt with
+  | None -> :none
+  | Some _ -> :some
