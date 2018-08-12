@@ -1295,6 +1295,14 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
                     false -> Vars
                 end,
 
+    %% We use this within `F` to fall back to other type variables that may have
+    %% been bound prior to this current type in a signature.  Strictly speaking
+    %% we should remove items from `Vs` that already exist in `VarsToUse` but
+    %% that could get pretty expensive.  I'm deliberately taking the lazy way
+    %% out and just avoiding a repeated append operation the the lists:foldl
+    %% call further below.
+    VarsWithDupes = VarsToUse ++ Vs,
+
     F = fun({type_var, _, VN}) ->
                 {VN, proplists:get_value(VN, Vs)};
            ({{type_var, _, _}=VN, CT}=_ConcreteType) ->
@@ -1305,7 +1313,7 @@ inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1}
                 %% worried about the returned environment as I think we're
                 %% safely covered by using the already known variables and
                 %% existing environment:
-                {_, InstCT} = inst_constructor_arg(CT, VarsToUse, Types, Env),
+                {_, InstCT} = inst_constructor_arg(CT, VarsWithDupes, Types, Env),
                 {VN, InstCT}
         end,
     ADT_Vars = lists:map(F, VarsToUse),
@@ -1341,9 +1349,25 @@ find_type(Name, []) -> throw({error, {unknown_type, Name}});
 find_type(Name, [#alpaca_type{name={type_name, _, Name}}=T|_]) -> T;
 find_type(Name, [_|Types]) -> find_type(Name, Types).
 
+%% When we use a type specified elsewhere within another type, like mixing
+%% options and lists, we need to make sure that the two types use the same name
+%% for variables in the same position.  An example:
+%%
+%%   type opt 'a = Some 'a | None
+%%   type tagged 'x = Tag opt 'x
+%%
+%% When typing an instance of `tagged` above, we need to find the `opt` type and
+%% then ensure that 'a becomes 'x in `opt` when we type the whole thing.
+%%
+%% `replace_vars` takes three arguments in this order:
+%%   1. The type variables from type that uses a different one, `tagged` above.
+%%   2. The type variables of the _used_ type, `opt` above.
+%%   3. Type variables that already exist within the current context.
+%%
 replace_vars([], _, _) -> [];
 replace_vars([{type_var, _, N}|Ms], [{type_var, _, V}|Vs], PropagatedVs) ->
     [{V,proplists:get_value(N, PropagatedVs)}|replace_vars(Ms, Vs, PropagatedVs)];
+%% Our use of a type may be specifying concrete types rather than variables:
 replace_vars([M|Ms], [{type_var, _, V}|Vs], PropagatedVs) ->
     [{V,M}|replace_vars(Ms, Vs, PropagatedVs)].
 
@@ -1866,7 +1890,6 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
                end,
     case unify(HTyp, ListType, Env, Line) of
         {error, _} = Err ->
-            io:format("~p ~p~n", [unwrap(HTyp), unwrap(ListType)]),
             Err;
         ok ->
             {TTyp, NV2}
@@ -2373,22 +2396,22 @@ typ_of(Env, Lvl, #alpaca_binding{
             %% If we have a type signature and we can unify it with the given
             %% binding we have typed, replace our inferred type with the sig
             case Sig of
-                #alpaca_type_signature{type=TS, line=Line, vars=Vs} -> 
+                #alpaca_type_signature{type=TS, line=Line, vars=Vs} ->
                     %% Type signatures may need to fully instantiated
                     Types = Env#env.current_types,
 
-                    VarFolder = fun({type_var, _, VN}, {Vars, E_}) ->
+                    VarFolder = fun({type_var, _, VN}, {Vars, VarMap, E_}) ->
                                         {TVar, E3} = new_var(0, E_),
-                                        {[{VN, TVar}|Vars], E3};
-                                   ({{type_var, _, VN}, Expr}, {Vars, E_}) ->
+                                        {[{VN, TVar}|Vars], maps:put(VN, TVar, VarMap), E3};
+                                   ({{type_var, _, VN}, Expr}, {Vars, VarMap, E_}) ->
                                         %% copy_cell/1 should put every nested member properly
                                         %% into its own reference cell:
-                                        {Celled, _} = copy_cell(Expr, maps:new()),
-                                        {[{VN, Celled}|Vars], E_}
+                                        {Celled, NewVarMap} = copy_cell(Expr, VarMap),
+                                        {[{VN, Celled}|Vars], NewVarMap, E_}
                                 end,
-                    {Vars2, Env3} = case Vs of
-                        undefined -> {[], Env2};
-                        _ -> lists:foldl(VarFolder, {[], Env2}, Vs)
+                    {Vars2, _, Env3} = case Vs of
+                        undefined -> {[], maps:new(), Env2};
+                        _ -> lists:foldl(VarFolder, {[], maps:new(), Env2}, Vs)
                     end,
 
                     try inst_constructor_arg(TS, Vars2, Types, Env3) of
@@ -5966,6 +5989,54 @@ iolist_test_() ->
                            module_typ_and_parse(Code))
 
        end
+    ].
+
+type_specs_and_vars_test_() ->
+    [fun() ->
+             Code =
+                 "module m \n"
+                 "type option 'a = Some 'a | None \n"
+                 "val tail 'a : fn (list 'a) -> option (list 'a) \n"
+                 "let tail xs = \n"
+                 "  match xs with \n"
+                 "  | [] -> None \n"
+                 "  | x :: rest -> Some rest",
+             ?assertMatch(
+                {ok, #alpaca_module{
+                        functions=[#alpaca_binding{
+                                      type={
+                                        t_arrow,
+                                        [{t_list, A}],
+                                        #adt{
+                                           name= <<"option">>,
+                                           vars=[{_, {t_list, A}}]}},
+                                      signature=#alpaca_type_signature{
+                                                  type={
+                                                    t_arrow,
+                                                    [{t_list, B}],
+                                                    #alpaca_type{
+                                                       name={_, _, <<"option">>},
+                                                       vars=[{_, {t_list, B}}]}}}
+                                     }]}},
+                module_typ_and_parse(Code))
+     end
+    , fun() ->
+              %% Trying a different nesting:
+              Code =
+                  "module m \n"
+                  "type opt 'a = Some 'a | None \n"
+                  "val f 'b: fn (opt (list 'b)) -> list (opt 'b) \n"
+                  "let f Some (h :: _) = [Some h]",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={
+                                         t_arrow,
+                                         [#adt{vars=[{N, {t_list, A}}]}],
+                                         {t_list,
+                                          #adt{vars=[{N, A}]}}}}]}},
+                 module_typ_and_parse(Code))
+      end
     ].
 
 make_modules(Sources) ->
