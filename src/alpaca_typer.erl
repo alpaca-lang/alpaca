@@ -2389,7 +2389,12 @@ typ_of(Env, Lvl, #alpaca_binding{
                     signature=Sig,
                     body=E2}) ->
     N = alpaca_ast:symbol_name(Sym),
-    {TypE, NextVar} = typ_of(Env, Lvl, E#alpaca_fun{name=N}),
+
+    {TypE, NextVar} = case typ_of(Env, Lvl, E#alpaca_fun{name=N}) of
+                          {error, SymErr} -> throw(SymErr);
+                          {_, _} = Success    -> Success
+                      end,
+
     Env2 = update_counter(NextVar, Env),
     case E2 of
         undefined ->
@@ -3094,7 +3099,7 @@ clause_test_() ->
 match_test_() ->
     [?_assertMatch({{t_arrow, [t_int], t_int}, _},
                    top_typ_of("let f x = match x with\n  i -> i + 2")),
-     ?_assertMatch({error, {cannot_unify, _, _, _, _}},
+     ?_assertThrow({cannot_unify, undefined, 3, t_atom, t_int},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  i -> i + 1\n"
@@ -3110,19 +3115,19 @@ match_test_() ->
 %% Testing that type errors are reported for the appropriate line when
 %% clauses are unified by match or receive.
 pattern_match_error_line_test_() ->
-    [?_assertMatch({error, {cannot_unify, _, 3, t_float, t_int}},
+    [?_assertThrow({cannot_unify, undefined, 3, t_float, t_int},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    i, is_integer i -> :int\n"
                      "  | f, is_float f -> :float")),
-     ?_assertMatch({error, {cannot_unify, _, 4, t_float, t_int}},
+     ?_assertThrow({cannot_unify, _, 4, t_float, t_int},
                    top_typ_of(
                      "let f () = receive with\n"
                      "    0 -> :zero\n"
                      "  | 1 -> :one\n"
                      "  | 2.0 -> :two\n"
                      "  | 3 -> :three\n")),
-     ?_assertMatch({error, {cannot_unify, _, 3, t_string, t_atom}},
+     ?_assertThrow({cannot_unify, undefined, 3, t_string, t_atom},
                    top_typ_of(
                      "let f x = match x with\n"
                      "    0 -> :zero\n"
@@ -3138,7 +3143,10 @@ tuple_test_() ->
                      " (i, f) -> (f +. 1.0, i + 1)")),
      ?_assertMatch({{t_arrow, [t_int], {t_tuple, [t_int, t_atom]}}, _},
                    top_typ_of("let f i = (i + 2, :plus_two)")),
-     ?_assertMatch({error, _},
+     ?_assertThrow({cannot_unify,
+                    undefined,
+                    3,
+                    {t_tuple, [{unbound, t2, 0}, t_int]}, t_int},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  i -> i + 1\n"
@@ -3179,7 +3187,7 @@ list_test_() ->
                      "let f list_in_tuple =\n"
                      "  match list_in_tuple with\n"
                      "   (h :: 1 :: _ :: t, _, f) -> (h, f +. 3.0)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_float, t_int}},
+     ?_assertThrow({cannot_unify, undefined, 3, t_float, t_int},
                    top_typ_of(
                      "let f should_fail x =\n"
                      "let l = 1 :: 2 :: 3 :: [] in\n"
@@ -3194,7 +3202,7 @@ binary_test_() ->
                    top_typ_of(
                      "let f x = match x with "
                      "<<1: size=8, 2: size=8, rest: type=binary>> -> rest")),
-     ?_assertMatch({error, {cannot_unify, _, 1, t_float, t_int}},
+     ?_assertThrow({cannot_unify, undefined, 1, t_float, t_int},
                    top_typ_of("let f () = let x = 1.0 in <<x: type=int>>")),
      ?_assertMatch({{t_arrow, [t_binary], t_string}, _},
                    top_typ_of(
@@ -3305,9 +3313,9 @@ bidirectional_module_fail_test() ->
     [M1, M2] = make_modules([Mod1, Mod2]),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
-    ?assertMatch({error, {bidirectional_module_ref,
-                          inter_module_two,
-                          inter_module_one}},
+    ?assertThrow({bidirectional_module_ref,
+                  inter_module_two,
+                  inter_module_one},
                  type_module(M2, Env)).
 
 
@@ -3322,7 +3330,7 @@ recursive_fun_test_() ->
                      "let f x = match x with\n"
                      "  0 -> :zero\n"
                      "| x -> f (x - 1)")),
-     ?_assertMatch({error, {cannot_unify, undefined, 3, t_int, t_atom}},
+     ?_assertThrow({cannot_unify, undefined, 3, t_int, t_atom},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  0 -> :zero\n"
@@ -3397,7 +3405,7 @@ ffi_test_() ->
                      "let f x = beam :a :b [x] with\n"
                      "  1 -> :one\n"
                      "| _ -> :not_one")),
-     ?_assertMatch({error,{bad_variable_name, undefined, 1, <<"x">>}},
+     ?_assertThrow({bad_variable_name, undefined, 1, <<"x">>},
                    top_typ_of(
                      "let f () = beam :a :b [x] with\n"
                      "  1 -> :one\n"
@@ -3414,7 +3422,7 @@ equality_test_() ->
                      "let f x = match x with\n"
                      " a, a == 0 -> :zero\n"
                      "|b -> :not_zero")),
-     ?_assertMatch({error, {cannot_unify, _, _, t_float, t_int}},
+     ?_assertThrow({cannot_unify, undefined, 3, t_float, t_int},
                    top_typ_of(
                      "let f x = match x with\n"
                      "  a -> a + 1\n"
@@ -3462,7 +3470,7 @@ type_guard_test_() ->
 %%%
 %%% Tests for ADTs that are simply unions of existing types:
 union_adt_test_() ->
-    [?_assertMatch({error, {cannot_unify, _, 1, t_int, t_atom}},
+    [?_assertThrow({cannot_unify, _, 1, t_int, t_atom},
                    top_typ_with_types(
                      "let f x = match x with "
                      "  0 -> :zero"
@@ -3517,8 +3525,8 @@ type_tuple_test_() ->
                                              members=[{type_var, 1, "x"},
                                                       t_int]}]}])),
      %% A recursive type with a bad variable:
-     ?_assertMatch(
-        {error, {bad_variable, 1, "y"}},
+     ?_assertThrow(
+        {bad_variable, 1, "y"},
         top_typ_with_types(
           "let f x = match x with "
           " 0 -> :zero"
@@ -3636,8 +3644,8 @@ type_constructor_test_() ->
                        #alpaca_constructor{
                           name=#type_constructor{line=1, name="Nil"},
                           arg=none}]}])),
-     ?_assertMatch(
-        {error, {cannot_unify, _, _, t_int, t_float}},
+     ?_assertThrow(
+        {cannot_unify, undefined, 1, t_int, t_float},
         top_typ_with_types(
           "let f x = Cons (1, Cons (2.0, Nil))",
           [#alpaca_type{
@@ -6035,6 +6043,40 @@ type_specs_and_vars_test_() ->
                                          [#adt{vars=[{N, {t_list, A}}]}],
                                          {t_list,
                                           #adt{vars=[{N, A}]}}}}]}},
+                 module_typ_and_parse(Code))
+      end
+     %% Turned up a missing error check when chasing a fix for #230:
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "val flatten 'a : fn (option (option 'a)) -> option 'a \n"
+                  "let flatten op = \n"
+                  "match op with \n"
+                  "  | None -> None \n"
+                  "  | Some value -> value",
+              ?assertMatch(
+                 {error, {bad_constructor, 5, "None"}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module m \n"
+                  "type option 'a = Some 'a | None \n"
+                  "val flatten 'a : fn (option (option 'a)) -> option 'a \n"
+                  "let flatten op = \n"
+                  "match op with \n"
+                  "  | None -> None \n"
+                  "  | Some value -> value",
+              ?assertMatch(
+                 {ok,
+                  #alpaca_module{
+                    functions=[#alpaca_binding{
+                                 type={t_arrow,
+                                       [#adt{name = <<"option">>,
+                                             vars=[{_, #adt{name = <<"option">>,
+                                                            vars=[{_, A}]}}]}],
+                                       #adt{name = <<"option">>,
+                                            vars=[{_, A}]}}}]}},
                  module_typ_and_parse(Code))
       end
     ].
