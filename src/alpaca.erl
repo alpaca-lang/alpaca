@@ -98,10 +98,9 @@ compile_phase_2(Mods, Opts) ->
     end.
 
 compile_phase_3(Mods, Opts) ->
-    %% Don't check precompiled modules - as the AST is stripped, they will not
-    %% have function bodies and so will always fail these checks
-    ToCheckMods = lists:filter(fun(#alpaca_module{precompiled=P}) -> not P end, Mods),
-    ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(ToCheckMods),
+    %% The exhaustiveness check now skips any modules with the `precompiled`
+    %% flag set:
+    ExhaustivenessWarnings = alpaca_exhaustiveness:check_exhaustiveness(Mods),
     maybe_print_exhaustivess_warnings(ExhaustivenessWarnings, Opts),
     compile_phase_4(Mods, Opts).
 
@@ -628,6 +627,26 @@ hash_annotation_test() ->
     ?assertEqual(Hash, proplists:get_value(alpaca_hash, N:module_info(attributes))),
     ?assertEqual(Hash, hash_source(R)),
     pd(N).
+
+%% Verify fix for issue #228.  This is less detailed than I would like for now
+%% as exhaustiveness warnings are only printed but it no longer fails if we try
+%% to get types from a module that was not re-compiled.
+%% 
+%% TODO:  adjust when warnings are sent to something other than io:format
+%% directly.
+types_from_precompiled_module_test() ->
+    %% Compile option module:
+    Files = ["test_files/option_example.alp", "test_files/asserts.alp"],
+    {ok, [_, Compiled]} = alpaca:compile({files, Files}),
+    {compiled_module, _ModuleName, FileName, BeamBinary} = Compiled,
+    FP = filename:join("_build", FileName),
+    file:write_file(FP, BeamBinary),
+    Files2 = [FP, "test_files/use_option.alp"],
+    %% Only one new module should be compiled
+    [M] = compile_and_load(Files2, [test]),
+    ?assertMatch(none, M:option_to_atom('None')),
+    ?assertMatch(some, M:option_to_atom({'Some', 1})),
+    pd(M).
 
 default_imports_test() ->
     Files = ["test_files/default.alp", "test_files/use_default.alp"],
