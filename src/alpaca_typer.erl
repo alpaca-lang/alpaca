@@ -6068,7 +6068,15 @@ type_specs_and_vars_test_() ->
                   "  | None -> None \n"
                   "  | Some value -> value",
               ?assertMatch(
-                 {ok, #alpaca_module{}},
+                 {ok,
+                  #alpaca_module{
+                    functions=[#alpaca_binding{
+                                 type={t_arrow,
+                                       [#adt{name = <<"option">>,
+                                             vars=[{_, #adt{name = <<"option">>,
+                                                            vars=[{_, A}]}}]}],
+                                       #adt{name = <<"option">>,
+                                            vars=[{_, A}]}}}]}},
                  module_typ_and_parse(Code))
       end
     ].
