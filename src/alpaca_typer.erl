@@ -372,11 +372,20 @@ module_name(_) ->
 unify_error(Env, Line, Typ1, Typ2) ->
     {error, {cannot_unify, module_name(Env), Line, unwrap(Typ1), unwrap(Typ2)}}.
 
-not_enough_type_arguments(Env, #type_constructor{line=L, name=N}) ->
+error_not_enough_type_arguments(Env, #type_constructor{line=L, name=N}) ->
     {error, {not_enough_type_arguments, module_name(Env), L, N}}.
 
-too_many_type_arguments(Env, #type_constructor{line=L, name=N}) ->
+error_too_many_type_arguments(Env, #type_constructor{line=L, name=N}) ->
     {error, {too_many_type_arguments, module_name(Env), L, N}}.
+
+error_bad_constructor(Env, #type_constructor{line=L, name=N}) ->
+    {error, {bad_constructor, module_name(Env), L, N}}.
+
+error_bad_constructor_arg(Env, Term) ->
+    {error, {bad_constructor_arg, module_name(Env), Term}}.
+
+error_unknown_type_variable(Env, {type_var, L, N}) ->
+    {error, {unknown_type_var, module_name(Env), L, N}}.
 
 %%% Unify now requires the environment not in order to make changes to it but
 %%% so that it can look up potential type unions when faced with unification
@@ -1150,11 +1159,6 @@ inst_type_members(ADT, [_H|T], Env, Memo) ->
 %%% an instantiated instance of the ADT.  If the "type arrow" unifies with
 %%% the argument in the actual constructor application, the return of the type
 %%% arrow will have the correct variables instantiated.
--spec inst_type_arrow(Env::env(), Name::alpaca_constructor_name()) ->
-                             {ok, env(), {typ_arrow, typ(), t_adt()}} |
-                             {error, {bad_constructor, integer(), string()}} |
-                             {error, {unknown_type, string()}} |
-                             {error, {bad_constructor_arg,term()}}.
 inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
     %% 20160603:  I have an awful lot of case ... of all over this
     %% codebase, trying a lineup of functions specific to this
@@ -1164,7 +1168,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                (#alpaca_constructor{type=#alpaca_type{}=T}=C) ->
                     {C, inst_type(T, EnvIn)}
             end,
-    Cons_f = fun({error, _}=Err) ->Err;
+    Cons_f = fun({error, _}=Err) -> Err;
                 ({C, {ok, Env, ADT, _}}) ->
                      #adt{vars=Vs} = get_cell(ADT),
                      #alpaca_constructor{arg=Arg} = C,
@@ -1185,8 +1189,8 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
     %% the specified module *and* that its enclosing type is exported.
     %%
     %% Here's the easy local get:
-    GetTC = fun(#type_constructor{line=Line, name=Name, module=undefined}) ->
-                    Default = {error, {bad_constructor, Line, Name}},
+    GetTC = fun(#type_constructor{name=Name, module=undefined}) ->
+                    Default = error_bad_constructor(EnvIn, TC),
                     %% constructors defined in this module or imported by it:
                     Available = EnvIn#env.type_constructors,
                     proplists:get_value(Name, Available, Default);
@@ -1228,7 +1232,7 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                                 [RealC] ->
                                     RealC;
                                 [] ->
-                                    throw({error, {bad_constructor, Line, Name}})
+                                    throw(error_bad_constructor(EnvIn, TC))
                             end
                     end
             end,
@@ -1241,9 +1245,9 @@ inst_constructor_arg(none, _, _, Env) ->
     {Env, undefined};
 inst_constructor_arg(AtomType, _, _, Env) when is_atom(AtomType) ->
     {Env, AtomType};
-inst_constructor_arg({type_var, _, N}, Vs, _, Env) ->
+inst_constructor_arg({type_var, _, N}=TV, Vs, _, Env) ->
     case proplists:get_value(N, Vs) of
-        undefined -> throw({error, {unknown_type_var, N}});
+        undefined -> throw(error_unknown_type_variable(Env, TV));
         V -> {Env, V}
     end;
 inst_constructor_arg(#t_record{members=Ms}=R, Vs, Types, Env) ->
@@ -1342,8 +1346,8 @@ inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types, Env) ->
     {Env3, InstantiatedRet} = inst_constructor_arg(RetType, Vs, Types, Env2),
     {Env3, new_cell({t_arrow, lists:reverse(InstantiatedArgs), InstantiatedRet})};
 
-inst_constructor_arg(Arg, _, _, _) ->
-    throw({error, {bad_constructor_arg, Arg}}).
+inst_constructor_arg(Arg, _, _, Env) ->
+    throw(error_bad_constructor_arg(Env, Arg)).
 
 find_type(Name, []) -> throw({error, {unknown_type, Name}});
 find_type(Name, [#alpaca_type{name={type_name, _, Name}}=T|_]) -> T;
@@ -1972,7 +1976,7 @@ typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
         {Env2, {type_arrow, CTyp, RTyp}} ->
             case unwrap(CTyp) of
                 undefined -> ok;
-                _         -> throw(not_enough_type_arguments(Env, N))
+                _         -> throw(error_not_enough_type_arguments(Env, N))
             end,
             {RTyp, Env2#env.next_var}
     end;
@@ -1997,7 +2001,7 @@ typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
                 %% defined arguments should not be able to be instantiated
                 %% with any:
                 undefined ->
-                    throw(too_many_type_arguments(Env, N));
+                    throw(error_too_many_type_arguments(Env, N));
                 _ ->
                     case typ_of(Env2, Lvl, A) of
                         {error, _}=Err -> Err;
@@ -2419,16 +2423,11 @@ typ_of(Env, Lvl, #alpaca_binding{
                         _ -> lists:foldl(VarFolder, {[], maps:new(), Env2}, Vs)
                     end,
 
-                    try inst_constructor_arg(TS, Vars2, Types, Env3) of
-                        {_, ArgCons} -> 
-                            case unify(TypE, ArgCons, Env3, Line) of
-                                ok -> {unwrap_cell(ArgCons), NextVar};
-                                Err -> Err
-                            end
-                        catch
-                            throw:{error, {unknown_type_var, BadVar}} ->
-                            {error, {unknown_type_var, module_name(Env), Line, BadVar}}
-                    end; 
+                    {_, ArgCons} = inst_constructor_arg(TS, Vars2, Types, Env3),
+                    case unify(TypE, ArgCons, Env3, Line) of
+                        ok               -> {unwrap_cell(ArgCons), NextVar};
+                        {error, _} = Err -> Err
+                    end;
                 _ -> {TypE, NextVar}
              end;
         _ ->
@@ -5068,7 +5067,7 @@ types_in_types_test_() ->
 
               [M1, M2] = make_modules([AstCode, FormatterCode]),
               ?assertMatch(
-                 {error, {bad_constructor, _, "Symbol"}},
+                 {error, {bad_constructor, formatter, 11, "Symbol"}},
                  type_modules([M1, M2]))
       end
     , fun() ->
@@ -5409,7 +5408,7 @@ ensure_private_types_cant_import_test_() ->
                   "let use_a x = A x",
 
               Mods = make_modules([Exported, UsesB]),
-              ?assertMatch({error, {bad_constructor, _, "A"}},
+              ?assertMatch({error, {bad_constructor, uses_b, 3, "A"}},
                            type_modules(Mods))
       end
 
@@ -5423,7 +5422,7 @@ ensure_private_types_cant_import_test_() ->
                    "let f x = private_type.A x",
 
                Mods = make_modules([PrivateType, UsesA]),
-               ?assertMatch({error, {bad_constructor, _, "A"}},
+               ?assertMatch({error, {bad_constructor, uses_a, 2, "A"}},
                             type_modules(Mods))
        end
     ].
@@ -5760,7 +5759,8 @@ missing_type_var_in_signature_test() ->
       "val missingTypeVar : fn 'a -> ('a, 'a)\n"
       "let missingTypeVar x = (x, x)\n"
       "let main () = missingTypeVar 10",
-    ?assertMatch({error,{unknown_type_var,sig,3,"a"}},
+    %% TODO:  this nested error is wrong.  Should be an exception, not value.
+    ?assertMatch({error, {error, {unknown_type_var, sig, 3, "a"}}},
                  module_typ_and_parse(Code)).  
 
 nested_adt_test() ->
@@ -6055,7 +6055,7 @@ type_specs_and_vars_test_() ->
                   "  | None -> None \n"
                   "  | Some value -> value",
               ?assertMatch(
-                 {error, {bad_constructor, 5, "None"}},
+                 {error, {bad_constructor, m, 5, "None"}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
