@@ -310,11 +310,19 @@ type -> type_declare poly_type_decl assign type_members :
   '$2'#alpaca_type{members='$4'}.
 type -> type_declare symbol assign type_members :
   {L, N} = symbol_line_name('$2'),
-  #alpaca_type{
-     line=L,
-     name={type_name, L, N},
-     vars=[],
-     members='$4'}.
+  %% Breaking this out to reduce repetition:
+  MakeType = fun() ->
+		    #alpaca_type{
+		       line=L,
+		       name={type_name, L, N},
+		       vars=[],
+		       members='$4'}
+	    end,
+  case '$4' of
+      [#alpaca_constructor{}] -> MakeType();
+      [M] -> #alpaca_type_alias{line=L, name={type_name, L, N}, target=M};
+      _   -> MakeType()
+  end.
 
 poly_type_decl -> symbol type_vars :
   {L, N} = symbol_line_name('$1'),

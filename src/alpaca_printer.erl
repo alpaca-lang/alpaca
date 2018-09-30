@@ -189,7 +189,10 @@ format_type_def(#alpaca_type{vars=Vars, name={_, _, Name}, members=Members}) ->
                 format_type_arg(Other)
         end,
         Members))),
-    <<"type ", Name/binary, TypeVars/binary, " = ", MemberRepr/binary>>.
+    <<"type ", Name/binary, TypeVars/binary, " = ", MemberRepr/binary>>;
+format_type_def(#alpaca_type_alias{name={_, _, Name}, target=T}) ->
+    TargetRepr = format_type_arg(T),
+    <<"type ", Name/binary, " = ", TargetRepr/binary>>.
 
 format_module(#alpaca_module{functions=Funs,
                              name=Name,
@@ -222,6 +225,8 @@ format_module(#alpaca_module{functions=Funs,
 
     {PublicTypes, PrivateTypes} = lists:partition(
         fun(#alpaca_type{name={_, _, TName}}) ->
+                lists:member(TName, TypeExports);
+           (#alpaca_type_alias{name={_, _, TName}}) ->
                 lists:member(TName, TypeExports)
         end,
         ModTypes),
@@ -368,7 +373,7 @@ format_module_test() ->
           "---------------------\n\n"
           "val hello : string\n\n"
           "val add : fn int int -> int\n\n"
-          "val pair : fn int -> my_tuple\n\n"
+          "val pair : fn int -> (int, int)\n\n"
           "val identity 'a : fn 'a -> 'a\n"
         >>,
 

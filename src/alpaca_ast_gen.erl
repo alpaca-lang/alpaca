@@ -151,7 +151,10 @@ parse_module([], #alpaca_module{name=no_module}=M) ->
     parse_error(M, 1, no_module);
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
-    TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
+    F = fun(#alpaca_type{}=T) -> T#alpaca_type{module=N};
+           (#alpaca_type_alias{}=T) -> T#alpaca_type_alias{module=N}
+        end,
+    TypesWithModule = lists:map(F, Ts),
     M#alpaca_module{functions=OrderedFuns, types = TypesWithModule};
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
@@ -430,6 +433,8 @@ update_memo(#alpaca_module{functions=Funs}=M, #alpaca_binding{} = Def) ->
     M#alpaca_module{functions=[Def|Funs]};
 update_memo(#alpaca_module{types=Ts}=M, #alpaca_type{}=T) ->
     M#alpaca_module{types=[T|Ts]};
+update_memo(#alpaca_module{types=Ts}=M, #alpaca_type_alias{}=Alias) ->
+    M#alpaca_module{types=[Alias|Ts]};
 update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
     M#alpaca_module{tests=[T|Tests]};
 update_memo(M, #alpaca_comment{}) ->
@@ -2044,24 +2049,22 @@ type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
 
 
-ambiguous_type_expressions_test() ->
-    ?assertMatch({ok, #alpaca_type{
-                         name={type_name,1,<<"my_map">>},
-                         vars=[],
-                         members=[{t_map,
+ambiguous_type_expressions_test_() ->
+    [?_assertMatch({ok, #alpaca_type_alias{
+                           name={type_name,1,<<"my_map">>},
+                           target={t_map,
                                    #alpaca_type{
                                       name={type_name,1,<<"foo">>},
                                       vars=[],
                                       members=[]},
-                                   t_atom}]}},
-                 test_parse("type my_map = map foo atom")),
-    ?assertMatch({error, _}, test_parse("type my_map = map foo bar atom")),
-    ?assertMatch({error, _}, test_parse("type my_list = list foo atom")),
-    ?assertMatch({error, _}, test_parse("type my_pid = pid foo atom")),
-    ?assertMatch({ok, #alpaca_type{
-                         name={type_name,1,<<"my_type">>},
-                         vars=[],
-                         members=[#alpaca_type{
+                                   t_atom}}},
+                   test_parse("type my_map = map foo atom")),
+     ?_assertMatch({error, _}, test_parse("type my_map = map foo bar atom")),
+     ?_assertMatch({error, _}, test_parse("type my_list = list foo atom")),
+     ?_assertMatch({error, _}, test_parse("type my_pid = pid foo atom")),
+     ?_assertMatch({ok, #alpaca_type_alias{
+                           name={type_name,1,<<"my_type">>},
+                           target=#alpaca_type{
                                      name={type_name,1,<<"foo">>},
                                      vars=[{_, #alpaca_type{
                                                   name={type_name, _, <<"bar">>}}},
@@ -2074,19 +2077,18 @@ ambiguous_type_expressions_test() ->
                                               #alpaca_type{
                                                  name={type_name, 1, <<"baz">>},
                                                  vars=[],
-                                                 members=[]}]}]}},
-                 test_parse("type my_type = foo bar baz")),
-    ?assertMatch({ok, #alpaca_type{
-                         name={type_name, 1, <<"my_type">>},
-                         vars=[],
-                         members=[#alpaca_type{
+                                                 members=[]}]}}},
+                   test_parse("type my_type = foo bar baz")),
+     ?_assertMatch({ok, #alpaca_type_alias{
+                           name={type_name, 1, <<"my_type">>},
+                           target=#alpaca_type{
                                      name={type_name, 1, <<"foo">>},
                                      vars=[{_,
                                             #alpaca_type{
                                                name={type_name, _, <<"bar">>},
                                                vars=[{_,
                                                       #alpaca_type{
-                                                        name={_, _, <<"baz">>}}}]}}],
+                                                         name={_, _, <<"baz">>}}}]}}],
                                      members=
                                          [#alpaca_type{
                                              name={type_name, 1, <<"bar">>},
@@ -2095,8 +2097,9 @@ ambiguous_type_expressions_test() ->
                                                  [#alpaca_type{
                                                      name={type_name, 1, <<"baz">>},
                                                      vars=[],
-                                                     members=[]}]}]}]}},
-                 test_parse("type my_type = foo (bar baz)")).
+                                                     members=[]}]}]}}},
+                   test_parse("type my_type = foo (bar baz)"))
+    ].
 
 
 
