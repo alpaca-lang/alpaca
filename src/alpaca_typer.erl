@@ -241,7 +241,8 @@ constructors(Types) ->
         end,
     TypesFolder = fun(#alpaca_type{members=Ms}=Typ, Acc) ->
                           {_, Cs} = lists:foldl(MemberFolder, {Typ, []}, Ms),
-                          [Cs|Acc]
+                          [Cs|Acc];
+                     (#alpaca_type_alias{}, Acc) -> Acc
                   end,
     lists:flatten(lists:foldl(TypesFolder, [], Types)).
 
@@ -752,7 +753,11 @@ unify_adt_and_poly(C1, C2, #adt{members=Ms}=A, {cell, _}=ToCheck, Env, L) ->
     %% polymorphic type:
     F = fun(_, ok) -> ok;
            (T, Res) ->
-                case unify(ToCheck, T, Env, L) of
+                %% Unifying an ADT with something else always places it in the
+                %% first argument's position (`A` above) but calls to unify
+                %% must always treat the first argument as the lower bound (the
+                %% constraint):
+                case unify(T, ToCheck, Env, L) of
                     ok ->
                         set_cell(C2, {link, C1}),
                         ok;
@@ -986,7 +991,7 @@ flatten_record(#t_record{}=R) ->
 -spec inst_type(alpaca_type(), EnvIn::env()) ->
                        {ok, env(), typ(), list(typ())} |
                        {error, {bad_variable, integer(), alpaca_type_var()}}.
-inst_type(Typ, EnvIn) ->
+inst_type(#alpaca_type{}=Typ, EnvIn) ->
     #alpaca_type{name={type_name, _, N}, module=Mod, vars=Vs, members=Ms} = Typ,
     {Vars, Env} = inst_type_vars(Vs, [], EnvIn),
     F = fun(#alpaca_type{name={_, _, NN}, module=M}, undefined) when NN =:= N ->
@@ -996,7 +1001,10 @@ inst_type(Typ, EnvIn) ->
         end,
     Mod2 = lists:foldl(F, Mod, Env#env.current_types),
     ParentADT = #adt{name=N, module=Mod2, vars=lists:reverse(Vars)},
-    inst_type_members(ParentADT, Ms, Env, []).
+    inst_type_members(ParentADT, Ms, Env, []);
+inst_type(#alpaca_type_alias{target=T}, EnvIn) ->
+    {ok, EnvOut, _, [M]} = inst_type_members(#adt{}, [T], EnvIn, []),
+    {ok, EnvOut, M, [M]}.
 
 inst_type_vars([], DoneVars, Env) ->
     {DoneVars, Env};
@@ -1180,7 +1188,30 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
                      OtherTs = lists:flatten(lists:map(ExtractTypes, Env#env.modules)),
                      Types = EnvIn#env.current_types ++ OtherTs,
                      {Env2, InstArg} = inst_constructor_arg(Arg, Vs, Types, Env),
-                     Arrow = {type_arrow, InstArg, ADT},
+
+                     %% Bit of a hack in order to handle aliases here.  If there
+                     %% is a single member that is _not_ directly an ADT (e.g.
+                     %% if we have a type that exists to bind a concrete type
+                     %% to another one's variables) or a constructor, return
+                     %% it directly.  Removing the first case with #adt{} means
+                     %% that error messages report the wrong type name.
+                     %%
+                     %% Permitting aliases to use type variables would partly
+                     %% address this hack.
+                     InstArg2 = case get_cell(InstArg) of
+                                    #adt{members=[PossibleAlias]} ->
+                                        case get_cell(PossibleAlias) of
+                                            #adt{} ->
+                                                InstArg;
+                                            {t_adt_cons, _} ->
+                                                InstArg;
+                                            _ ->
+                                                PossibleAlias
+                                        end;
+                                    _ ->
+                                        InstArg
+                                end,
+                     Arrow = {type_arrow, InstArg2, ADT},
                      {Env2, Arrow}
              end,
 
@@ -1243,6 +1274,8 @@ inst_type_arrow(EnvIn, #type_constructor{}=TC) ->
 
 inst_constructor_arg(none, _, _, Env) ->
     {Env, undefined};
+inst_constructor_arg(t_rec, _, _, Env) ->
+    {Env, new_cell(t_rec)};
 inst_constructor_arg(AtomType, _, _, Env) when is_atom(AtomType) ->
     {Env, AtomType};
 inst_constructor_arg({type_var, _, N}=TV, Vs, _, Env) ->
@@ -1285,57 +1318,60 @@ inst_constructor_arg({t_pid, MsgType}, Vs, Types, Env) ->
     {Env2, new_cell({t_pid, PidElem})};
 inst_constructor_arg(#alpaca_type{name={type_name, _, N}, vars=Vars, members=M1},
                      Vs, Types, Env) ->
-    #alpaca_type{vars = V2, members=M2, module=Mod} = find_type(N, Types),
+    case find_type(N, Types) of
+        #alpaca_type_alias{target=Target} ->
+            inst_constructor_arg(Target, Vs, Types, Env);
+        #alpaca_type{vars = V2, members=M2, module=Mod} ->
 
-    %% when a polymorphic ADT occurs in another type's definition it might
-    %% have concrete types assigned rather than variables and thus we want
-    %% to find the original/biggest list of vars for the type.  E.g.
-    %%
-    %% type option 'a = Some 'a | None
-    %% type either_int 'a = Left 'a | Right option int
-    %%
-    VarsToUse = case length(V2) > length(Vars) of
-                    true -> V2;
-                    false -> Vars
-                end,
-
-    %% We use this within `F` to fall back to other type variables that may have
-    %% been bound prior to this current type in a signature.  Strictly speaking
-    %% we should remove items from `Vs` that already exist in `VarsToUse` but
-    %% that could get pretty expensive.  I'm deliberately taking the lazy way
-    %% out and just avoiding a repeated append operation the the lists:foldl
-    %% call further below.
-    VarsWithDupes = VarsToUse ++ Vs,
-
-    F = fun({type_var, _, VN}) ->
-                {VN, proplists:get_value(VN, Vs)};
-           ({{type_var, _, _}=VN, CT}=_ConcreteType) ->
-                %% the "concrete" type might actually be an as-yet
-                %% uninstantiated type which will lead to unification
-                %% failures later.  Instead of assuming it's one of our base
-                %% types we instantiate it like anything else.  Here I haven't
-                %% worried about the returned environment as I think we're
-                %% safely covered by using the already known variables and
-                %% existing environment:
-                {_, InstCT} = inst_constructor_arg(CT, VarsWithDupes, Types, Env),
-                {VN, InstCT}
-        end,
-    ADT_Vars = lists:map(F, VarsToUse),
-    Vs2 = replace_vars(M1, V2, Vs),
-    {Env2, Members} = lists:foldl(
-                        fun(M, {E, Memo}) ->
-                                {E2, MM} = inst_constructor_arg(M, Vs2, Types, E),
-                                {E2, [MM|Memo]}
+            %% when a polymorphic ADT occurs in another type's definition it might
+            %% have concrete types assigned rather than variables and thus we want
+            %% to find the original/biggest list of vars for the type.  E.g.
+            %%
+            %% type option 'a = Some 'a | None
+            %% type either_int 'a = Left 'a | Right option int
+            %%
+            VarsToUse = case length(V2) > length(Vars) of
+                            true -> V2;
+                            false -> Vars
                         end,
-                        {Env, []},
-                        M2),
 
-    ADT = #adt{
-             name=N,
-             vars=ADT_Vars,
-             members=lists:reverse(Members),
-             module=Mod},
-    {Env2, new_cell(ADT)};
+            %% We use this within `F` to fall back to other type variables that may have
+            %% been bound prior to this current type in a signature.  Strictly speaking
+            %% we should remove items from `Vs` that already exist in `VarsToUse` but
+            %% that could get pretty expensive.  I'm deliberately taking the lazy way
+            %% out and just avoiding a repeated append operation the the lists:foldl
+            %% call further below.
+            VarsWithDupes = VarsToUse ++ Vs,
+
+            F = fun({type_var, _, VN}) ->
+                        {VN, proplists:get_value(VN, Vs)};
+                   ({{type_var, _, _}=VN, CT}=_ConcreteType) ->
+                        %% the "concrete" type might actually be an as-yet
+                        %% uninstantiated type which will lead to unification
+                        %% failures later.  Instead of assuming it's one of our base
+                        %% types we instantiate it like anything else.  Here I haven't
+                        %% worried about the returned environment as I think we're
+                        %% safely covered by using the already known variables and
+                        %% existing environment:
+                        {_, InstCT} = inst_constructor_arg(CT, VarsWithDupes, Types, Env),
+                        {VN, InstCT}
+                end,
+            ADT_Vars = lists:map(F, VarsToUse),
+            Vs2 = replace_vars(M1, V2, Vs),
+            {Env2, Members} = lists:foldl(
+                                fun(M, {E, Memo}) ->
+                                        {E2, MM} = inst_constructor_arg(M, Vs2, Types, E),
+                                        {E2, [MM|Memo]}
+                                end,
+                                {Env, []},
+                                M2),
+
+            ADT = #adt{name=N,
+                       vars=ADT_Vars,
+                       members=lists:reverse(Members),
+                       module=Mod},
+            {Env2, new_cell(ADT)}
+    end;
 
 inst_constructor_arg({t_arrow, ArgTypes, RetType}, Vs, Types, Env) ->
     F = fun(A, {E, Memo}) ->
@@ -1351,6 +1387,7 @@ inst_constructor_arg(Arg, _, _, Env) ->
 
 find_type(Name, []) -> throw({error, {unknown_type, Name}});
 find_type(Name, [#alpaca_type{name={type_name, _, Name}}=T|_]) -> T;
+find_type(Name, [#alpaca_type_alias{name={type_name, _, Name}}=T|_]) -> T;
 find_type(Name, [_|Types]) -> find_type(Name, Types).
 
 %% When we use a type specified elsewhere within another type, like mixing
@@ -1611,8 +1648,12 @@ type_module(#alpaca_module{functions=Fs,
     TypFolder = fun(_, {error, _}=Err) ->
                         Err;
                    (T, {Typs, E}) ->
+                        TN = case T of
+                                #alpaca_type{name={_, _, N}} -> N;
+                                #alpaca_type_alias{name={_, _, N}} -> N
+                            end,
                         case inst_type(T, E) of
-                            {ok, E2, ADT, _} -> {[unwrap(ADT)|Typs], E2};
+                            {ok, E2, ADT, _} -> {[{TN, unwrap(ADT)}|Typs], E2};
                             {error, _}=Err   -> Err
                         end
                 end,
@@ -1624,9 +1665,8 @@ type_module(#alpaca_module{functions=Fs,
                 {error, _}=Err ->
                     Err;
                 {ADTs, Env2} ->
-                    TypBindings = [{N, A}||#adt{name=N}=A <- ADTs],
                     Env3 = Env2#env{
-                             type_bindings=TypBindings,
+                             type_bindings=ADTs,
                              current_module=M,
                              current_types=AllTypes,
                              type_constructors=constructors(AllTypes),
@@ -1677,7 +1717,8 @@ type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
 validate_types(#alpaca_module{name=Mod, types=Types, type_imports=Imports}, Mods) ->
     TypeNames =
         [N || #alpaca_type{name={_, _, N}} <- Types] ++
-        [N || #alpaca_type_import{type=N} <- Imports],
+        [N || #alpaca_type_import{type=N} <- Imports] ++
+        [N || #alpaca_type_alias{name={_, _, N}} <- Types],
     validate_types(Mod, TypeNames, Mods, Types).
 
 validate_types(_ModName, _TypeNames, _Modules, []) ->
@@ -1702,21 +1743,31 @@ validate_types(MN, Ts, Mods, [#alpaca_type{}=T|Rem]) ->
         [] -> 
             throw({bad_module, MN, L, TargetMod});
         [#alpaca_module{types=Xs}] ->
-            case [X || #alpaca_type{name={_, _, Y}}=X <- Xs, Y =:= N] of
-                [] -> 
+            Matches =
+                [X || #alpaca_type{name={_, _, Y}}=X <- Xs, Y =:= N] ++
+                [X || #alpaca_type_alias{name={_, _, Y}}=X <- Xs, Y =:= N],
+            case Matches of
+                [] ->
                     throw({unknown_type, MN, L, N});
                 [_] ->
                     [] = validate_types(MN, Ts, Mods, Vs),
                     validate_types(MN, Ts, Mods, Rem)
             end
     end;
- validate_types(MN, TNs, Mods, [{{type_var, _, _}, Typ}|T]) ->
+validate_types(
+  ModName,
+  TypeNames,
+  Modules,
+  [#alpaca_type_alias{module=MN, target=Target}|T]) when MN =:= undefind; MN =:= ModName ->
+    validate_types(ModName, TypeNames, Modules, [Target]),
+    validate_types(ModName, TypeNames, Modules, T);
+validate_types(MN, TNs, Mods, [{{type_var, _, _}, Typ}|T]) ->
      validate_types(MN, TNs, Mods, [Typ]),
      validate_types(MN, TNs, Mods, T);
- validate_types(MN, TNs, Mods, [#alpaca_constructor{arg=A}|T]) ->
+validate_types(MN, TNs, Mods, [#alpaca_constructor{arg=A}|T]) ->
     validate_types(MN, TNs, Mods, [A]),
     validate_types(MN, TNs, Mods, T);
- validate_types(ModName, TypeNames, Mods, [#alpaca_type_tuple{members=Ms}|T]) ->
+validate_types(ModName, TypeNames, Mods, [#alpaca_type_tuple{members=Ms}|T]) ->
     validate_types(ModName, TypeNames, Mods, Ms),
     validate_types(ModName, TypeNames, Mods, T);
 validate_types(MN, Ts, Mods, [#t_record{members=Ms}|T]) ->
@@ -1949,10 +2000,10 @@ typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists, line=
                            OK -> OK
                        end,
     {EmptyRecType, NV2} = typ_of(update_counter(NV, Env), Lvl, #alpaca_record{line=L}),
+    #t_record{row_var=RV} = get_cell(EmptyRecType),
 
     Env2 = update_counter(NV2, Env),
     ok = unify(EmptyRecType, ExistsType, Env2, Lvl),
-    #t_record{row_var=RV} = get_cell(EmptyRecType),
     AddsRec = #alpaca_record{members=Adds, line=L},
     {AddsRecCell, NV3} = typ_of(Env2, Lvl, AddsRec),
 
@@ -2386,7 +2437,7 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
             end
     end;
 
-%% A function binding inside a function:
+%% A function binding, possibly inside a function if E2 /= `undefined`:
 typ_of(Env, Lvl, #alpaca_binding{
                     name={'Symbol', _}=Sym,
                     bound_expr=#alpaca_fun{}=E,
@@ -3734,13 +3785,7 @@ type_constructor_with_aliased_arrow_arg_test() ->
     Valid = Base ++ "let f (W b) = b 1 1\n\n",
     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
-    ?assertMatch({error, {cannot_unify,constructor,7,
-                         #adt{name = <<"intbinop">>,
-                              vars=[],
-                              members=[#adt{name = <<"binop">>,
-                                            vars=[{_, t_int}],
-                                            members=[{t_arrow,[t_int,t_int],t_int}]}]},
-                          {t_arrow,[t_int,t_atom],t_rec}}},
+    ?assertMatch({error, {cannot_unify,constructor, 7, t_int, t_atom}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
@@ -5940,6 +5985,36 @@ record_unification_test_() ->
                                                     #adt{name = <<"s">>}}}]}},
                            module_typ_and_parse(Code))
       end
+    , fun() ->
+              %% Interesting bug turned up while fixing issue #234.  When the
+              %% type and spec for `foo` below are commented out, it stops
+              %% failing.  Somehow using the type in the spec *incorrectly*
+              %% widens the type passed by `use_foo`!
+              %%
+              %% It turns out that unifying an ADT from the current scope would
+              %% place the constraining record in the *target* position, not
+              %% that of the lower bound.
+              Code1 =
+                  "module m \n"
+                  "-- type my_rec = {x: int, y: int} \n"
+                  "-- val foo: fn my_rec -> (int, int) \n"
+                  "let foo {x=x, y=y} = (x, y) \n"
+                  "let use_foo () = foo {x=1}",
+              ?assertMatch(
+                 {error, {missing_record_field, m, 5, y}},
+                 module_typ_and_parse(Code1)),
+
+              %% Now uncommented:
+              Code2 =
+                  "module m \n"
+                  "type my_rec = {x: int, y: int} \n"
+                  "val foo: fn my_rec -> (int, int) \n"
+                  "let foo {x=x, y=y} = (x, y) \n"
+                  "let use_foo () = foo {x=1}",
+              ?assertMatch(
+                 {error, {missing_record_field, m, 5, y}},
+                 module_typ_and_parse(Code2))
+      end
 ].
 
 %% Initial test case courtesy of https://github.com/lpil in issue 223.
@@ -6079,6 +6154,133 @@ type_specs_and_vars_test_() ->
                                             vars=[{_, A}]}}}]}},
                  module_typ_and_parse(Code))
       end
+    , fun() ->
+              Code =
+                  "module x \n"
+                  "type someRec = {x: int, y: string} \n"
+                  "val getX: fn someRec -> int \n"
+                  "let getX {x=x} = x \n"
+                  "let shouldFailToGetX () = getX {x=1}",
+              ?assertMatch(
+                 {error, {missing_record_field, x, 5, y}},
+                 module_typ_and_parse(Code))
+      end
+    ].
+
+extend_records_in_adt_test_() ->
+    [fun() ->
+             Code =
+                 "module a \n"
+                 "type a_record = {x: int, y: string} \n"
+                 "type use_a_record = U a_record \n"
+                 "let replaceY U r y = U {y=y | r}",
+             ?assertMatch(
+                {ok, #alpaca_module{}},
+                module_typ_and_parse(Code))
+     end
+    , fun() ->
+              Code =
+                  "module aa \n"
+                  "type a_record = {x: int, y: bool} \n"
+                  "type t = T a_record \n"
+                  "type u = U t \n"
+                  "let replace_y U (T r) y = {y=y | r}",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow,
+                                             [#adt{name = <<"u">>}, {unbound, A, _}],
+                                             #t_record{
+                                               members=[#t_record_member{
+                                                           name=x,
+                                                           type=t_int},
+                                                        #t_record_member{
+                                                           name=y,
+                                                           type={unbound, A, _}
+                                                          }]}}
+                                      }]}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module aaa \n"
+                  "type a_record 'x = {x: 'x, y: bool} \n"
+                  "type bind_x = a_record int \n"
+                  "type uses_bound_x = U bind_x \n"
+                  "let replace_x U rec = U {x=2 | rec}",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow,
+                                             _,
+                                             #adt{name = <<"uses_bound_x">>}}}]}},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module b \n"
+                  "type a_record = {x: int, y: string} \n"
+                  "val with_spec: fn a_record string -> a_record \n"
+                  "let with_spec r y = {y=y | r}",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                       type={t_arrow,
+                                             [#t_record{
+                                                 members=[#t_record_member{name = x,
+                                                                           type = t_int},
+                                                          #t_record_member{name = y,
+                                                                           type = t_string}]},
+                                              t_string],
+                                             #t_record{
+                                               members=[#t_record_member{name = x,
+                                                                         type = t_int},
+                                                        #t_record_member{name = y,
+                                                                         type = t_string}]}
+                                            }}]}},
+                 module_typ_and_parse(Code))
+
+      end
+    , fun() ->
+              Code =
+                  "module c \n"
+                  "type c = C {x: int, y: string} \n"
+                  "let f C c = c",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                      type={t_arrow, _,
+                                            #t_record{
+                                               members=[#t_record_member{
+                                                           name=x,
+                                                           type=t_int},
+                                                        #t_record_member{
+                                                           name=y,
+                                                           type=t_string}]}}}]
+                        }},
+                 module_typ_and_parse(Code))
+      end
+    , fun() ->
+              Code =
+                  "module c \n"
+                  "type c_rec = {x: int, y: string} \n"
+                  "type c = C c_rec \n"
+                  "let f C c = c",
+              ?assertMatch(
+                 {ok, #alpaca_module{
+                         functions=[#alpaca_binding{
+                                      type={t_arrow, _,
+                                            #t_record{
+                                               members=[#t_record_member{
+                                                           name=x,
+                                                           type=t_int},
+                                                        #t_record_member{
+                                                           name=y,
+                                                           type=t_string}]}}}]
+                        }},
+                 module_typ_and_parse(Code))
+     end
+
     ].
 
 make_modules(Sources) ->

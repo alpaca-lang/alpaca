@@ -707,6 +707,11 @@ list_item_expression_test() ->
     ?assertMatch(Matrix, M:getMatrix({})),
     pd(M).
 
+future_ast_test() ->
+    Files = ["test_files/future_ast.alp"],
+    [M] = compile_and_load(Files, [test]),
+    pd(M).
+
 destructuring_test() ->
     Files = ["test_files/destructuring.alp"],
     [M] = compile_and_load(Files, [test]),

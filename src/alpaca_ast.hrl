@@ -246,6 +246,14 @@
          }).
 -type alpaca_type() :: #alpaca_type{}.
 
+-record(alpaca_type_alias, {
+          line=0 :: integer(),
+          module=undefined :: atom(),
+          name={type_name, -1, ""} :: alpaca_type_name(),
+          target=undefined :: alpaca_types()
+         }).
+-type alpaca_type_alias() :: #alpaca_type{}.
+
 -record(alpaca_type_apply, {
           type=undefined :: typ(),
           name=#type_constructor{} :: alpaca_constructor_name(),

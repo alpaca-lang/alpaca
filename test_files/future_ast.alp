@@ -1,0 +1,83 @@
+{-
+  Possible future Alpaca-native AST.  Mostly using this for testing right now as
+  trying things out has turned up a few bugs (e.g. record alias `binding` and
+  issue #234).
+ -}
+module ast
+
+export_type binding, module_ast, expr, symbol, opt
+
+export line
+
+export mod
+export int, int_val
+export float, float_val
+export string
+export bind, bind_body, bind_expr
+export symbol, symbol_name, symbol_rename
+
+type opt 'a = Some 'a | None
+
+type typ = TInt
+         | TFloat
+         | TString
+         | TArrow (list typ, typ)
+
+type binding = { line: int
+               , name: expr
+               , typ: opt typ
+               , bound: expr
+               , body: expr
+               }
+           
+{- These are the top-level AST nodes that modules are built from.
+ -}
+type module_ast = Module {line: int, name: atom}
+                | ModuleBinding binding
+                  
+let mod line name = Module {line=line, name=name}
+
+{- Expressions are only permitted inside of top-level bindings.
+ -}
+type expr = Int {line: int, value: int}
+          | Float {line: int, value: float}
+          | String {line: int, value: string}
+          | Symbol {line: int, name: string, original: opt string}
+          | Binding binding
+
+let line Float {line=l} = l
+let line Int {line=l} = l
+let line Symbol {line=l} = l
+let line Binding {line=l} = l
+let line String {line=l} = l
+
+
+let int line v = Int {line=line, value=v}
+
+let int_val Int {line=_, value=v} = v
+
+let float line v = Float {line=line, value=v}
+
+let float_val Float {line=_, value=v} = v
+
+let string line value = String {line=line, value=value}
+
+let bind name line bound body =
+  Binding { line=line
+          , name=name
+          , bound=bound
+          , body=body
+          , typ=None
+          }
+
+let bind_body (Binding b_rec) body = Binding {body=body | b_rec}
+
+let bind_expr (Binding b_rec) expr = Binding {bound=expr | b_rec}
+
+let symbol line name = Symbol {line=line, name=name, original=None}
+
+let symbol_name Symbol {name=n} = n
+
+let symbol_rename (Symbol {line=l, name=n}) new_name =
+  let orig = Some n in
+  Symbol {line=l, name=new_name, original=orig}

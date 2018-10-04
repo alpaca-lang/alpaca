@@ -551,10 +551,6 @@ definite direction yet.
   hard based on what can be seen in the [LFE](https://github.com/lfe)
   code base.
 - support for typing anything other than a raw source file.
-- type annotations/restrictions/ascriptions.  Toying with the idea
-  of putting these in comments so that if the documentation is wrong
-  it yields a compiler error.
-- anonymous functions
 - side effects, like using `;` in OCaml for printing in a function
   with a non-unit result.
 
@@ -562,8 +558,6 @@ definite direction yet.
 This has been a process of learning-while-doing so there are a number of issues with
 the code, including but not limited to:
 
-- reference cells in the typer are processes that are never garbage
-  collected and it's pretty trigger-happy about creating them.
 - there's a lot of cruft around error handling that should all be
   refactored into some sort of basic monad-like thing.  This is
   extremely evident in `alpaca_ast_gen.erl` and `alpaca_typer.erl`.  Frankly
