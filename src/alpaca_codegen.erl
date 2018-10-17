@@ -379,7 +379,8 @@ gen_expr(#env{module_funs=Funs}=Env, {'Symbol', _}=Sym) ->
             %% Do we have a function with the right arity?
             {Env, cerl:ann_c_fname(
                     line_anno(Env, L),
-                    binary_to_atom(V, utf8), Arity)};
+                    binary_to_atom(V, utf8),
+                    Arity)};
         undefined ->
             {Env, cerl:ann_c_var(line_anno(Env, L), binary_to_atom(V, utf8))}
     end;
@@ -538,7 +539,8 @@ gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, line=L, args=Args}) ->
                 [A] ->
                     {cerl:ann_c_fname(
                        line_anno(Env, NL),
-                       binary_to_atom(Name, utf8), A),
+                       binary_to_atom(Name, utf8),
+                       A),
                      false,
                      A};
                 _ ->
@@ -593,7 +595,7 @@ gen_expr(Env, #alpaca_apply{expr={{'Symbol', _}=Sym, Arity}, args=Args, line=L})
     N = alpaca_ast:symbol_name(Sym),
     NL = alpaca_ast:line(Sym),
     FName = cerl:ann_c_fname(
-              line_anno(Env, NL)<
+              line_anno(Env, NL),
               binary_to_atom(N, utf8),
               Arity),
     Apply = cerl:ann_c_apply(
