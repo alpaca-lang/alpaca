@@ -354,6 +354,7 @@ extract_type_name({type, Name, _, _}) -> Name.
 
 keywords() ->
     [<<"let">>,
+     <<"val">>,
      <<"in">>,
      <<"fn">>,
      <<"match">>,
