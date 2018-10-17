@@ -1,8 +1,9 @@
 language: erlang
 install: 'true'
 otp_release:
-- 20.0
-- 19.3
+  - 21.1
+  - 20.3
+  - 19.3
 env:
   global:
   - REBAR_VSN=3.4.3
