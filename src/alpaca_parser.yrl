@@ -523,22 +523,22 @@ unit -> '(' ')':
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
 tuple -> '(' tuple_list ')' :
-  #alpaca_tuple{arity=length('$2'), values='$2'}.
-
+  {_, L} = '$1',
+  #alpaca_tuple{line=L, arity=length('$2'), values='$2'}.
 
 infix -> term 'xor' term :
          L1 = term_line('$1'),
          FalseC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
+                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
                       result={boolean, L1, false}, line=L1},
          FalseC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, true}, {boolean, L1, true}]},
+                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, true}]},
                      result={boolean, L1, false}, line=L1},
          TrueC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, true}, {boolean, L1, false}]},
+                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, false}]},
                      result={boolean, L1, true}, line=L1},
          TrueC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{arity=2, values=[{boolean, L1, false}, {boolean, L1, true}]},
+                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, true}]},
                      result={boolean, L1, true}, line=L1},
          #alpaca_match{
             match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
@@ -701,10 +701,12 @@ binding -> let terms assign simple_expr in simple_expr :
     make_binding(make_define('$2', '$4', 'let'), '$6').
 
 ffi_call -> beam atom atom cons with match_clauses:
+  {_, L} = '$1',
   #alpaca_ffi{module='$2',
-            function_name='$3',
-            args='$4',
-            clauses='$6'}.
+	      function_name='$3',
+	      args='$4',
+	      clauses='$6',
+	      line=L}.
 
 module_def -> module symbol :
 {L, Name} = symbol_line_name('$2'),
@@ -952,7 +954,7 @@ is_literal({alpaca_type_apply, _, _, Expr}) ->
 is_literal({atom, _, _}) -> true;
 is_literal({boolean, _, _}) -> true;
 is_literal({chars, _, _}) -> true;
-is_literal({alpaca_tuple, _, _, Members}) ->
+is_literal(#alpaca_tuple{values=Members}) ->
     all_literals(Members);
 is_literal({unit, _}) ->
     true;
