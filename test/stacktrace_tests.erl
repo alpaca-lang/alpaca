@@ -108,9 +108,9 @@ undef_test() ->
 %% the caller can check correctness.
 run_for_trace(ModulesWithFilenames, Expr) ->
     Compile = fun({FN, ModName, ModCode}) ->
-		      {ok, Name, Bin} = parse_and_gen(ModCode, FN),
-		      {module, Name} = code:load_binary(ModName, FN, Bin),
-		      {Name, Bin}
+		      {ok, _, Bin} = parse_and_gen(ModCode, FN),
+		      {module, _} = code:load_binary(ModName, FN, Bin),
+		      {ModName, Bin}
 	      end,
     Ms = lists:map(Compile, ModulesWithFilenames),
     Ret = try Expr() of
