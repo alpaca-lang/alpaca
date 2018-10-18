@@ -305,8 +305,9 @@
 %%% ### Tuples
 
 -record(alpaca_tuple, {type=undefined :: typ(),
-                     arity=0 :: integer(),
-                     values=[] :: list(alpaca_expression())
+                       line=-1 :: integer(),
+                       arity=0 :: integer(),
+                       values=[] :: list(alpaca_expression())
                     }).
 -type alpaca_tuple() :: #alpaca_tuple{}.
 
@@ -368,11 +369,12 @@
 %%% A call to an Erlang function via the Foreign Function Interface.
 %%% Only the result of these calls is typed.
 -record(alpaca_ffi, {type=undefined :: typ(),
-                   module={atom, 0, ""} :: alpaca_atom(),
-                   function_name=undefined :: undefined|alpaca_atom(),
-                   args={nil, 0}  :: alpaca_list(),
-                   clauses=[] :: list(alpaca_clause())
-                  }).
+                     line=-1 :: integer(),
+                     module={atom, 0, ""} :: alpaca_atom(),
+                     function_name=undefined :: undefined|alpaca_atom(),
+                     args={nil, 0}  :: alpaca_list(),
+                     clauses=[] :: list(alpaca_clause())
+                    }).
 -type alpaca_ffi() :: #alpaca_ffi{}.
 
 %%% ### Processes

@@ -36,6 +36,7 @@
 %% occurrences in the same pattern there will be a compilation error from
 %% the 'cerl' module.
 -record(env, {
+          source_file :: string(),
           module_funs=[] :: list({string(), integer()}),
           prefixed_module=undefined :: atom(),
           wildcard_num=0 :: integer(),
@@ -47,9 +48,12 @@ name_and_arity(#alpaca_binding{name={'Symbol', _}=S, bound_expr=#alpaca_fun{arit
 name_and_arity(#alpaca_binding{name={'Symbol', _}=S}) ->
     {alpaca_ast:symbol_name(S), 0}.
 
-make_env(#alpaca_module{functions=Funs}=_Mod) ->
+make_env(#alpaca_module{filename=undefined, name=N}=M) ->
+    DefaultName = atom_to_list(N) ++ ".erl",
+    make_env(M#alpaca_module{filename=DefaultName});
+make_env(#alpaca_module{functions=Funs, filename=FN}=_Mod) ->
     TopLevelFuns = [name_and_arity(F) || F <- Funs],
-    #env{module_funs=TopLevelFuns, wildcard_num=0}.
+    #env{source_file=FN, module_funs=TopLevelFuns, wildcard_num=0}.
 
 prefix_modulename(Name) ->
     case Name of
@@ -224,25 +228,31 @@ gen_funs(Env, Funs, [#alpaca_binding{}=F|T]) ->
 gen_fun(Env,
         #alpaca_binding{
            name={'Symbol', _}=Sym,
+           line=L,
            bound_expr=#alpaca_fun{
                          versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}}) ->
     N = alpaca_ast:symbol_name(Sym),
-    FName = cerl:c_fname(binary_to_atom(N, utf8), 1),
-    A = [cerl:c_var('_unit')],
+    NL = alpaca_ast:line(Sym),
+    FName = cerl:ann_c_fname(line_anno(Env, NL), binary_to_atom(N, utf8), 1),
+    A = [cerl:ann_c_var(line_anno(Env, L), '_unit')],
     {_, B} = gen_expr(Env, Body),
-    {FName, cerl:c_fun(A, B)};
-gen_fun(Env, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=Bound}) ->
+    {FName, cerl:ann_c_fun(line_anno(Env, L), A, B)};
+gen_fun(Env, #alpaca_binding{name={'Symbol', _}=Sym, line=L, bound_expr=Bound}) ->
     N = alpaca_ast:symbol_name(Sym),
+    NL = alpaca_ast:line(Sym),
     case Bound of
         #alpaca_fun{versions=[#alpaca_fun_version{args=Args, body=Body}]}=Def ->
             case needs_pattern(Args) of
                 false ->
-                    FName = cerl:c_fname(binary_to_atom(N, utf8), length(Args)),
-                    A = [cerl:c_var(binary_to_atom(X, utf8)) ||
-                            {'Symbol', #{name := X}} <- Args
+                    FName = cerl:ann_c_fname(
+                              line_anno(Env, NL),
+                              binary_to_atom(N, utf8),
+                              length(Args)),
+                    A = [cerl:ann_c_var(line_anno(Env, VL), binary_to_atom(X, utf8)) ||
+                            {'Symbol', #{name := X, line := VL}} <- Args
                         ],
                     {_, B} = gen_expr(Env, Body),
-                    {FName, cerl:c_fun(A, B)};
+                    {FName, cerl:ann_c_fun(line_anno(Env, L), A, B)};
                 true ->
                     %% our single version has more than symbols and unit:
                     gen_fun_patterns(Env, N, Def)
@@ -251,9 +261,9 @@ gen_fun(Env, #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=Bound}) ->
             %% more than one version:
             gen_fun_patterns(Env, N, Def);
         NotFunction ->
-            FName = cerl:c_fname(binary_to_atom(N, utf8), 0),
+            FName = cerl:ann_c_fname(line_anno(Env, NL), binary_to_atom(N, utf8), 0),
             {_, B} = gen_expr(Env, NotFunction),
-            {FName, cerl:c_fun([], B)}
+            {FName, cerl:ann_c_fun(line_anno(Env, L), [], B)}
     end.
 
 needs_pattern(Args) ->
@@ -265,20 +275,23 @@ needs_pattern(Args) ->
         _  -> true
     end.
 
-gen_fun_patterns(Env, Name, #alpaca_fun{arity=A, versions=Vs}) ->
+gen_fun_patterns(Env, Name, #alpaca_fun{line=L, arity=A, versions=Vs}) ->
     %% We need to manufacture variable names that we'll use in the
     %% nested pattern matches:
     VarNames = ["pat_var_" ++ integer_to_list(X) || X <- lists:seq(1, A)],
     %% Nest matches:
-    FName = cerl:c_fname(binary_to_atom(Name, utf8), A),
-    Args = [cerl:c_var(utf8_bin(X)) || X <- VarNames],
+    FName = cerl:ann_c_fname(line_anno(Env, L), binary_to_atom(Name, utf8), A),
+    Args = [cerl:ann_c_var(line_anno(Env, L), utf8_bin(X)) || X <- VarNames],
     [_TopVar|_] = VarNames,
-    B = cerl:c_case(
-          cerl:c_values(Args),
+    %% TODO:  add bottom catch-all case for match failure:
+    B = cerl:ann_c_case(
+          line_anno(Env, L),
+          cerl:ann_c_values(line_anno(Env, L), Args),
           [gen_fun_version(Env, Version) || Version <- Vs]),
-    {FName, cerl:c_fun(Args, B)}.
+    Fun = cerl:ann_c_fun(line_anno(Env, L), Args, B),
+    {FName, Fun}.
 
-gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
+gen_fun_version(Env, #alpaca_fun_version{line=L, args=Args, guards=Gs, body=Body}) ->
     F = fun(Expr, {Exprs, FoldEnv}) ->
                 {FoldEnv2, GenExpr} = gen_expr(FoldEnv, Expr),
                 {[GenExpr|Exprs], FoldEnv2}
@@ -288,8 +301,8 @@ gen_fun_version(Env, #alpaca_fun_version{args=Args, guards=Gs, body=Body}) ->
     {Env3, BodyExp} = gen_expr(Env2, Body),
 
     case gen_guards(Env3, Gs) of
-        [] ->     cerl:c_clause(Patt, BodyExp);
-        _Guards -> cerl:c_clause(Patt, gen_guards(Env, Gs), BodyExp)
+        [] ->      cerl:ann_c_clause(line_anno(Env, L), Patt, BodyExp);
+        _Guards -> cerl:ann_c_clause(line_anno(Env, L), Patt, gen_guards(Env, Gs), BodyExp)
     end.
 
 gen_tests(Env, Tests) ->
@@ -300,12 +313,11 @@ gen_tests(#env{prefixed_module=PM}, [], Memo) ->
     FName = cerl:c_fname(test, 0),
     Body = cerl:c_call(cerl:c_atom(eunit), cerl:c_atom(test), [cerl:c_atom(PM)]),
     TopTests = {FName, cerl:c_fun([], Body)},
-
     [TopTests|Memo];
-gen_tests(Env, [#alpaca_test{name={_, _, N}, expression=E}|Rem], Memo) ->
-    FName = cerl:c_fname(clean_test_name(N), 0),
+gen_tests(Env, [#alpaca_test{name={_, _, N}, line=L, expression=E}|Rem], Memo) ->
+    FName = cerl:ann_c_fname(line_anno(Env, L), clean_test_name(N), 0),
     {_, Body} = gen_expr(Env, E),
-    TestFun = {FName, cerl:c_fun([], Body)},
+    TestFun = {FName, cerl:ann_c_fun(line_anno(Env, L), [], Body)},
     gen_tests(Env, Rem, [TestFun|Memo]).
 
 %% eunit will skip tests with spaces in the name, this may not be the best
@@ -317,44 +329,60 @@ clean_test_name(N) ->
 utf8_bin(S) when is_list(S) ->
     unicode:characters_to_binary(S, utf8).
 
-gen_expr(Env, {add, _}) ->
-    {Env, cerl:c_atom('+')};
-gen_expr(Env, {minus, _}) ->
-    {Env, cerl:c_atom('-')};
+line_anno(#env{source_file=FN}, Line) when is_integer(Line) ->
+    [Line, {file, FN}].
+
+gen_expr(Env, {add, L}) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), '+')};
+gen_expr(Env, {minus, L}) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), '-')};
 gen_expr(Env, {'Int', _}=I) ->
-    {Env, cerl:c_int(alpaca_ast:int_val(I))};
+    L = alpaca_ast:line(I),
+    {Env, cerl:ann_c_int(line_anno(Env, L), alpaca_ast:int_val(I))};
 gen_expr(Env, {'Float', _} =F) ->
-    {Env, cerl:c_float(alpaca_ast:float_val(F))};
-gen_expr(Env, {boolean, _, B}) ->
-    {Env, cerl:c_atom(B)};
-gen_expr(Env, {atom, _, A}) when is_list(A) ->
-    {Env, cerl:c_atom(list_to_atom(A))};
-gen_expr(Env, {atom, _, A}) when is_binary(A) ->
-    {Env, cerl:c_atom(binary_to_atom(A, utf8))};
-gen_expr(Env, {chars, _, Cs}) ->
-    {Env, cerl:c_string(Cs)};
-gen_expr(Env, {string, _, S}) ->
-    {Env, cerl:c_binary(literal_binary(S, utf8))};
-gen_expr(Env, {unit, _}) ->
-    {Env, cerl:c_tuple([])};
-gen_expr(#env{wildcard_num=N}=Env, {'_', _}) ->
+    L = alpaca_ast:line(F),
+    {Env, cerl:ann_c_float(line_anno(Env, L), alpaca_ast:float_val(F))};
+gen_expr(Env, {boolean, L, B}) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), B)};
+gen_expr(Env, {atom, L, A}) when is_list(A) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), list_to_atom(A))};
+gen_expr(Env, {atom, L, A}) when is_binary(A) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), binary_to_atom(A, utf8))};
+gen_expr(Env, {chars, L, Cs}) ->
+    {Env, cerl:ann_c_string(line_anno(Env, L), Cs)};
+gen_expr(Env, {string, L, S}) ->
+    {Env, cerl:ann_c_binary(line_anno(Env, L), literal_binary(S, utf8))};
+gen_expr(Env, {unit, L}) ->
+    {Env, cerl:ann_c_tuple(line_anno(Env, L), [])};
+gen_expr(#env{wildcard_num=N}=Env, {'_', L}) ->
     %% We produce a unique variable name for each wildcard
     %% "throwaway" variable.  Not doing so causes errors when
     %% compiling forms later due to duplicate names.
     Name = list_to_atom("_" ++ integer_to_list(N)),
-    {Env#env{wildcard_num=N+1}, cerl:c_var(Name)};
+    {Env#env{wildcard_num=N+1}, cerl:ann_c_var(line_anno(Env, L), Name)};
 gen_expr(#env{module_funs=Funs}=Env, {'Symbol', _}=Sym) ->
     V = alpaca_ast:symbol_name(Sym),
+    L = alpaca_ast:line(Sym),
     case proplists:get_value(V, Funs) of
         %% Switch out references to zero-arg funs to applications
         %% of them, simulating constant values
         0 ->
-            {Env, cerl:c_apply(cerl:c_fname(binary_to_atom(V, utf8), 0), [])};
+            {Env,
+             cerl:ann_c_apply(
+               line_anno(Env, L),
+               cerl:ann_c_fname(
+                 line_anno(Env, L),
+                 binary_to_atom(V, utf8),
+                 0),
+               [])};
         Arity when is_integer(Arity) ->
             %% Do we have a function with the right arity?
-            {Env, cerl:c_fname(binary_to_atom(V, utf8), Arity)};
+            {Env, cerl:ann_c_fname(
+                    line_anno(Env, L),
+                    binary_to_atom(V, utf8),
+                    Arity)};
         undefined ->
-            {Env, cerl:c_var(binary_to_atom(V, utf8))}
+            {Env, cerl:ann_c_var(line_anno(Env, L), binary_to_atom(V, utf8))}
     end;
 gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
     MakeFun = #alpaca_apply{
@@ -363,32 +391,36 @@ gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
                        {atom, 0, N},
                        alpaca_ast:int(0, A)]},
     gen_expr(Env, MakeFun);
-gen_expr(Env, {raise_error, _, Kind, Expr}) ->
+gen_expr(Env, {raise_error, L, Kind, Expr}) ->
     {Env2, ExprAST} = gen_expr(Env, Expr),
-    {Env2, cerl:c_call(cerl:c_atom(erlang), cerl:c_atom(Kind), [ExprAST])};
+    {Env2, cerl:ann_c_call(line_anno(Env, L),
+                           cerl:c_atom(erlang),
+                           cerl:ann_c_atom(line_anno(Env, L), Kind),
+                           [ExprAST])};
 
-gen_expr(Env, {nil, _}) ->
-    {Env, cerl:c_nil()};
-gen_expr(Env, #alpaca_cons{head=H, tail=T}) ->
+gen_expr(Env, {nil, L}) ->
+    {Env, cerl:ann_c_nil(line_anno(Env, L))};
+gen_expr(Env, #alpaca_cons{line=L, head=H, tail=T}) ->
     {Env2, H2} = gen_expr(Env, H),
     {Env3, T2} = gen_expr(Env2, T),
-    {Env3, cerl:c_cons(H2, T2)};
-gen_expr(Env, #alpaca_binary{segments=Segs}) ->
+    {Env3, cerl:ann_c_cons(line_anno(Env, L), H2, T2)};
+gen_expr(Env, #alpaca_binary{line=L, segments=Segs}) ->
     {Env2, Bits} = gen_bits(Env, Segs),
-    {Env2, cerl:c_binary(Bits)};
-gen_expr(Env, #alpaca_map{is_pattern=true}=M) ->
+    {Env2, cerl:ann_c_binary(line_anno(Env, L), Bits)};
+gen_expr(Env, #alpaca_map{is_pattern=true, line=L}=M) ->
     Annotated = annotate_map_type(M),
     F = fun(P, {E, Ps}) ->
                 {E2, P2} = gen_expr(E, P),
                 {E2, [P2|Ps]}
         end,
     {Env2, Pairs} = lists:foldl(F, {Env, []}, Annotated),
-    {Env2, cerl:c_map_pattern(lists:reverse(Pairs))};
-gen_expr(Env, #alpaca_map{}=M) ->
+    {Env2, cerl:ann_c_map_pattern(line_anno(Env, L), lists:reverse(Pairs))};
+gen_expr(Env, #alpaca_map{line=L}=M) ->
     %% If the map isn't a pattern we're not worried about underscores:
     Pairs = [PP || {_, PP} <- [gen_expr(Env, P) || P <- annotate_map_type(M)]],
-    {Env, cerl:c_map(Pairs)};
-gen_expr(Env, #alpaca_map_add{to_add=#alpaca_map_pair{key=K, val=V}, existing=B}) ->
+    {Env, cerl:ann_c_map(line_anno(Env, L), Pairs)};
+%% TODO:  revisit map additions:
+gen_expr(Env, #alpaca_map_add{line=L, to_add=#alpaca_map_pair{key=K, val=V}, existing=B}) ->
     %% In R19 creating map expression like core erlang's parser does
     %% doesn't seem to work for me, neither with ann_c_map nor a simple
     %% c_map([ThePair|TheMap]).  The following seems fine and is mostly
@@ -396,23 +428,27 @@ gen_expr(Env, #alpaca_map_add{to_add=#alpaca_map_pair{key=K, val=V}, existing=B}
     {_, M} = gen_expr(Env, B),
     {_, KExp} = gen_expr(Env, K),
     {_, VExp} = gen_expr(Env, V),
-    {Env, cerl:c_call(cerl:c_atom(maps), cerl:c_atom(put), [KExp, VExp, M])};
-gen_expr(Env, #alpaca_map_pair{is_pattern=true, key=K, val=V}) ->
+    {Env, cerl:ann_c_call(
+            line_anno(Env, L),
+            cerl:c_atom(maps),
+            cerl:c_atom(put),
+            [KExp, VExp, M])};
+gen_expr(Env, #alpaca_map_pair{line=L, is_pattern=true, key=K, val=V}) ->
     {Env2, KExp} = gen_expr(Env, K),
     {Env3, VExp} = gen_expr(Env2, V),
-
-    %% R19 has cerl:c_map_pair_exact/2 which is much more brief than
-    %% the following but that doesn't work for 18.2 nor 18.3.
-    %% The LFE source put me on to the following:
-    {Env3, cerl:ann_c_map_pair([], cerl:abstract(exact), KExp, VExp)};
-gen_expr(Env, #alpaca_map_pair{key=K, val=V}) ->
+    {Env3, cerl:ann_c_map_pair(
+             line_anno(Env, L),
+             cerl:abstract(exact),
+             KExp,
+             VExp)};
+gen_expr(Env, #alpaca_map_pair{line=L, key=K, val=V}) ->
     {_, K2} = gen_expr(Env, K),
     {_, V2} = gen_expr(Env, V),
-    {Env, cerl:c_map_pair(K2, V2)};
+    {Env, cerl:ann_c_map_pair(line_anno(Env, L), cerl:abstract(assoc), K2, V2)};
 gen_expr(Env, #alpaca_record{}=R) ->
     {_, RExp} = gen_expr(Env, record_to_map(R)),
     {Env, RExp};
-gen_expr(Env, #alpaca_record_transform{additions=Adds, existing=Existing}) ->
+gen_expr(Env, #alpaca_record_transform{line=RTL, additions=Adds, existing=Existing}) ->
     F = fun(#alpaca_record_member{line=L, name=N, val=V}, {E, RExp}) ->
                 Add = #alpaca_map_add{
                          to_add=#alpaca_map_pair{
@@ -429,46 +465,70 @@ gen_expr(Env, #alpaca_record_transform{additions=Adds, existing=Existing}) ->
     {_, KExp} = gen_expr(Env2, {atom, 0, "__struct__"}),
     {_, VExp} = gen_expr(Env2, {atom, 0, "record"}),
 
-    {Env2, cerl:c_call(
+    {Env2, cerl:ann_c_call(
+             line_anno(Env, RTL),
              cerl:c_atom(maps),
              cerl:c_atom(put),
              [KExp, VExp, RecExp])};
 
-gen_expr(Env, #alpaca_type_check{type=is_string, expr={'Symbol', _}=S}) ->
+gen_expr(Env, #alpaca_type_check{line=L, type=is_string, expr={'Symbol', _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
-    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_binary'), [Exp]),
+    TC = cerl:ann_c_call(
+           line_anno(Env, L),
+           cerl:c_atom('erlang'),
+           cerl:c_atom('is_binary'),
+           [Exp]),
     {Env, TC};
-gen_expr(Env, #alpaca_type_check{type=is_chars, expr={'Symbol', _}=S}) ->
+gen_expr(Env, #alpaca_type_check{line=L, type=is_chars, expr={'Symbol', _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
-    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('is_list'), [Exp]),
+    TC = cerl:ann_c_call(
+           line_anno(Env, L),
+           cerl:c_atom('erlang'),
+           cerl:c_atom('is_list'),
+           [Exp]),
     {Env, TC};
-gen_expr(Env, #alpaca_type_check{type=T, expr={'Symbol', _}=S}) ->
+gen_expr(Env, #alpaca_type_check{line=L, type=T, expr={'Symbol', _}=S}) ->
     {_, Exp} = gen_expr(Env, S),
-    TC = cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom(T), [Exp]),
+    TC = cerl:ann_c_call(
+           line_anno(Env, L),
+           cerl:c_atom('erlang'),
+           cerl:c_atom(T),
+           [Exp]),
     {Env, TC};
-gen_expr(Env, #alpaca_apply{expr={bif, _, _L, Module, FName}, args=Args}) ->
-    Apply = cerl:c_call(
+gen_expr(Env, #alpaca_apply{expr={bif, _, L, Module, FName}, args=Args}) ->
+    Apply = cerl:ann_c_call(
+              line_anno(Env, L),
               cerl:c_atom(prefix_modulename(Module)),
               cerl:c_atom(FName),
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{expr={Module, {'Symbol', _}=Sym, _}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{line=L, expr={Module, {'Symbol', _}=Sym, _}, args=Args}) ->
     N = binary_to_atom(alpaca_ast:symbol_name(Sym), utf8),
-    FName = cerl:c_atom(N),
-    Apply = cerl:c_call(
-              cerl:c_atom(prefix_modulename(Module)),
+    NL = alpaca_ast:line(Sym),
+    FName = cerl:ann_c_atom(line_anno(Env, NL), N),
+    Apply = cerl:ann_c_call(
+              line_anno(Env, L),
+              cerl:ann_c_atom(line_anno(Env, L), prefix_modulename(Module)),
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=Sym, args=[{unit, _}]}) ->
+gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=Sym, line=L, args=[{unit, _}]}) ->
     Name = alpaca_ast:symbol_name(Sym),
     FName = case proplists:get_value(Name, Env#env.module_funs) of
-                undefined -> cerl:c_var(binary_to_atom(Name, utf8));
-                1 -> cerl:c_fname(binary_to_atom(Name, utf8), 1)
+                undefined ->
+                    cerl:ann_c_var(
+                      line_anno(Env, L),
+                      binary_to_atom(Name, utf8));
+                1 ->
+                    NL = alpaca_ast:line(Sym),
+                    cerl:ann_c_fname(
+                      line_anno(Env, NL),
+                      binary_to_atom(Name, utf8),
+                      1)
             end,
-    {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
-gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, args=Args}) ->
-    L = alpaca_ast:line(FExpr),
+    {Env, cerl:ann_c_apply(line_anno(Env, L), FName, [cerl:c_atom(unit)])};
+gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, line=L, args=Args}) ->
+    NL = alpaca_ast:line(FExpr),
     Name = alpaca_ast:symbol_name(FExpr),
     DesiredArity = length(Args),
     {FName, Curry, Arity} = case proplists:get_all_values(Name, Env#env.module_funs) of
@@ -476,13 +536,22 @@ gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, args=Args}) ->
         AvailFuns ->
             %% If we have an exact arity match, use that, otherwise curry
             case lists:filter(fun(X) -> X =:= DesiredArity end, AvailFuns) of
-                [A] -> {cerl:c_fname(binary_to_atom(Name, utf8), A), false, A};
+                [A] ->
+                    {cerl:ann_c_fname(
+                       line_anno(Env, NL),
+                       binary_to_atom(Name, utf8),
+                       A),
+                     false,
+                     A};
                 _ ->
                     %% The typer ensures that we can curry unambiguously
                     [CurryArity] = lists:filter(
                                      fun(X) -> X > DesiredArity end,
                                      AvailFuns),
-                    {cerl:c_fname(binary_to_atom(Name, utf8), CurryArity),
+                    {cerl:ann_c_fname(
+                       line_anno(Env, NL),
+                       binary_to_atom(Name, utf8),
+                       CurryArity),
                      true,
                      CurryArity}
             end
@@ -508,6 +577,7 @@ gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, args=Args}) ->
                                                expr=FExpr,
                                                args=Args ++ CArgs}}]},
            Binding = #alpaca_binding{
+                        line=L,
                         name=alpaca_ast:symbol(L, CurryFunName),
                         body=alpaca_ast:symbol(L, CurryFunName),
                         bound_expr=CurryExpr},
@@ -515,15 +585,21 @@ gen_expr(Env, #alpaca_apply{expr={'Symbol', _}=FExpr, args=Args}) ->
            gen_expr(Env2, Binding);
 
         false ->
-            Apply = cerl:c_apply(
-                        FName,
-                        [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
-                        {Env, Apply}
+            Apply = cerl:ann_c_apply(
+                      line_anno(Env, L),
+                      FName,
+                      [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
+            {Env, Apply}
     end;
-gen_expr(Env, #alpaca_apply{expr={{'Symbol', _}=Sym, Arity}, args=Args}) ->
+gen_expr(Env, #alpaca_apply{expr={{'Symbol', _}=Sym, Arity}, args=Args, line=L}) ->
     N = alpaca_ast:symbol_name(Sym),
-    FName = cerl:c_fname(binary_to_atom(N, utf8), Arity),
-    Apply = cerl:c_apply(
+    NL = alpaca_ast:line(Sym),
+    FName = cerl:ann_c_fname(
+              line_anno(Env, NL),
+              binary_to_atom(N, utf8),
+              Arity),
+    Apply = cerl:ann_c_apply(
+              line_anno(Env, L),
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
@@ -566,6 +642,7 @@ gen_expr(Env, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
 
 gen_expr(Env, #alpaca_ffi{}=FFI) ->
     #alpaca_ffi{
+       line=L,
        module=M,
        function_name=FN,
        args=Cons,
@@ -576,7 +653,8 @@ gen_expr(Env, #alpaca_ffi{}=FFI) ->
     {Env4, ConsExp} = gen_expr(Env3, Cons),
     %% calling apply/3 with the compiled cons cell is simpler
     %% than unpacking the cons cell into an actual list of args:
-    Apply = cerl:c_call(
+    Apply = cerl:ann_c_call(
+              line_anno(Env, L),
               cerl:c_atom('erlang'),
               cerl:c_atom('apply'),
               [MExp, FNExp, ConsExp]),
@@ -587,83 +665,90 @@ gen_expr(Env, #alpaca_ffi{}=FFI) ->
         end,
     {Env5, Clauses2} = lists:foldl(F, {Env4, []}, Clauses),
 
-    {Env5, cerl:c_case(Apply, lists:reverse(Clauses2))};
+    {Env5, cerl:ann_c_case(line_anno(Env, L), Apply, lists:reverse(Clauses2))};
 
 %% Pattern, expression
-gen_expr(Env, #alpaca_clause{pattern=P, guards=[], result=E}) ->
+gen_expr(Env, #alpaca_clause{line=L, pattern=P, guards=[], result=E}) ->
     {Env2, PExp} = gen_expr(Env, P),
     {Env3, EExp} = gen_expr(Env2, E),
-    {Env3, cerl:c_clause([PExp], EExp)};
-gen_expr(Env, #alpaca_clause{pattern=P, guards=Gs, result=E}) ->
+    {Env3, cerl:ann_c_clause(line_anno(Env, L), [PExp], EExp)};
+gen_expr(Env, #alpaca_clause{line=L, pattern=P, guards=Gs, result=E}) ->
     G = gen_guards(Env, Gs),
 
     {Env2, PExp} = gen_expr(Env, P),
     {Env3, EExp} = gen_expr(Env2, E),
-    {Env3, cerl:c_clause([PExp], G, EExp)};
+    {Env3, cerl:ann_c_clause(line_anno(Env, L), [PExp], G, EExp)};
 
-gen_expr(Env, #alpaca_tuple{values=Vs}) ->
+gen_expr(Env, #alpaca_tuple{line=L, values=Vs}) ->
     {Env2, Vs2} = lists:foldl(fun(V, {E, VV}) ->
                                       {E2, V2} = gen_expr(E, V),
                                       {E2, [V2|VV]}
                               end, {Env, []}, Vs),
-    {Env2, cerl:c_tuple(lists:reverse(Vs2))};
-gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=none}) ->
-    {Env, cerl:c_atom(N)};
-gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N}, arg=A}) ->
+    {Env2, cerl:ann_c_tuple(line_anno(Env, L), lists:reverse(Vs2))};
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N, line=L}, arg=none}) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), N)};
+gen_expr(Env, #alpaca_type_apply{name=#type_constructor{name=N, line=L}, arg=A}) ->
     {Env2, AExp} = gen_expr(Env, A),
-    {Env2, cerl:c_tuple([cerl:c_atom(N), AExp])};
+    {Env2, cerl:ann_c_tuple(line_anno(Env, L), [cerl:c_atom(N), AExp])};
 %% Expressions, Clauses
-gen_expr(Env, #alpaca_match{match_expr=Exp, clauses=Cs}) ->
+gen_expr(Env, #alpaca_match{match_expr=Exp, clauses=Cs, line=L}) ->
     {Env2, EExp} = gen_expr(Env, Exp),
     {Env3, Cs2} = lists:foldl(fun(C, {E, CC}) ->
                                       {E2, C2} = gen_expr(E, C),
                                       {E2, [C2|CC]}
                               end, {Env2, []}, Cs),
-    {Env3, cerl:c_case(EExp, lists:reverse(Cs2))};
+    {Env3, cerl:ann_c_case(line_anno(Env, L), EExp, lists:reverse(Cs2))};
 
 gen_expr(Env, #alpaca_spawn{from_module=M,
-                          module=undefined,
-                          function={'Symbol', _}=Sym,
-                          args=Args}) ->
+                            module=undefined,
+                            function={'Symbol', _}=Sym,
+                            args=Args,
+                            line=SpawnL}) ->
     FN = binary_to_atom(alpaca_ast:symbol_name(Sym), utf8),
     ArgCons = lists:foldl(fun(A, L) ->
                                   {_, AExp} = gen_expr(Env, A),
                                   cerl:c_cons(AExp, L)
                           end, cerl:c_nil(), lists:reverse(Args)),
     PrefixModuleName = prefix_modulename(M),
-    {Env, cerl:c_call(
+    {Env, cerl:ann_c_call(
+            line_anno(Env, SpawnL),
             cerl:c_atom('erlang'),
             cerl:c_atom('spawn'),
             [cerl:c_atom(PrefixModuleName), cerl:c_atom(FN), ArgCons])};
 
-gen_expr(Env, #alpaca_receive{clauses=Cs, timeout_action=undefined}) ->
+gen_expr(Env, #alpaca_receive{line=L, clauses=Cs, timeout_action=undefined}) ->
     {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
                                       {E2, C2} = gen_expr(E, C),
                                       {E2, [C2|CC]}
                               end, {Env, []}, Cs),
-    {Env2, cerl:c_receive(lists:reverse(Cs2))};
+    {Env2, cerl:ann_c_receive(line_anno(Env, L), lists:reverse(Cs2))};
 gen_expr(Env, #alpaca_receive{
+                 line=L,
                  clauses=Cs,
                  timeout=TO,
                  timeout_action=TA}) ->
     X = case TO of
-            infinity -> cerl:c_atom(TO);
-            I -> cerl:c_int(I)
+            infinity -> cerl:ann_c_atom(line_anno(Env, L), TO);
+            I        -> cerl:ann_c_int(line_anno(Env, L), I)
         end,
     {Env2, Cs2} = lists:foldl(fun(C, {E, CC}) ->
                                       {E2, C2} = gen_expr(E, C),
                                       {E2, [C2|CC]}
                               end, {Env, []}, Cs),
     {_, TA2} = gen_expr(Env, TA),
-    {Env2, cerl:c_receive(lists:reverse(Cs2), X, TA2)};
+    {Env2, cerl:ann_c_receive(line_anno(Env, L), lists:reverse(Cs2), X, TA2)};
 
-gen_expr(Env, #alpaca_send{message=M, pid=P}) ->
+gen_expr(Env, #alpaca_send{line=L, message=M, pid=P}) ->
     {_, PExp} = gen_expr(Env, P),
     {_, MExp} = gen_expr(Env, M),
-    {Env, cerl:c_call(cerl:c_atom('erlang'), cerl:c_atom('!'), [PExp, MExp])};
+    {Env, cerl:ann_c_call(
+            line_anno(Env, L),
+            cerl:c_atom('erlang'),
+            cerl:c_atom('!'),
+            [PExp, MExp])};
 
 gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
-    #alpaca_binding{name={'Symbol', _}=Sym, bound_expr=BE, body=Body} = AB,
+    #alpaca_binding{line=L, name={'Symbol', _}=Sym, bound_expr=BE, body=Body} = AB,
     N = alpaca_ast:symbol_name(Sym),
     case BE of
         #alpaca_fun{arity=Arity} ->
@@ -673,7 +758,7 @@ gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
                     {Env, gen_fun(NewEnv, AB)};
                 _ ->
                     {_, Exp} = gen_expr(NewEnv, Body),
-                    {Env, cerl:c_letrec([gen_fun(NewEnv, AB)], Exp)}
+                    {Env, cerl:ann_c_letrec(line_anno(Env, L), [gen_fun(NewEnv, AB)], Exp)}
             end;
         _NotFunction ->
             case Body of
@@ -682,10 +767,13 @@ gen_expr(#env{module_funs=Funs}=Env, #alpaca_binding{}=AB) ->
                 _ ->
                     {_, E1Exp} = gen_expr(Env, BE),
                     {_, E2Exp} = gen_expr(Env, Body),
+                    NL = alpaca_ast:line(Sym),
                     {Env,
-                     cerl:c_let([cerl:c_var(binary_to_atom(N, utf8))],
-                                E1Exp,
-                                E2Exp)}
+                     cerl:ann_c_let(
+                       line_anno(Env, L),
+                       [cerl:ann_c_var(line_anno(Env, NL), binary_to_atom(N, utf8))],
+                       E1Exp,
+                       E2Exp)}
             end
     end.
 
@@ -727,12 +815,17 @@ gen_bits(Env, Segs) -> gen_bits(Env, Segs, []).
 gen_bits(Env, [], AllSegs) ->
     {Env, lists:reverse(AllSegs)};
 
-gen_bits(Env, [#alpaca_bits{type=T, value={'Symbol', _}, default_sizes=true}=Bits | Rem], Segs)
+gen_bits(Env, [#alpaca_bits{line=L, type=T, value={'Symbol', _}, default_sizes=true}=Bits | Rem], Segs)
   when T == binary; T == utf8 ->
     #alpaca_bits{value=V, type=T, sign=Sign, endian=E} = Bits,
     {Env2, VExp} = gen_expr(Env, V),
-    B = cerl:c_bitstr(VExp, cerl:c_atom('all'), cerl:c_int(8),
-                      get_bits_type(T), bits_flags(Sign, E)),
+    B = cerl:ann_c_bitstr(
+          line_anno(Env, L),
+          VExp,
+          cerl:c_atom('all'),
+          cerl:c_int(8),
+          get_bits_type(T),
+          bits_flags(Sign, E)),
 
     gen_bits(Env2, Rem, [B|Segs]);
 
@@ -743,10 +836,15 @@ gen_bits(Env,
     gen_bits(Env, Rem, Lit ++ Segs);
 
 gen_bits(Env, [Bits|Rem], Memo) ->
-    #alpaca_bits{value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
+    #alpaca_bits{line=L, value=V, size=S, unit=U, type=T, sign=Sign, endian=E} = Bits,
     {_Env2, VExp} = gen_expr(Env, V),
-    B = cerl:c_bitstr(VExp, cerl:c_int(S), cerl:c_int(U),
-                      get_bits_type(T), bits_flags(Sign, E)),
+    B = cerl:ann_c_bitstr(
+          line_anno(Env, L),
+          VExp,
+          cerl:c_int(S),
+          cerl:c_int(U),
+          get_bits_type(T),
+          bits_flags(Sign, E)),
     gen_bits(Env, Rem, [B|Memo]).
 
 get_bits_type(int) -> cerl:c_atom(integer);
@@ -756,7 +854,8 @@ get_bits_type(binary) -> cerl:c_atom(binary).
 
 bits_flags(Sign, Endian) ->
     cerl:c_cons(
-      cerl:c_atom(Sign), cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
+      cerl:c_atom(Sign),
+      cerl:c_cons(cerl:c_atom(Endian), cerl:c_nil())).
 
 literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
     Bin = unicode:characters_to_binary(Chars, Encoding),

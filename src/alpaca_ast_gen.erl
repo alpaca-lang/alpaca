@@ -440,7 +440,7 @@ update_memo(#alpaca_module{tests=Tests}=M, #alpaca_test{}=T) ->
 update_memo(M, #alpaca_comment{}) ->
     M;
 update_memo(M, Bad) ->
-    %% We can' really report a meaningful line number here without either:
+    %% We can't really report a meaningful line number here without either:
     %%  a) restructuring the parser rules to make this a syntax error.
     %%  b) Tagging all constructs generated the parser with a line number in
     %%     a consistent way.
