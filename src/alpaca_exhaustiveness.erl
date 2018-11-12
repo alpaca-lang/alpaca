@@ -232,6 +232,8 @@ extract_patterns(FunArgPatterns) ->
           #alpaca_tuple{values=Args}
         end, FunArgPatterns).
 
+covered(extraneous_record_field, _) ->
+    false;
 covered('_', Pattern) ->
     matches_wildcard(Pattern);
 covered({t_adt_cons, Name, PArg}, Pattern) ->
@@ -276,8 +278,12 @@ matches_list(P, _E) ->
     matches_wildcard(P).
 
 matches_record(#alpaca_record{members=Ms}, Assignments) ->
+    %% `extraneous_record_field` covers the situation in issue #260
+    %% (https://github.com/alpaca-lang/alpaca/issues/260) where we have an
+    %% "extra" record field that should not mask an incomplete match with a
+    %% crash:
     lists:all(fun(#alpaca_record_member{name=N, val=P}) ->
-        covered(maps:get(N, Assignments), P)
+        covered(maps:get(N, Assignments, extraneous_record_field), P)
     end, Ms);
 matches_record(P, _Assignments) ->
     matches_wildcard(P).
@@ -563,6 +569,31 @@ top_level_value_test() ->
         "module coverage\n\n"
         "let one = 1\n\n",
     ?assertMatch([], run_checks([Code])).
+
+overloaded_record_test() ->
+    %% Example taken from future_ast.alp:
+    Code =
+	"module m \n"
+	"type renameable = Named string | Renamed { name: string, original: string } \n"
+	"type symbol = Symbol { line: int, name: renameable } \n"
+	"let symbol_rename (Symbol {line=l, name=Named n}) new_name = \n"
+	"  Symbol {line=l, name=Renamed {name=new_name, original=n}} \n"
+    %% Using `orig` here should result in a non-exhaustive match warning instead
+    %% of a crash as found in issue #260:
+	"let symbol_rename (Symbol {line=l, name=Renamed {orig=o}}) new_name = \n"
+	"  Symbol {line=l, name=Renamed {name=new_name, original=o}}",
+    ?assertEqual(
+       [{partial_function, {m, <<"symbol_rename">>, 2},
+	 [{missing_pattern,
+	   [{t_adt_cons,"Symbol",
+	     {t_record,
+	      #{line => '_',
+		name =>
+		    {t_adt_cons,
+		     "Renamed",
+		     {t_record, #{name => '_', original => '_'}}}}}},
+	    '_']}]}],
+       run_checks([Code])).
 
 
 run_checks(ModeCodeListings) ->
