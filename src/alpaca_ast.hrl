@@ -528,12 +528,9 @@
                             names=[] :: list(string())}).
 -type alpaca_type_export() :: #alpaca_type_export{}.
 
-%% rename_map is a map from generated function and variable names to their
-%% original names.
 -record(alpaca_module, {
           name=no_module :: atom(),
           filename=undefined :: string() | undefined,
-          rename_map=maps:new() :: map(),
           function_exports=[] :: list({string(), integer()}|string()),
           function_imports=[] :: list({string(), {atom(), integer()}|string()}),
           types=[] :: list(alpaca_type()),
