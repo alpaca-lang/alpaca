@@ -2,10 +2,34 @@
   Possible future Alpaca-native AST.  Mostly using this for testing right now as
   trying things out has turned up a few bugs (e.g. record alias `binding` and
   issue #234).
+
+  This module is broken in four main sections:
+
+  1. Documentation and comments.  This is kept separate from the following
+     sections dealing with the main language constructs since it can be
+     attached to each of them as well.
+  2. The main module construct, with speculative portions for signatures in
+     future.  It's likely that signatures will be how visibility of module
+     members will be controlled in future.
+  3. Type expressions, including both things that are expressible in the Alpaca
+     language itself (e.g. `int`) as well as synthetic portions used only by the
+     type checker.
+  4. Core expressions like bindings, constants, symbols, etc.
+
+  Each section desribes things that can be used to describe the next.  With the
+  exception of signatures for instance, modules logically group, namespace, and
+  thus describe types.  Types themselves describe functions and values.
+
+  TODO:  modules are essentially a kind of product type.  Perhaps there is a
+         different stratification that should read something like
+
+          - documentation/comments
+          - (types about products, products)
+          - (types about other expressions, expressions)
  -}
 module ast
 
-export_type binding, module_ast, expr, symbol, opt
+export_type binding, moduleAst, expr, symbol
 
 export line
 
@@ -16,33 +40,238 @@ export string
 export bind, bind_body, bind_expr
 export symbol, symbol_name, symbol_rename
 
-type opt 'a = Some 'a | None
+{- 1. Documentation
 
-type typ = TInt
+ -}
+
+{- A comment string may or may not be semantically linked to an AST node.
+   `Attached` indicates that there is no empty line between the comment text and
+   the following AST node, e.g.
+
+   ```
+   -- This is conceptually a docstring for the function foo.
+   let foo x = ...
+   ```
+
+   A source code formatter needs to re-link this particular comment to that
+   specific version of `foo`, and a documentation generator also needs to know
+   that it is relevant for both `foo` and _that particular version_ of `foo`.
+
+   On the other hand, we don't want the commented-out version of `foo` below to
+   be attached to `bar` as a docstring so we indicate it is *not* semantically
+   related by leaving a blank line, and using the `Orphan` constructor in the
+   AST:
+
+   ```
+   -- let foo x = x + x
+
+   let bar y = ...
+   ```
+
+   `Trailing` is for comments that follow an AST node, rather than precede it:
+
+   ```
+   let foo x =
+     let _ = someSideEffect () in  -- A trailing comment.
+     ...
+   ```
+
+   Only formatters will care about this but it's still important not to lose
+   track.
+ -}
+type docAnchor = Attached | Trailing | Orphan
+
+type docStyle = Multiline | Block
+
+type docs = { style: docStyle
+            , anchor: docAnchor
+            , text: list string
+}
+
+{- 2. Modules
+
+  All language constructs must live within a module.
+
+ -}
+type moduleHash = Unhashed | Hashed binary
+
+type moduleQualifier = Unqual | Qual string
+
+type moduleAst = Module { name: atom
+                        , filename: string
+                        , typ: typ
+                        -- This is not strictly accurate, should also include
+                        -- bare strings:
+                        , functionExports: list (string, int)
+                        -- Also needs to include bare strings as an alternative
+                        -- to the `(atom, int)` tuple:
+                        , functionImports: list (string, (atom, int))
+                        , types: list typeDef
+                        , typeImports: typeDefImport
+                        , typeExports: list string
+                        , bindings: list binding
+                        , tests: list testDef
+                        , precompiled: bool
+                        , hash: moduleHash
+                        , typed: bool
+                        }
+               | ModuleBinding binding
+
+{- 3. Types
+
+   There are two ways to specify a type:
+
+   1. An actual type declaration, e.g. `type x = X int`.
+   2. A type specification for a function.  I'm starting to think that this can
+      be viewed as sugar for binding a type declaration to a function name, or
+      even "sealing" a function with a specific type.  (Maybe this is already
+      the way Standard ML people talk about this sort of thing?  My ignorance
+      is vast.)
+
+   These are correspondingly type declarations (typeDef) and type specifications
+   (typeSpec).
+-}
+type typeVar = { line: int, name: string }
+
+type quantifiers = Unbound {name: string, level: int}
+                 | Uni
+                 | Exi
+
+{- Types for the type checker. -}
+type typ = Untyped
+         | -- The infinitely recursive type:
+           TRec
+         | TInt
          | TFloat
          | TString
          | TArrow (list typ, typ)
+         | TypeDef typeDef
 
+{- `TypeUnit` is intended to be used for two things:
+
+    1. The actual `()` or `unit` type expression.
+    2. Type constructors (variants) without arguments.
+
+   An example illustrating the type constructor case:
+
+   ```
+   module example
+   type aOrB = A | B int
+   ```
+
+   would result in
+
+   ```
+   { line = 1
+   , mod = "example"
+   , name = "aOrB"
+   , vars = []
+   , members = [ TypeConstructor { line = 1
+                                 , mod = "example"
+                                 , name = "A"
+                                 , expr = TypeUnit
+                                 }
+               , TypeConstructor { line = 1
+                                 , mod = "example"
+                                 , name = "B"
+                                 , expr = TypeRef { line = 1
+                                                  -- Unqualified by module:
+                                                  , mod = None
+                                                  , name = "int"
+                                                  , vars = []
+                                                  }
+                                 }
+               ]
+   }
+   ```
+ -}
+type typeExpr = TypeUnit
+              | TypeVar typeVar
+              | TypeRef { line: int
+                        , mod: moduleQualifier
+                        , name: string
+                        , vars: list typeVar
+                        }
+              | TypeConstructor { line: int
+                                , mod: string
+                                , name: string
+                                , expr: typeExpr
+                                }
+
+-- Type specification for a binding:
+type typeSpec = { line: int
+                , name: string
+                , vars: list typeExpr
+                , spec: typ
+                }
+
+type typeDef = { line: int
+               , mod: atom
+               , name: string
+               -- A type alias would have one member and no variables:
+               , vars: list typeVar
+               , members: list typeExpr
+               }
+
+type typeDefImport = { userModule: atom
+                     , typeName: string
+                     }
+
+{- 4. Expressions.
+
+ -}
 type binding = { line: int
                , name: expr
-               , typ: opt typ
+               , typ: typ
                , bound: expr
                , body: expr
                }
-           
-{- These are the top-level AST nodes that modules are built from.
- -}
-type module_ast = Module {line: int, name: atom}
-                | ModuleBinding binding
-                  
-let mod line name = Module {line=line, name=name}
 
-{- Expressions are only permitted inside of top-level bindings.
+type renameable = Named string | Renamed { name: string, original: string }
+
+{- Test definitions -}
+
+type testDef = { typ: typ
+               , line: int
+               , name: string
+               , expr: expr
+               }
+
+{- Product types handled a bit separately for now.  This includes only tuples
+   and records at the moment but as mentioned in the preamble, signatures (and
+   thus modules) could also be considered product types.
  -}
-type expr = Int {line: int, value: int}
-          | Float {line: int, value: float}
-          | String {line: int, value: string}
-          | Symbol {line: int, name: string, original: opt string}
+type recordMember = { line: int
+                    , typ: typ
+                    , label: string
+                    , value: expr
+                    }
+
+type product = Tuple { typ: typ
+                     , line: int
+                     , values: list expr
+                     }
+             | Record { typ: typ
+                      , line: int
+                      , isPattern: bool
+                      , members: list recordMember
+                      }
+             | RecordTransform { typ: typ
+                               , line: int
+                               , additions: list recordMember
+                               , existing: expr
+                               }
+
+type expr = Unit { line: int }
+            -- The variable/expression `_`:
+          | Wildcard { line: int }
+          | Atom { line: int, value: string }
+          | Bool { line: int, value: bool }
+          | Int { line: int, value: int }
+          | Float { line: int, value: float }
+          | String { line: int, value: string }
+          | Symbol { line: int, name: renameable }
+          | Product product
           | Binding binding
 
 let line Float {line=l} = l
@@ -67,17 +296,22 @@ let bind name line bound body =
           , name=name
           , bound=bound
           , body=body
-          , typ=None
+          , typ=Untyped
           }
 
 let bind_body (Binding b_rec) body = Binding {body=body | b_rec}
 
 let bind_expr (Binding b_rec) expr = Binding {bound=expr | b_rec}
 
-let symbol line name = Symbol {line=line, name=name, original=None}
+let symbol line name = Symbol { line=line, name=Named name }
 
-let symbol_name Symbol {name=n} = n
+let symbol_name Symbol {name=Named n} = n
+let symbol_name Symbol {name=Renamed {name=n}} = n
 
-let symbol_rename (Symbol {line=l, name=n}) new_name =
-  let orig = Some n in
-  Symbol {line=l, name=new_name, original=orig}
+let symbol_rename (Symbol {line=l, name=Named n}) new_name =
+  Symbol {line=l, name=Renamed {name=new_name, original=n}}
+-- Interesting!  This is not a type error, but rather requires that the record
+-- coming in simply has `orig` on top of `name` and `original`.  Didn't think of
+-- this at all as a possible library-writer-side problem.
+let symbol_rename (Symbol {line=l, name=Renamed {original=o}}) new_name =
+  Symbol {line=l, name=Renamed {name=new_name, original=o}}
