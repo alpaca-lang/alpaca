@@ -2003,7 +2003,7 @@ typ_of(Env, Lvl, #alpaca_record_transform{additions=Adds, existing=Exists, line=
     #t_record{row_var=RV} = get_cell(EmptyRecType),
 
     Env2 = update_counter(NV2, Env),
-    ok = unify(EmptyRecType, ExistsType, Env2, Lvl),
+    ok = unify(EmptyRecType, ExistsType, Env2, L),
     AddsRec = #alpaca_record{members=Adds, line=L},
     {AddsRecCell, NV3} = typ_of(Env2, Lvl, AddsRec),
 
@@ -2377,10 +2377,10 @@ typ_of(Env, Lvl, #alpaca_spawn{line=L, module=undefined, function=F, args=Args})
             end
     end;
 
-typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
+typ_of(EnvIn, Lvl, #alpaca_fun{line=_L, name=N, versions=Vs}) ->
     F = fun(_, {error, _}=Err) ->
                 Err;
-           (#alpaca_fun_version{args=Args, body=Body}, {Types, Env}) ->
+           (#alpaca_fun_version{args=Args, body=Body, line=VL}, {Types, Env}) ->
                 BindingF = fun(Arg, {Typs, E, VN}) ->
                                    {AT, _, NE, VN2} = add_bindings(Arg, E, Lvl, VN),
                                    {[AT|Typs], NE, VN2}
@@ -2402,14 +2402,14 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
                                     collapse_receivers(TRec, Env2, Lvl),
                                 X = {t_receiver, Recv2,
                                       {t_arrow, JustTypes, Res2}},
-                                {[X|Types], update_counter(NextVar, Env2)};
+                                {[{VL, X}|Types], update_counter(NextVar, Env2)};
                             _ ->
                                 %% Nullary funs are really values - for type
                                 %% checking we're only interested in their
                                 %% return value
                                 case JustTypes of
                                     [] -> {[T|Types], update_counter(NextVar, Env2)};
-                                    _  -> {[{t_arrow, JustTypes, T}|Types],
+                                    _  -> {[{VL, {t_arrow, JustTypes, T}}|Types],
                                           update_counter(NextVar, Env2)}
                                 end
                         end
@@ -2419,17 +2419,18 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=L, name=N, versions=Vs}) ->
         {error, _}=Err ->
             Err;
         {RevVersions, Env2} ->
-            [H|TypedVersions] = lists:reverse(RevVersions),
+            TypedVersions = lists:reverse(RevVersions),
+            {Root, _} = new_var(0, Env2),
             Unified = lists:foldl(
                         fun(_, {error, _}=Err) ->
                                 Err;
-                           (T1, T2) ->
-                                case unify(T1, T2, Env2, L) of
+                           ({VL, T1}, T2) ->
+                                case unify(T1, T2, Env2, VL) of
                                     {error, _}=Err -> Err;
                                     ok -> T1
                                 end
                         end,
-                        H,
+                        Root,
                         TypedVersions),
             case Unified of
                 {error, _}=Err -> Err;
@@ -5915,7 +5916,7 @@ record_unification_test_() ->
                  "let foo :a s = {a=true, b=0 | s} \n"
                  "let foo :b s = {b=1| s} \n",
 
-             ?assertMatch({error, {missing_record_field, m, 0, a}},
+             ?assertMatch({error, {missing_record_field, m, 4, a}},
                           module_typ_and_parse(Code))
      end
     , fun() ->
@@ -5923,7 +5924,7 @@ record_unification_test_() ->
 		  "module mod\n"
 		  "let foo :a = {a=true, b=0}\n"
 		  "let foo :b = {b=0}\n",
-	      ?assertMatch({error, {missing_record_field, mod, 0, a}},
+	      ?assertMatch({error, {missing_record_field, mod, 3, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5931,7 +5932,9 @@ record_unification_test_() ->
 		  "module mod\n"
 		  "let foo :b = {b=0}\n"
 		  "let foo :a = {a=true, b=0}\n",
-	      ?assertMatch({error, {missing_record_field, mod, 0, a}},
+              %% Incorrect error, see the following issue:
+              %% https://github.com/alpaca-lang/alpaca/issues/263
+	      ?assertMatch({error, {missing_record_field, mod, 3, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5942,8 +5945,8 @@ record_unification_test_() ->
 		  "  match sym with \n"
 		  "  | :b -> {b=1} \n"
 		  "  | :a -> {a=true, b=0} ",
-
-	      %% TODO/FIXME:  this should report line 4!
+              %% Incorrect error, see the following issue:
+              %% https://github.com/alpaca-lang/alpaca/issues/263
 	      ?assertMatch({error, {missing_record_field, m, 5, a}},
 			   module_typ_and_parse(Code))
       end
@@ -5952,12 +5955,12 @@ record_unification_test_() ->
 		  "module m \n"
 		  "type s = {a: bool, b: int} \n"
 		  "val foo: fn atom -> {a: bool, b: int}\n"
-		  "let foo sym = "
-		  "  match sym with "
-		  "  | :a -> {a=true, b=0} "
+		  "let foo sym = \n"
+		  "  match sym with \n"
+		  "  | :a -> {a=true, b=0} \n"
 		  "  | :b -> {b=1}",
 
-	      ?assertMatch({error, {missing_record_field, m, 4, a}},
+	      ?assertMatch({error, {missing_record_field, m, 7, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->

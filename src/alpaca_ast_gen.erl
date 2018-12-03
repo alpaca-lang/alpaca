@@ -290,6 +290,7 @@ group_funs(Funs, _ModuleName) ->
                                       line=L,
                                       bound_expr=#alpaca_fun{
                                                     arity=A,
+                                                    line=L,
                                                     versions=NewVs}}
               end
       end,
