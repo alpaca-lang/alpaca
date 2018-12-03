@@ -55,9 +55,9 @@ fun_pattern_test() ->
 	run_for_trace(
 	  [{"fun_pattern.alp", alpaca_fun_pattern, Mod}],
 	  fun() -> alpaca_fun_pattern:f(2) end),
-    %% After adding a catch-all match case we would expect these annotations:
-    %%   [{file, "fun_pattern.alp"}, {line, 3}]
-    Expected = {alpaca_fun_pattern, f, 1, []},
+    %% Incorrect line number, see the following issue:
+    %% https://github.com/alpaca-lang/alpaca/issues/263
+    Expected = {alpaca_fun_pattern, f, 1, [{file, "fun_pattern.alp"}, {line, 4}]},
     ?assertMatch([Expected | _], Trace).
 
 throw_test() ->
