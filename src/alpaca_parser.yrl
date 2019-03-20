@@ -688,12 +688,12 @@ definfix -> let '(' infixl ')' terms assign simple_expr :
   %% native AST is to let Alpaca code work with the AST.  This means that symbol
   %% names do need to be legitimate Alpaca strings in UTF-8, not Erlang strings.
   InfixName = infix_name(C),
-  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 definfix -> let '(' infixr ')' terms assign simple_expr :
   {infixr, L, C} = '$3',
   InfixName = infix_name(C),
-  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -771,7 +771,7 @@ all_infix -> infixr : '$1'.
 
 import_export_fun -> '(' all_infix ')' :
   {_, L, C} = '$2',
-  alpaca_ast:symbol(L, infix_name(C)).
+  ast:symbol(L, infix_name(C)).
 
 fun_and_arity -> import_export_fun '/' int :
   Name = symbol_name('$1'),
@@ -802,7 +802,7 @@ case '$1' of
         #alpaca_apply{line=line(S), expr=S, args=T};
     [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
         FunName = unicode:characters_to_binary(Fun, utf8),
-        Name = {Mod, alpaca_ast:symbol(L, FunName), length(T)},
+        Name = {Mod, ast:symbol(L, FunName), length(T)},
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
@@ -844,9 +844,9 @@ Erlang code.
 make_infix(Op, A, B) ->
     Name = case Op of
       {infixl, L, C} ->
-                   alpaca_ast:symbol(L, infix_name(C));
+                   ast:symbol(L, infix_name(C));
       {infixr, L, C} ->
-                   alpaca_ast:symbol(L, infix_name(C));
+                   ast:symbol(L, infix_name(C));
 
       {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
 
@@ -872,7 +872,7 @@ make_infix(Op, A, B) ->
                   expr=Name,
                   args=[A, B]}.
 
-make_define([{'Symbol', _}=Name|A], Expr, Level) ->
+make_define([#a_sym{}=Name|A], Expr, Level) ->
     L = line(Name),
     case validate_args(L, A) of
         {ok, []} ->
@@ -1006,21 +1006,21 @@ type_arity_error(L, Typ, Params) ->
     return_error(L, {wrong_type_arity, Typ, length(Params)}).
 
 symbol_name({symbol, S}) ->
-    alpaca_ast:symbol_name(S);
-symbol_name({'Symbol', _}=S) ->
-    alpaca_ast:symbol_name(S).
+    ast:symbol_name(S);
+symbol_name(S) ->
+    ast:symbol_name(S).
 
 symbol_line_name({symbol, S}) ->
-    {alpaca_ast:line(S), alpaca_ast:symbol_name(S)};
+    {ast:line(S), ast:symbol_name(S)};
 symbol_line_name({infixl, L, N}) ->
     {L, infix_name(N)};
 symbol_line_name({infixr, L, N}) ->
     {L, infix_name(N)}.
 
 line({symbol, S}) ->
-    alpaca_ast:line(S);
+    ast:line(S);
 line(X) ->
-    alpaca_ast:line(X).
+    ast:line(X).
 
 infix_name(C) ->
   BinC = unicode:characters_to_binary(C, utf8),
@@ -1037,7 +1037,7 @@ validate_match_pattern(Ptn) -> Ptn.
 validate_bin_segments([_Ptn]) -> ok;
 validate_bin_segments([Ptn | Rem]) ->
     case Ptn of
-        #alpaca_bits{default_sizes=true, type=T, value={'Symbol', _}=S}
+        #alpaca_bits{default_sizes=true, type=T, value=#a_sym{}=S}
         when T == binary; T == utf8 ->
             return_error(line(S), unsized_binary_before_end);
         _ -> validate_bin_segments(Rem)

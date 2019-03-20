@@ -92,7 +92,12 @@
 -type alpaca_comment() :: #alpaca_comment{}.
 
 
--type alpaca_symbol() :: {symbol, integer(), string()}.
+-record(a_sym, { line=0 :: integer()
+               , name :: binary()
+               , original=none :: none | binary()
+               }).
+-type alpaca_symbol() :: #a_sym{}.
+
 %% Reference to a symbol in a different module.  Arity can be 'none'
 %% if the user wishes to default to the first exported version of the
 %% reference.
