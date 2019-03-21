@@ -7,6 +7,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-include("alpaca_ast.hrl").
+
 scan(Code) when is_list(Code) -> 
     case alpaca_scan:string(Code) of
         {ok, Tokens, Num} -> {ok, infer_breaks(Tokens), Num};    
@@ -102,14 +104,11 @@ tuple_test_() ->
     ].
 
 symbol_test_() ->
-    [?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mySym">>}}}], 1},
+    [?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym">>}}], 1},
                    scan("mySym")),
-     ?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mySym1">>}}}], 1},
+     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym1">>}}], 1},
                    scan("mySym1")),
-     ?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mysym">>}}}], 1},
+     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mysym">>}}], 1},
                    scan("mysym"))].
 
 atom_test_() ->
@@ -136,10 +135,9 @@ string_escape_test_() ->
 let_test() ->
     Code = "let symbol = 5",
     ExpectedTokens = [{'let', 1},
-                      {symbol, {'Symbol', #{'__struct__' => record,
-                                            line => 1,
-                                            name => <<"symbol">>,
-                                            original => 'None'}}},
+                      {symbol, #a_sym{line = 1,
+                                      name = <<"symbol">>,
+                                      original = none}},
                       {assign, 1},
                       {int, 1, 5}],
     ?assertEqual({ok, ExpectedTokens, 1}, scan(Code)).
@@ -147,24 +145,18 @@ let_test() ->
 infer_test() ->
     Code = "module hello\nlet a = 0\nlet b = 1",
     ExpectedTokens = [{'module', 1}, {symbol, 
-                                      {'Symbol', 
-                                       #{'__struct__' => record,
-                                         line => 1,
-                                         name => <<"hello">>,
-                                         original => 'None'}}},
+                                      #a_sym{line = 1,
+                                             name = <<"hello">>,
+                                             original = none}},
                       {break, 2}, 
-                      {'let', 2}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 2,
-                                              name => <<"a">>,
-                                              original => 'None'}}},
+                      {'let', 2}, {symbol, #a_sym{line = 2,
+                                                  name = <<"a">>,
+                                                  original = none}},
                       {assign, 2}, {int, 2, 0}, 
                       {break, 3},
-                      {'let', 3}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 3,
-                                              name => <<"b">>,
-                                              original => 'None'}}},
+                      {'let', 3}, {symbol, #a_sym{line = 3,
+                                                  name = <<"b">>,
+                                                  original = none}},
                       {assign, 3}, {int, 3, 1}
                      ],
     ?assertEqual({ok, ExpectedTokens, 3}, scan(Code)).
@@ -172,24 +164,19 @@ infer_test() ->
 infer_bin_test() ->
     Code = "module bin_test\nlet a = << 10 : type = int >>",
     ExpectedTokens = [{'module', 1},
-                      {symbol, {'Symbol', #{'__struct__' => record,
-                                            line => 1,
-                                            name => <<"bin_test">>,
-                                            original => 'None'}}},
+                      {symbol, #a_sym{line = 1,
+                                      name = <<"bin_test">>,
+                                      original = none}},
                       {break, 2},
-                      {'let', 2}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 2,
-                                              name => <<"a">>,
-                                              original => 'None'}}},
+                      {'let', 2}, {symbol, #a_sym{line = 2,
+                                                  name = <<"a">>,
+                                                  original = none}},
                        {assign, 2}, 
                        {bin_open, 2}, {int, 2, 10},
                        {':', 2}, {type_declare, 2},
-                       {assign, 2}, {symbol, {'Symbol',
-                                              #{'__struct__' => record,
-                                                line => 2,
-                                                name => <<"int">>,
-                                                original => 'None'}}},
+                       {assign, 2}, {symbol, #a_sym{line = 2,
+                                                    name = <<"int">>,
+                                                    original = none}},
                        {bin_close, 2}
                      ],
     ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).

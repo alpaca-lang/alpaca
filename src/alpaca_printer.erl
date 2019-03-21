@@ -131,7 +131,7 @@ apply_type_vars(Str, [TV | Rest], NextVar) ->
     NewStr = re:replace(Str, TV, <<"'", NextVar>>, [global, {return, binary}]),
     apply_type_vars(NewStr, Rest, NextVar+1).
 
-format_binding(#alpaca_binding{type=Type, name={'Symbol', #{name := Name}}}) ->
+format_binding(#alpaca_binding{type=Type, name=#a_sym{name=Name}}) ->
     TypeSigRepr = format_type(Type),
     TypeVarsRepr = case re:run(TypeSigRepr, <<"'[a-z]">>,
                               [global, {capture, first, binary}]) of
@@ -203,13 +203,13 @@ format_module(#alpaca_module{functions=Funs,
     ModName = atom_to_binary(Name, utf8),
     %% Sort funs by line
     SortedFuns = lists:sort(
-        fun(#alpaca_binding{name={'Symbol', #{line := L1}}},
-            #alpaca_binding{name={'Symbol', #{line := L2}}}) ->
+        fun(#alpaca_binding{name=#a_sym{line = L1}},
+            #alpaca_binding{name=#a_sym{line = L2}}) ->
                 L1 =< L2
         end,
         Funs),
     {PublicFuns, PrivateFuns} = lists:partition(
-        fun(#alpaca_binding{name={'Symbol', #{name := FunName}}, type=T}) ->
+        fun(#alpaca_binding{name=#a_sym{name=FunName}, type=T}) ->
             lists:any(fun(N) when is_binary(N) -> N == FunName;
                          ({N, Arity}) ->
                              case T of
