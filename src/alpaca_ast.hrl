@@ -92,6 +92,17 @@
 -type alpaca_comment() :: #alpaca_comment{}.
 
 
+-record(a_int, { line=0 :: integer()
+               , val=0 :: integer()
+               }).
+-type alpaca_int() :: #a_int{}.
+
+-record(a_flt, { line=0 :: integer()
+               , val=0 :: float()
+               }).
+-type alpaca_float() :: #a_flt{}.
+
+
 -record(a_sym, { line=0 :: integer()
                , name :: binary()
                , original=none :: none | binary()
@@ -109,8 +120,6 @@
 -type alpaca_far_ref() :: #alpaca_far_ref{}.
 
 -type alpaca_unit() :: {unit, integer()}.
--type alpaca_int() :: {'Int', #{line := integer(), val := integer()}}.
--type alpaca_float() :: {float, integer(), float()}.
 -type alpaca_number() :: alpaca_int()|alpaca_float().
 -type alpaca_bool() :: {bool, integer(), boolean()}.
 -type alpaca_atom() :: {atom, integer(), atom()}.

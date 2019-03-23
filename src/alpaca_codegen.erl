@@ -332,12 +332,10 @@ gen_expr(Env, {add, L}) ->
     {Env, cerl:ann_c_atom(line_anno(Env, L), '+')};
 gen_expr(Env, {minus, L}) ->
     {Env, cerl:ann_c_atom(line_anno(Env, L), '-')};
-gen_expr(Env, {'Int', _}=I) ->
-    L = alpaca_ast:line(I),
-    {Env, cerl:ann_c_int(line_anno(Env, L), alpaca_ast:int_val(I))};
-gen_expr(Env, {'Float', _} =F) ->
-    L = alpaca_ast:line(F),
-    {Env, cerl:ann_c_float(line_anno(Env, L), alpaca_ast:float_val(F))};
+gen_expr(Env, #a_int{line=L, val=I}) ->
+    {Env, cerl:ann_c_int(line_anno(Env, L), I)};
+gen_expr(Env, #a_flt{line=L, val=F}) ->
+    {Env, cerl:ann_c_float(line_anno(Env, L), F)};
 gen_expr(Env, {boolean, L, B}) ->
     {Env, cerl:ann_c_atom(line_anno(Env, L), B)};
 gen_expr(Env, {atom, L, A}) when is_list(A) ->
@@ -383,7 +381,7 @@ gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
                  expr={'erlang', ast:symbol(0, <<"make_fun">>), 3},
                  args=[{atom, 0, "alpaca_" ++ atom_to_list(M)},
                        {atom, 0, N},
-                       alpaca_ast:int(0, A)]},
+                       ast:int(0, A)]},
     gen_expr(Env, MakeFun);
 gen_expr(Env, {raise_error, L, Kind, Expr}) ->
     {Env2, ExprAST} = gen_expr(Env, Expr),

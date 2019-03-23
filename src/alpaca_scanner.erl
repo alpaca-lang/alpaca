@@ -77,9 +77,9 @@ infer_breaks(Tokens) ->
 
 number_test_() ->
     [
-     ?_assertEqual({ok, [{int, 1, 5}], 1}, scan("5")),
-     ?_assertEqual({ok, [{float, 1, 3.14}], 1}, scan("3.14")),
-     ?_assertEqual({ok, [{float, 1, 102.0}], 1}, scan("102.0"))
+     ?_assertEqual({ok, [{int, #a_int{line=1, val=5}}], 1}, scan("5")),
+     ?_assertEqual({ok, [{float, #a_flt{line=1, val=3.14}}], 1}, scan("3.14")),
+     ?_assertEqual({ok, [{float, #a_flt{line=1, val=102.0}}], 1}, scan("102.0"))
     ].
 
 tuple_test_() ->
@@ -87,18 +87,18 @@ tuple_test_() ->
     [
      ?_assertEqual({ok, [
                          {'(', 1},
-                         {int, 1, 1},
+                         {int, #a_int{line=1, val=1}},
                          {')', 1}], 1},
                    scan("(1)")),
      ?_assertEqual(EmptyTupleExpected, scan("()")),
      ?_assertEqual(EmptyTupleExpected, scan("( )")),
      ?_assertEqual({ok, [
                          {'(', 1},
-                         {int, 1, 1},
+                         {int, #a_int{line=1, val=1}},
                          {',', 1},
-                         {int, 1, 2},
+                         {int, #a_int{line=1, val=2}},
                          {',', 1},
-                         {int, 1, 3},
+                         {int, #a_int{line=1, val=3}},
                          {')', 1}], 1},
                    scan("(1, 2, 3)"))
     ].
@@ -139,7 +139,7 @@ let_test() ->
                                       name = <<"symbol">>,
                                       original = none}},
                       {assign, 1},
-                      {int, 1, 5}],
+                      {int, #a_int{line=1, val=5}}],
     ?assertEqual({ok, ExpectedTokens, 1}, scan(Code)).
 
 infer_test() ->
@@ -152,12 +152,12 @@ infer_test() ->
                       {'let', 2}, {symbol, #a_sym{line = 2,
                                                   name = <<"a">>,
                                                   original = none}},
-                      {assign, 2}, {int, 2, 0}, 
+                      {assign, 2}, {int, #a_int{line=2, val=0}},
                       {break, 3},
                       {'let', 3}, {symbol, #a_sym{line = 3,
                                                   name = <<"b">>,
                                                   original = none}},
-                      {assign, 3}, {int, 3, 1}
+                      {assign, 3}, {int, #a_int{line=3, val=1}}
                      ],
     ?assertEqual({ok, ExpectedTokens, 3}, scan(Code)).
 
@@ -172,7 +172,7 @@ infer_bin_test() ->
                                                   name = <<"a">>,
                                                   original = none}},
                        {assign, 2}, 
-                       {bin_open, 2}, {int, 2, 10},
+                       {bin_open, 2}, {int, #a_int{line=2, val=10}},
                        {':', 2}, {type_declare, 2},
                        {assign, 2}, {symbol, #a_sym{line = 2,
                                                     name = <<"int">>,

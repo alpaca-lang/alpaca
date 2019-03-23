@@ -91,10 +91,10 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 {TYPE_CHECK} : {token, {type_check_tok, list_to_atom(TokenChars), TokenLine}}.
 
 %% Integer
-{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
+{D}+       : {token, {int, ast:int(TokenLine, list_to_integer(TokenChars))}}.
 
 %% Float
-{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
+{D}+\.{D}+ : {token, {float, ast:float(TokenLine, list_to_float(TokenChars))}}.
 
 %% Binaries
 << : {token, {bin_open, TokenLine}}.

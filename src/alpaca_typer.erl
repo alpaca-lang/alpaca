@@ -1794,9 +1794,9 @@ validate_types(M, Ts, Mods, [_H|T]) ->
 
 %% Base types now need to be in reference cells because when they are part
 %% of unions they may need to be reset.
-typ_of(#env{next_var=VarNum}, _Lvl, {'Int', _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, #a_int{}) ->
     {new_cell(t_int), VarNum};
-typ_of(#env{next_var=VarNum}, _Lvl, {'Float', _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, #a_flt{}) ->
     {new_cell(t_float), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {boolean, _, _}) ->
     {new_cell(t_bool), VarNum};
@@ -3120,7 +3120,7 @@ clause_test_() ->
     [?_assertMatch({{t_clause, t_int, none, t_atom}, _},
                    typ_of(
                      new_env(),
-                     #alpaca_clause{pattern=alpaca_ast:int(1, 1),
+                     #alpaca_clause{pattern=ast:int(1, 1),
                                     result={atom, 1, true}})),
      ?_assertMatch({{t_clause, {unbound, t0, 0}, none, t_atom}, _},
                    typ_of(
@@ -3136,7 +3136,7 @@ clause_test_() ->
                         result=#alpaca_apply{
                                   expr={bif, '+', 1, erlang, '+'},
                                   args=[ast:symbol(1, <<"x">>),
-                                        alpaca_ast:int(1, 2)]}}))
+                                        ast:int(1, 2)]}}))
     ].
 
 match_test_() ->

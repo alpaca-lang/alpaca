@@ -363,24 +363,20 @@ op -> '/' : '$1'.
 const -> boolean : '$1'.
 
 const -> minus int :
-  {int, L, Val} = '$2',
-  alpaca_ast:int(L, 0-Val).
+  #a_int{line=L, val=Val} = unwrap('$2'),
+  ast:int(L, 0-Val).
 const -> plus int :
-  {int, L, Val} = '$2',
-  alpaca_ast:int(L, Val).
+  '$2'.
 const -> int :
-  {int, L, Val} = '$1',
-  alpaca_ast:int(L, Val).
+  '$1'.
 
 const -> minus float :
-  {float, L, Val} = '$2',
-  alpaca_ast:float(L, 0-Val).
+  #a_flt{line=L, val=Val} = unwrap('$2'),
+  ast:float(L, 0-Val).
 const -> float :
-  {float, L, Val} = '$1',
-  alpaca_ast:float(L, Val).
+  '$1'.
 const -> plus float :
-  {float, L, Val} = '$2',
-  alpaca_ast:float(L, Val).
+  '$2'.
 
 const -> atom : '$1'.
 const -> chars : '$1'.
@@ -391,7 +387,7 @@ const -> unit : '$1'.
 module_fun -> symbol '.' symbol '/' int :
   {L, Mod} = symbol_line_name('$1'),
   Fun = symbol_name('$3'),
-  {int, _, Arity} = '$5',
+  #a_int{val=Arity} = unwrap('$5'),
   #alpaca_far_ref{
      line=L,
      module=binary_to_atom(Mod, utf8),
@@ -433,8 +429,8 @@ bin_qualifier -> type_declare assign symbol :
 bin_qualifier -> symbol assign int :
     {L, S} = symbol_line_name('$1'),
     case S of
-        <<"size">> -> {size, '$3'};
-        <<"unit">> -> {unit, '$3'};
+        <<"size">> -> {size, unwrap('$3')};
+        <<"unit">> -> {unit, unwrap('$3')};
         _          -> return_error(L, {invalid_bin_qualifier, S})
     end.
 bin_qualifier -> symbol assign boolean :
@@ -459,12 +455,11 @@ bin_qualifier -> symbol assign symbol :
 bin_qualifiers -> bin_qualifier : ['$1'].
 bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
 
+%% TODO:  this is not tested!  AST gen is a reasonable place to do so.
 bin_segment -> float :
-  {float, L, V} = '$1',
-  #alpaca_bits{value=alpaca_ast:float(L, V), type=float, line=term_line('$1')}.
+  #alpaca_bits{value=unwrap('$1'), type=float, line=term_line('$1')}.
 bin_segment -> int :
-  {int, L, V} = '$1',
-  #alpaca_bits{value=alpaca_ast:int(L, V), type=int, line=term_line('$1')}.
+  #alpaca_bits{value=unwrap('$1'), type=int, line=term_line(unwrap('$1'))}.
 bin_segment -> symbol :
   #alpaca_bits{value=unwrap('$1'), line=line(unwrap('$1'))}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
@@ -610,7 +605,7 @@ error -> raise_error term:
   {raise_error, L, list_to_atom(Kind), '$2'}.
 
 term -> literal_fun : '$1'.
-term -> const : '$1'.
+term -> const : unwrap('$1').
 term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : unwrap('$1').
@@ -668,7 +663,7 @@ receive_block -> receive with match_clauses :
   {_, Line} = '$1',
   #alpaca_receive{line=Line, clauses='$3'}.
 receive_block -> receive_block after int simple_expr :
-  {_, _, Timeout} = '$3',
+  #a_int{val=Timeout} = unwrap('$3'),
   '$1'#alpaca_receive{timeout=Timeout, timeout_action='$4'}.
 
 %% Only supporting spawning functions inside the current module
@@ -757,7 +752,7 @@ import_fun_item -> symbol '.' import_export_fun :
 import_fun_item -> symbol '.' import_export_fun '/' int:
   Mod = symbol_name('$1'),
   Fun = symbol_name('$3'),
-  {int, _, Arity} = '$5',
+  #a_int{val=Arity} = unwrap('$5'),
   {Fun, {binary_to_atom(Mod, utf8), Arity}}.
 import_fun_item -> fun_subset : '$1'.
 
@@ -775,12 +770,13 @@ import_export_fun -> '(' all_infix ')' :
 
 fun_and_arity -> import_export_fun '/' int :
   Name = symbol_name('$1'),
-  {int, _, Arity} = '$3',
+  #a_int{val=Arity} = unwrap('$3'),
   {Name, Arity}.
 fun_and_arity -> symbol '/' int :
-Name = symbol_name('$1'),
-{int, _, Arity} = '$3',
-{Name, Arity}.
+  Name = symbol_name('$1'),
+  %% Destructuring the tuple from leex, we don't need or want the `int` tag:
+  {_, #a_int{val=Arity}} = '$3',
+  {Name, Arity}.
 
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
@@ -927,9 +923,9 @@ validate_args(L, [A|T], Memo) ->
     validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
-is_literal({'Int', _}) -> true;
+is_literal(#a_int{}) -> true;
 is_literal({string, _, _}) -> true;
-is_literal({'Float', _}) -> true;
+is_literal(#a_flt{}) -> true;
 is_literal(#alpaca_fun{}) -> true;
 is_literal({alpaca_record, _, _, _, Members}) ->
     MemberExprs = lists:map(
@@ -981,9 +977,9 @@ term_line(Term) ->
 bin_to_atom(B) when is_binary(B) ->
     binary_to_atom(B, utf8).
 
-add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->
+add_qualifier(#alpaca_bits{}=B, {size, #a_int{val=I}}) ->
     B#alpaca_bits{size=I, default_sizes=false};
-add_qualifier(#alpaca_bits{}=B, {unit, {int, _, I}}) ->
+add_qualifier(#alpaca_bits{}=B, {unit, #a_int{val=I}}) ->
     B#alpaca_bits{unit=I, default_sizes=false};
 add_qualifier(#alpaca_bits{}=B, {bin_endian, _, E}) ->
     B#alpaca_bits{endian=bin_to_atom(E)};
@@ -1048,6 +1044,10 @@ validate_bin_segments([Ptn | Rem]) ->
 %% actually product and use Alpaca AST nodes straight from Leex.
 unwrap({symbol, S}) ->
     S;
+unwrap({int, I}) ->
+    I;
+unwrap({float, F}) ->
+    F;
 unwrap(X) ->
     X.
 
