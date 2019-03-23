@@ -112,10 +112,10 @@ symbol_test_() ->
                    scan("mysym"))].
 
 atom_test_() ->
-    [?_assertEqual({ok, [{atom, 1, "myAtom"}], 1}, scan(":myAtom"))].
+    [?_assertEqual({ok, [{atom, #a_atom{line=1, val=myAtom}}], 1}, scan(":myAtom"))].
 
 quoted_atom_test_() ->
-    [?_assertEqual({ok, [{atom, 1, "Quoted.Atom-Value"}], 1},
+    [?_assertEqual({ok, [{atom, #a_atom{line=1, val='Quoted.Atom-Value'}}], 1},
                    scan(":\"Quoted.Atom-Value\""))].
 
 string_escape_test_() ->

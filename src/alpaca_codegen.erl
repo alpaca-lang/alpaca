@@ -230,7 +230,7 @@ gen_fun(Env,
            name=#a_sym{line=NL, name=N},
            line=L,
            bound_expr=#alpaca_fun{
-                         versions=[#alpaca_fun_version{args=[{unit, _}], body=Body}]}}) ->
+                         versions=[#alpaca_fun_version{args=[#a_unit{}], body=Body}]}}) ->
     FName = cerl:ann_c_fname(line_anno(Env, NL), binary_to_atom(N, utf8), 1),
     A = [cerl:ann_c_var(line_anno(Env, L), '_unit')],
     {_, B} = gen_expr(Env, Body),
@@ -263,7 +263,7 @@ gen_fun(Env, #alpaca_binding{name=#a_sym{line=NL, name=N}, line=L, bound_expr=Bo
     end.
 
 needs_pattern(Args) ->
-    case lists:filter(fun({unit, _}) -> false;
+    case lists:filter(fun(#a_unit{}) -> false;
                          (#a_sym{})  -> false;
                          (_)         -> true
                       end, Args) of
@@ -336,17 +336,15 @@ gen_expr(Env, #a_int{line=L, val=I}) ->
     {Env, cerl:ann_c_int(line_anno(Env, L), I)};
 gen_expr(Env, #a_flt{line=L, val=F}) ->
     {Env, cerl:ann_c_float(line_anno(Env, L), F)};
-gen_expr(Env, {boolean, L, B}) ->
+gen_expr(Env, #a_bool{line=L, val=B}) ->
     {Env, cerl:ann_c_atom(line_anno(Env, L), B)};
-gen_expr(Env, {atom, L, A}) when is_list(A) ->
-    {Env, cerl:ann_c_atom(line_anno(Env, L), list_to_atom(A))};
-gen_expr(Env, {atom, L, A}) when is_binary(A) ->
-    {Env, cerl:ann_c_atom(line_anno(Env, L), binary_to_atom(A, utf8))};
+gen_expr(Env, #a_atom{line=L, val=A}) when is_atom(A) ->
+    {Env, cerl:ann_c_atom(line_anno(Env, L), A)};
 gen_expr(Env, {chars, L, Cs}) ->
     {Env, cerl:ann_c_string(line_anno(Env, L), Cs)};
 gen_expr(Env, #a_str{line=L, val=S}) ->
     {Env, cerl:ann_c_binary(line_anno(Env, L), literal_binary(S, utf8))};
-gen_expr(Env, {unit, L}) ->
+gen_expr(Env, #a_unit{line=L}) ->
     {Env, cerl:ann_c_tuple(line_anno(Env, L), [])};
 gen_expr(#env{wildcard_num=N}=Env, {'_', L}) ->
     %% We produce a unique variable name for each wildcard
@@ -379,8 +377,8 @@ gen_expr(#env{module_funs=Funs}=Env, #a_sym{line=L, name=V}) ->
 gen_expr(Env, #alpaca_far_ref{module=M, name=N, arity=A}) ->
     MakeFun = #alpaca_apply{
                  expr={'erlang', ast:symbol(0, <<"make_fun">>), 3},
-                 args=[{atom, 0, "alpaca_" ++ atom_to_list(M)},
-                       {atom, 0, N},
+                 args=[ast:atom(0, "alpaca_" ++ atom_to_list(M)),
+                       ast:atom(0, N),
                        ast:int(0, A)]},
     gen_expr(Env, MakeFun);
 gen_expr(Env, {raise_error, L, Kind, Expr}) ->
@@ -444,7 +442,7 @@ gen_expr(Env, #alpaca_record_transform{line=RTL, additions=Adds, existing=Existi
     F = fun(#alpaca_record_member{line=L, name=N, val=V}, {E, RExp}) ->
                 Add = #alpaca_map_add{
                          to_add=#alpaca_map_pair{
-                                   key={atom, L, atom_to_list(N)},
+                                   key=ast:atom(L, N),
                                    val=V},
                          existing=RExp},
                 {E, Add}
@@ -454,8 +452,8 @@ gen_expr(Env, #alpaca_record_transform{line=RTL, additions=Adds, existing=Existi
 
     %% Generating the update as a sequence of map additions re-labels the
     %% structure as a map, here we're just moving it back to a record.
-    {_, KExp} = gen_expr(Env2, {atom, 0, "__struct__"}),
-    {_, VExp} = gen_expr(Env2, {atom, 0, "record"}),
+    {_, KExp} = gen_expr(Env2, ast:atom(0, "__struct__")),
+    {_, VExp} = gen_expr(Env2, ast:atom(0, "record")),
 
     {Env2, cerl:ann_c_call(
              line_anno(Env, RTL),
@@ -504,7 +502,7 @@ gen_expr(Env, #alpaca_apply{line=L, expr={Module, #a_sym{}=Sym, _}, args=Args}) 
               FName,
               [A || {_, A} <- [gen_expr(Env, E) || E <- Args]]),
     {Env, Apply};
-gen_expr(Env, #alpaca_apply{expr=#a_sym{line=NL, name=Name}, line=L, args=[{unit, _}]}) ->
+gen_expr(Env, #alpaca_apply{expr=#a_sym{line=NL, name=Name}, line=L, args=[#a_unit{}]}) ->
     FName = case proplists:get_value(Name, Env#env.module_funs) of
                 undefined ->
                     cerl:ann_c_var(
@@ -855,7 +853,7 @@ literal_binary(Chars, Encoding) when Encoding =:= utf8; Encoding =:= latin1 ->
 record_to_map(#alpaca_record{line=RL, is_pattern=Patt, members=Ms}) ->
     F = fun(#alpaca_record_member{name=N, val=V, line=L}) ->
                 MapV = record_to_map(V),
-                MapK = {atom, L, atom_to_list(N)},
+                MapK = ast:atom(L, atom_to_list(N)),
                 #alpaca_map_pair{line=L, is_pattern=Patt, key=MapK, val=MapV}
         end,
     #alpaca_map{is_pattern=Patt,
@@ -866,8 +864,8 @@ record_to_map(NotRecord) ->
     NotRecord.
 
 annotate_map_type(#alpaca_map{is_pattern=IsP, structure=S, pairs=Ps}) ->
-    V = {atom, 0, atom_to_list(S)},
-    K = {atom, 0, "__struct__"},
+    V = ast:atom(0, S),
+    K = ast:atom(0, "__struct__"),
     P = #alpaca_map_pair{is_pattern=IsP, key=K, val=V},
     [P|Ps].
 

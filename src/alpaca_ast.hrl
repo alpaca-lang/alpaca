@@ -93,6 +93,19 @@
 
 %% Literals:
 
+-record(a_unit, { line=0 :: integer()}).
+-type alpaca_unit() :: #a_unit{}.
+
+-record(a_bool, { line=0 :: integer()
+                , val :: boolean()
+                }).
+-type alpaca_bool() :: {bool, integer(), boolean()}.
+
+-record(a_atom, { line=0 :: integer()
+                , val :: atom()
+                }).
+-type alpaca_atom() :: #a_atom{}.
+
 -record(a_int, { line=0 :: integer()
                , val=0 :: integer()
                }).
@@ -124,10 +137,7 @@
           arity=none :: none | integer()}).
 -type alpaca_far_ref() :: #alpaca_far_ref{}.
 
--type alpaca_unit() :: {unit, integer()}.
 -type alpaca_number() :: alpaca_int()|alpaca_float().
--type alpaca_bool() :: {bool, integer(), boolean()}.
--type alpaca_atom() :: {atom, integer(), atom()}.
 
 -type alpaca_error() :: {raise_error,
                        integer(),
@@ -148,7 +158,7 @@
 %%% ### Binaries
 
 -record(alpaca_binary, {line=0 :: integer(),
-                      segments=[] :: list(alpaca_bits())}).
+                        segments=[] :: list(alpaca_bits())}).
 -type alpaca_binary() :: #alpaca_binary{}.
 
 -type alpaca_bits_type() :: int | float | binary | utf8.

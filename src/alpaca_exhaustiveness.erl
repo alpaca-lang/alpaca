@@ -252,7 +252,7 @@ covered({t_tuple, Members}, Pattern) ->
 covered(t_unit, Pattern) ->
     matches_unit(Pattern).
 
-matches_bool({boolean, _, Bool}, Bool) ->
+matches_bool(#a_bool{val=Bool}, Bool) ->
     true;
 matches_bool(Other, _Bool) ->
     matches_wildcard(Other).
@@ -296,7 +296,7 @@ matches([], []) -> true;
 matches([Pattern|Patterns], [CP|CPs]) ->
     covered(CP, Pattern) andalso matches(Patterns, CPs).
 
-matches_unit({unit, _}) ->
+matches_unit(#a_unit{}) ->
     true;
 matches_unit(P) ->
     matches_wildcard(P).

@@ -1798,9 +1798,9 @@ typ_of(#env{next_var=VarNum}, _Lvl, #a_int{}) ->
     {new_cell(t_int), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, #a_flt{}) ->
     {new_cell(t_float), VarNum};
-typ_of(#env{next_var=VarNum}, _Lvl, {boolean, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, #a_bool{}) ->
     {new_cell(t_bool), VarNum};
-typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
+typ_of(#env{next_var=VarNum}, _Lvl, #a_atom{}) ->
     {new_cell(t_atom), VarNum};
 typ_of(#env{next_var=VN}, _Lvl, #a_str{}) ->
     {new_cell(t_string), VN};
@@ -1854,7 +1854,7 @@ typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
     {DT, _} = deep_copy_type(Typ, maps:new()),
     {DT, NV};
 
-typ_of(#env{next_var=VN}, _Lvl, {unit, _}) ->
+typ_of(#env{next_var=VN}, _Lvl, #a_unit{}) ->
     {new_cell(t_unit), VN};
 
 %% Errors only type as new variables for the moment to simplify
@@ -3121,13 +3121,13 @@ clause_test_() ->
                    typ_of(
                      new_env(),
                      #alpaca_clause{pattern=ast:int(1, 1),
-                                    result={atom, 1, true}})),
+                                    result=ast:atom(1, true)})),
      ?_assertMatch({{t_clause, {unbound, t0, 0}, none, t_atom}, _},
                    typ_of(
                      new_env(),
                      #alpaca_clause{
                         pattern=ast:symbol(1, <<"x">>),
-                        result={atom, 1, true}})),
+                        result=ast:atom(1, true)})),
      ?_assertMatch({{t_clause, t_int, none, t_int}, _},
                    typ_of(
                      new_env(),

@@ -534,7 +534,7 @@ rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
                     _ ->
                         parse_error(Mod, L, {duplicate_definition, N})
                 end;
-           ({unit, _}=U, {E, AccMap, Syms}) ->
+           (#a_unit{}=U, {E, AccMap, Syms}) ->
                 {E, AccMap, [U|Syms]};
            (Arg, {E, AccMap, Syms}) ->
                 {E, AccMap, [Arg|Syms]}
@@ -1520,13 +1520,13 @@ match_test_() ->
                                                #a_sym{line = 1, name = <<"y">>}]},
                            clauses=[#alpaca_clause{
                                        pattern=#a_int{line=2, val=0},
-                                       result={atom, 2, "zero"}},
+                                       result=#a_atom{line=2, val=zero}},
                                     #alpaca_clause{
                                        pattern=#a_int{line=3, val= 1},
-                                       result={atom, 3, "one"}},
+                                       result=#a_atom{line=3, val=one}},
                                     #alpaca_clause{
                                        pattern={'_', 4},
-                                       result={atom, 4, "more_than_one"}}
+                                       result=#a_atom{line=4, val=more_than_one}}
                                    ]}},
         parse(alpaca_scanner:scan(
                 "match add x y with\n"
@@ -1542,13 +1542,13 @@ match_test_() ->
                                        values=[{'_', 2},
                                                #a_sym{line = 2, name = <<"x">>}
                                               ]},
-                            result={atom, 2, "anything_first"}},
+                            result=#a_atom{line=2, val=anything_first}},
                          #alpaca_clause{
                             pattern=#alpaca_tuple{
                                        arity=2,
                                        values=[#a_int{line=3, val=1},
                                                #a_sym{line = 3, name = <<"x">>}]},
-                            result={atom, 3, "one_first"}}]}},
+                            result=#a_atom{line=3, val=one_first}}]}},
         parse(alpaca_scanner:scan(
                 "match x with\n"
                 "  (_, x) -> :anything_first\n"
@@ -1568,7 +1568,7 @@ match_test_() ->
                                                           #a_int{line=2, val=1}]},
                                                #a_sym{line = 2, name = <<"a">>}
                                               ]},
-                            result={atom, 2, "nested_tuple"}}]}},
+                            result=#a_atom{line=2, val=nested_tuple}}]}},
         parse(alpaca_scanner:scan(
                 "match (x, y) with\n"
                 " ((_, 1), a) -> :nested_tuple")))
@@ -1682,8 +1682,8 @@ string_test_() ->
 ffi_test_() ->
     [?_assertMatch({ok,
                     #alpaca_ffi{
-                       module={atom, 1, "io"},
-                       function_name={atom, 1, "format"},
+                       module=#a_atom{line=1, val=io},
+                       function_name=#a_atom{line=1, val=format},
                        args=#alpaca_cons{
                                head=#a_str{line=1, val="One is ~s~n"},
                                tail=#alpaca_cons{

@@ -360,7 +360,7 @@ op -> minus : '$1'.
 op -> plus : '$1'.
 op -> '/' : '$1'.
 
-const -> boolean : '$1'.
+const -> boolean : unwrap('$1').
 
 const -> minus int :
   #a_int{line=L, val=Val} = unwrap('$2'),
@@ -378,11 +378,11 @@ const -> float :
 const -> plus float :
   '$2'.
 
-const -> atom : '$1'.
+const -> atom : unwrap('$1').
 const -> chars : '$1'.
 const -> string : unwrap('$1').
 const -> '_' : '$1'.
-const -> unit : '$1'.
+const -> unit : unwrap('$1').
 
 module_fun -> symbol '.' symbol '/' int :
   {L, Mod} = symbol_line_name('$1'),
@@ -435,9 +435,9 @@ bin_qualifier -> symbol assign int :
     end.
 bin_qualifier -> symbol assign boolean :
     {L, S} = symbol_line_name('$1'),
-    case {S, '$3'} of
-        {<<"sign">>, {boolean, L, true}}  -> {bin_sign, L, <<"signed">>};
-        {<<"sign">>, {boolean, L, false}} -> {bin_sign, L, <<"unsigned">>};
+    case {S, unwrap('$3')} of
+        {<<"sign">>, #a_bool{line=L, val=true}}  -> {bin_sign, L, <<"signed">>};
+        {<<"sign">>, #a_bool{line=L, val=false}} -> {bin_sign, L, <<"unsigned">>};
         {_, _}                        ->
             return_error(L, {invalid_bin_qualifier, S})
     end.
@@ -515,7 +515,7 @@ record -> open_brace close_brace:
 
 unit -> '(' ')':
   {_, L} = '$1',
-  {unit, L}.
+  ast:unit(L).
 
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
@@ -524,33 +524,59 @@ tuple -> '(' tuple_list ')' :
   #alpaca_tuple{line=L, arity=length('$2'), values='$2'}.
 
 infix -> term 'xor' term :
-         L1 = term_line('$1'),
-         FalseC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
-                      result={boolean, L1, false}, line=L1},
-         FalseC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, true}]},
-                     result={boolean, L1, false}, line=L1},
-         TrueC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, false}]},
-                     result={boolean, L1, true}, line=L1},
-         TrueC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, true}]},
-                     result={boolean, L1, true}, line=L1},
-         #alpaca_match{
-            match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
-            clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
-            line=L1
-           }.
+  L1 = term_line('$1'),
+  FalseC1 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						 , arity=2
+						 , values=[ ast:bool(L1, false)
+							  , ast:bool(L1, false)
+							  ]
+						 },
+			    result=ast:bool(L1, false)
+			  , line=L1
+			  },
+  FalseC2 = #alpaca_clause{pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, true)
+							 , ast:bool(L1, true)
+							 ]
+						}
+			  , result=ast:bool(L1, false)
+			  , line=L1
+			  },
+  TrueC1 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, true)
+							 , ast:bool(L1, false)
+							 ]
+						}
+			 , result=ast:bool(L1, true)
+			 , line=L1
+			 },
+  TrueC2 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, false)
+							 , ast:bool(L1, true)
+							 ]
+						}
+			 , result=ast:bool(L1, true)
+			 , line=L1
+			 },
+  #alpaca_match{
+     match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
+     clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
+     line=L1
+    }.
+
 infix -> term 'and' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
-         FalseC = #alpaca_clause{
-                     pattern={boolean, L1, false},
-                     result={boolean, L1, false}, line=L1},
-         TrueC = #alpaca_clause{
-                    pattern={boolean, L2, true},
-                    result='$3', line=L2},
+         FalseC = #alpaca_clause{ pattern=ast:bool(L1, false)
+				, result=ast:bool(L1, false)
+				, line=L1
+				},
+         TrueC = #alpaca_clause{ pattern=ast:bool(L2, true)
+			       , result='$3'
+			       , line=L2},
          #alpaca_match{
             match_expr='$1',
             clauses=[TrueC, FalseC],
@@ -560,12 +586,14 @@ infix -> term 'and' term :
 infix -> term 'or' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
-         TrueC = #alpaca_clause{
-                     pattern={boolean, L1, true},
-                     result={boolean, L1, true}, line=L1},
-         FalseC = #alpaca_clause{
-                    pattern={boolean, L2, false},
-                    result='$3', line=L2},
+         TrueC = #alpaca_clause{ pattern=ast:bool(L1, true)
+			       , result=ast:bool(L1, true)
+			       , line=L1
+			       },
+         FalseC = #alpaca_clause{ pattern=ast:bool(L2, false)
+				, result='$3'
+				, line=L2
+				},
          #alpaca_match{
             match_expr='$1',
             clauses=[TrueC, FalseC],
@@ -699,8 +727,8 @@ binding -> let terms assign simple_expr in simple_expr :
 
 ffi_call -> beam atom atom cons with match_clauses:
   {_, L} = '$1',
-  #alpaca_ffi{module='$2',
-	      function_name='$3',
+  #alpaca_ffi{module=unwrap('$2'),
+	      function_name=unwrap('$3'),
 	      args='$4',
 	      clauses='$6',
 	      line=L}.
@@ -908,7 +936,7 @@ make_define([BadName|Args], _Expr, _) ->
 %% Unit is only valid for single argument functions as a way around
 %% the problem of distinguishing between nullary functions and
 %% variable bindings in let forms:
-validate_args(_L, [{unit, _}]=Args) ->
+validate_args(_L, [#a_unit{}]=Args) ->
     {ok, Args};
 validate_args(L, Args) ->
     validate_args(L, Args, []).
@@ -925,6 +953,8 @@ validate_args(L, [A|T], Memo) ->
     validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
+is_literal(#a_unit{}) -> true;
+is_literal(#a_atom{}) -> true;
 is_literal(#a_int{}) -> true;
 is_literal(#a_str{}) -> true;
 is_literal(#a_flt{}) -> true;
@@ -949,13 +979,10 @@ is_literal({alpaca_binary, _, Members}) ->
     all_literals(MemberExprs);
 is_literal({alpaca_type_apply, _, _, Expr}) ->
     is_literal(Expr);
-is_literal({atom, _, _}) -> true;
-is_literal({boolean, _, _}) -> true;
+is_literal(#a_bool{}) -> true;
 is_literal({chars, _, _}) -> true;
 is_literal(#alpaca_tuple{values=Members}) ->
     all_literals(Members);
-is_literal({unit, _}) ->
-    true;
 is_literal(_) -> false.
 
 all_literals([]) -> true;
@@ -1044,13 +1071,19 @@ validate_bin_segments([Ptn | Rem]) ->
 
 %% Yecc requires tuples to start with a token name it can recognize so we can't
 %% actually product and use Alpaca AST nodes straight from Leex.
-unwrap({symbol, S}) ->
-    S;
+unwrap({unit, U}) ->
+    U;
+unwrap({boolean, B}) ->
+    B;
+unwrap({atom, A}) ->
+    A;
 unwrap({int, I}) ->
     I;
 unwrap({float, F}) ->
     F;
 unwrap({string, S}) ->
+    S;
+unwrap({symbol, S}) ->
     S;
 unwrap(X) ->
     X.

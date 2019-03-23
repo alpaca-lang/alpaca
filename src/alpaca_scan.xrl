@@ -45,7 +45,7 @@ Rules.
 \:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
-()    : {token, {unit, TokenLine}}.
+()    : {token, {unit, ast:unit(TokenLine)}}.
 #{    : {token, {map_open, TokenLine}}.
 {     : {token, {open_brace, TokenLine}}.
 }     : {token, {close_brace, TokenLine}}.
@@ -78,7 +78,7 @@ xor         : {token, {'xor', TokenLine}}.
 
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
-true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
+true|false : {token, {boolean, ast:bool(TokenLine, list_to_atom(TokenChars))}}.
 
 %% Type variables (nicked from OCaml):
 '{SYM} : {token, {type_var, TokenLine, string:substr(TokenChars, 2)}}.
@@ -106,10 +106,10 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
   {token, {symbol, ast:symbol(TokenLine, Chars)}}.
 
 %% Atom
-{ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
+{ATOM} : {token, {atom, ast:atom(TokenLine, list_to_atom(tl(TokenChars)))}}.
 {ATOM}"(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 3, TokenLen - 3),
-  {token, {atom, TokenLine, S}}.
+  {token, {atom, ast:atom(TokenLine, list_to_atom(S))}}.
 
 %% String
 "(\\"*|\\.|[^"\\])*" :
