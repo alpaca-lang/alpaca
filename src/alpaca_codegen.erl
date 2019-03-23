@@ -212,7 +212,7 @@ gen_test_exports([], _, Memo) ->
     [gen_export({<<"test">>, 0})|Memo];
 gen_test_exports(_, [], Memo) ->
     [gen_export({<<"test">>, 0})|Memo];
-gen_test_exports([#alpaca_test{name={string, _, N}}|RemTests], [test|_]=Opts,
+gen_test_exports([#alpaca_test{name=#a_str{val=N}}|RemTests], [test|_]=Opts,
                  Memo) ->
     gen_test_exports(
       RemTests, Opts, [gen_export({clean_test_name(N), 0})|Memo]);
@@ -344,7 +344,7 @@ gen_expr(Env, {atom, L, A}) when is_binary(A) ->
     {Env, cerl:ann_c_atom(line_anno(Env, L), binary_to_atom(A, utf8))};
 gen_expr(Env, {chars, L, Cs}) ->
     {Env, cerl:ann_c_string(line_anno(Env, L), Cs)};
-gen_expr(Env, {string, L, S}) ->
+gen_expr(Env, #a_str{line=L, val=S}) ->
     {Env, cerl:ann_c_binary(line_anno(Env, L), literal_binary(S, utf8))};
 gen_expr(Env, {unit, L}) ->
     {Env, cerl:ann_c_tuple(line_anno(Env, L), [])};
@@ -814,7 +814,7 @@ gen_bits(Env, [#alpaca_bits{line=L, type=T, value=#a_sym{}, default_sizes=true}=
     gen_bits(Env2, Rem, [B|Segs]);
 
 gen_bits(Env,
-         [#alpaca_bits{value={string, _, S}, type=utf8, default_sizes=true}|Rem],
+         [#alpaca_bits{value=#a_str{val=S}, type=utf8, default_sizes=true}|Rem],
          Segs) ->
     Lit = lists:reverse(literal_binary(S, utf8)),
     gen_bits(Env, Rem, Lit ++ Segs);

@@ -1672,9 +1672,11 @@ binary_test_() ->
 
 string_test_() ->
     [ ?_assertMatch(
-         {ok, {string, 1, "Hello world"}}, test_parse("\"Hello world\""))
-    %% , ?_assertMatch({ok, {string, 1, "Nested \" quotes"}}),
-    %% , test_parse("\"Nested " "\"" " quotes\"")
+         {ok, #a_str{line=1, val="Hello world"}},
+         test_parse("\"Hello world\""))
+      %% TODO:  proper nested quote handling?!
+    %% , ?_assertMatch({ok, #a_str{line=1, val="Nested \" quotes"}},
+    %%                 test_parse("\"Nested " "\"" " quotes\""))
     ].
 
 ffi_test_() ->
@@ -1683,7 +1685,7 @@ ffi_test_() ->
                        module={atom, 1, "io"},
                        function_name={atom, 1, "format"},
                        args=#alpaca_cons{
-                               head={string, 1, "One is ~s~n"},
+                               head=#a_str{line=1, val="One is ~s~n"},
                                tail=#alpaca_cons{
                                        head=#alpaca_cons{
                                                head=#a_int{line=1, val=1},

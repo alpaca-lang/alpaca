@@ -352,7 +352,7 @@ type_apply -> type_constructor :
   #alpaca_type_apply{name=#type_constructor{line=L, name=N}}.
 
 test_case -> test string assign simple_expr :
-  #alpaca_test{line=term_line('$1'), name='$2', expression='$4'}.
+  #alpaca_test{line=term_line('$1'), name=unwrap('$2'), expression='$4'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.
@@ -380,7 +380,7 @@ const -> plus float :
 
 const -> atom : '$1'.
 const -> chars : '$1'.
-const -> string : '$1'.
+const -> string : unwrap('$1').
 const -> '_' : '$1'.
 const -> unit : '$1'.
 
@@ -463,7 +463,9 @@ bin_segment -> int :
 bin_segment -> symbol :
   #alpaca_bits{value=unwrap('$1'), line=line(unwrap('$1'))}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
-bin_segment -> string : #alpaca_bits{value='$1', line=term_line('$1'), type=utf8}.
+bin_segment -> string :
+  Actual = unwrap('$1'),
+  #alpaca_bits{value=Actual, line=term_line(Actual), type=utf8}.
 %% TODO:  string bin_segment
 
 bin_segment -> bin_segment ':' bin_qualifiers :
@@ -924,7 +926,7 @@ validate_args(L, [A|T], Memo) ->
 
 %% Determine whether an expression is a literal
 is_literal(#a_int{}) -> true;
-is_literal({string, _, _}) -> true;
+is_literal(#a_str{}) -> true;
 is_literal(#a_flt{}) -> true;
 is_literal(#alpaca_fun{}) -> true;
 is_literal({alpaca_record, _, _, _, Members}) ->
@@ -1048,6 +1050,8 @@ unwrap({int, I}) ->
     I;
 unwrap({float, F}) ->
     F;
+unwrap({string, S}) ->
+    S;
 unwrap(X) ->
     X.
 

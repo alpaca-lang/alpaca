@@ -1802,7 +1802,7 @@ typ_of(#env{next_var=VarNum}, _Lvl, {boolean, _, _}) ->
     {new_cell(t_bool), VarNum};
 typ_of(#env{next_var=VarNum}, _Lvl, {atom, _, _}) ->
     {new_cell(t_atom), VarNum};
-typ_of(#env{next_var=VN}, _Lvl, {string, _, _}) ->
+typ_of(#env{next_var=VN}, _Lvl, #a_str{}) ->
     {new_cell(t_string), VN};
 typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
     {new_cell(t_chars), VN};
@@ -4127,7 +4127,7 @@ typed_tests_test() ->
         "test \"add floats\" = add 1 2",
     Res = module_typ_and_parse(Code),
     ?assertMatch({ok, #alpaca_module{
-                         tests=[#alpaca_test{name={string, 5, "add floats"}}]}},
+                         tests=[#alpaca_test{name=#a_str{line=5, val="add floats"}}]}},
                  Res).
 
 polymorphic_list_as_return_value_test_() ->

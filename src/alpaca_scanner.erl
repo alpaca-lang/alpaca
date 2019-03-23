@@ -119,11 +119,11 @@ quoted_atom_test_() ->
                    scan(":\"Quoted.Atom-Value\""))].
 
 string_escape_test_() ->
-    [?_assertEqual({ok, [{string, 1, "one\ntwo\n\tthree"}], 1}, 
+    [?_assertEqual({ok, [{string, #a_str{line=1, val="one\ntwo\n\tthree"}}], 1}, 
                    scan("\"one\\ntwo\\n\\tthree\"")),
-     ?_assertEqual({ok, [{string, 1, "this is a \"quoted\" string"}], 1}, 
+     ?_assertEqual({ok, [{string, #a_str{line=1, val="this is a \"quoted\" string"}}], 1}, 
                    scan("\"this is a \\\"quoted\\\" string\"")),
-     ?_assertEqual({ok, [{string, 1, "C:\\MYCMD.BAT"}], 1}, 
+     ?_assertEqual({ok, [{string, #a_str{line=1, val="C:\\MYCMD.BAT"}}], 1}, 
                    scan("\"C:\\\\MYCMD.BAT\"")),
      ?_assertMatch({error,{1,alpaca_scan,
                          {user,{{error,"Bad control sequence"},

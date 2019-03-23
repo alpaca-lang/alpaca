@@ -91,6 +91,7 @@
           text="" :: string()}).
 -type alpaca_comment() :: #alpaca_comment{}.
 
+%% Literals:
 
 -record(a_int, { line=0 :: integer()
                , val=0 :: integer()
@@ -102,6 +103,10 @@
                }).
 -type alpaca_float() :: #a_flt{}.
 
+-record(a_str, { line=0 :: integer()
+               , val :: string()
+               }).
+-type alpaca_string() :: #a_str{}.
 
 -record(a_sym, { line=0 :: integer()
                , name :: binary()
@@ -131,8 +136,6 @@
 
 %%% The variable _, meaning "don't care":
 -type alpaca_any() :: {any, integer()}.
-
--type alpaca_string() :: {string, integer(), string()}.
 
 -type alpaca_const() :: alpaca_unit()
                     | alpaca_any()

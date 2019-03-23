@@ -175,7 +175,7 @@ validate_comment(TokenLine, TokenChars) ->
 
 unescape(String, TokenLine, TokenChars) ->
   case unescape(String, []) of
-    {ok, Res} -> {token, {string, TokenLine, lists:reverse(Res)}};
+    {ok, Res} -> {token, {string, ast:string(TokenLine, lists:reverse(Res))}};
     {error, _} = Err -> {error, {Err, TokenLine, TokenChars}}
   end.
 unescape([], Acc) -> {ok, Acc};

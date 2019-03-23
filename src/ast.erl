@@ -2,6 +2,7 @@
 -export([line/1]).
 -export([int/2,
 	 float/2,
+	 string/2,
 	 symbol/2, symbol_name/1, symbol_rename/2
 	]).
 
@@ -20,7 +21,8 @@ int(Line, Val) ->
 float(Line, Val) ->
     #a_flt{line=Line, val=Val}.
 
-%% TODO:  string
+string(Line, Val) ->
+    #a_str{line=Line, val=Val}.
 
 symbol(Line, Name) ->
     #a_sym{line=Line, name=Name}.
