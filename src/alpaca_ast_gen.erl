@@ -300,7 +300,6 @@ term_line(Term) ->
     case Term of
         {_, L} when is_integer(L) -> L;
         {_, L, _} when is_integer(L) -> L;
-        {C, Map}=ADT when is_atom(C), is_map(Map) -> alpaca_ast:line(ADT);
         {raise_error, L, _, _} -> L;
         {bif, _, L, _, _} -> L;
         #alpaca_apply{line=L} -> L;
