@@ -66,10 +66,9 @@ check_exhaustiveness(Mod, #alpaca_binding{type=Type, bound_expr=Bound}=F, AllMod
     end.
 
 check_exhaustiveness(Mod, #alpaca_binding{
-                             name={'Symbol', _}=Sym,
+                             name=#a_sym{name=Name},
                              bound_expr=#alpaca_fun{}=F},
                      FunArgTypes, AllMods) ->
-    Name = alpaca_ast:symbol_name(Sym),
     #alpaca_fun{arity=Arity, versions=FunArgPatterns} = F,
     case missing_patterns(Mod, FunArgTypes, FunArgPatterns, AllMods) of
         []              ->
@@ -253,7 +252,7 @@ covered({t_tuple, Members}, Pattern) ->
 covered(t_unit, Pattern) ->
     matches_unit(Pattern).
 
-matches_bool({boolean, _, Bool}, Bool) ->
+matches_bool(#a_bool{val=Bool}, Bool) ->
     true;
 matches_bool(Other, _Bool) ->
     matches_wildcard(Other).
@@ -297,16 +296,16 @@ matches([], []) -> true;
 matches([Pattern|Patterns], [CP|CPs]) ->
     covered(CP, Pattern) andalso matches(Patterns, CPs).
 
-matches_unit({unit, _}) ->
+matches_unit(#a_unit{}) ->
     true;
 matches_unit(P) ->
     matches_wildcard(P).
 
 matches_wildcard({'_', _}) ->
     true;
-matches_wildcard({'Symbol', _}) ->
+matches_wildcard(#a_sym{}) ->
     true;
-matches_wildcard(_)              ->
+matches_wildcard(_)        ->
     false.
 
 -ifdef(TEST).

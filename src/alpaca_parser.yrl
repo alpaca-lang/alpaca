@@ -352,7 +352,7 @@ type_apply -> type_constructor :
   #alpaca_type_apply{name=#type_constructor{line=L, name=N}}.
 
 test_case -> test string assign simple_expr :
-  #alpaca_test{line=term_line('$1'), name='$2', expression='$4'}.
+  #alpaca_test{line=term_line('$1'), name=unwrap('$2'), expression='$4'}.
 
 op -> int_math : '$1'.
 op -> float_math : '$1'.
@@ -360,38 +360,34 @@ op -> minus : '$1'.
 op -> plus : '$1'.
 op -> '/' : '$1'.
 
-const -> boolean : '$1'.
+const -> boolean : unwrap('$1').
 
 const -> minus int :
-  {int, L, Val} = '$2',
-  alpaca_ast:int(L, 0-Val).
+  #a_int{line=L, val=Val} = unwrap('$2'),
+  ast:int(L, 0-Val).
 const -> plus int :
-  {int, L, Val} = '$2',
-  alpaca_ast:int(L, Val).
+  '$2'.
 const -> int :
-  {int, L, Val} = '$1',
-  alpaca_ast:int(L, Val).
+  '$1'.
 
 const -> minus float :
-  {float, L, Val} = '$2',
-  alpaca_ast:float(L, 0-Val).
+  #a_flt{line=L, val=Val} = unwrap('$2'),
+  ast:float(L, 0-Val).
 const -> float :
-  {float, L, Val} = '$1',
-  alpaca_ast:float(L, Val).
+  '$1'.
 const -> plus float :
-  {float, L, Val} = '$2',
-  alpaca_ast:float(L, Val).
+  '$2'.
 
-const -> atom : '$1'.
+const -> atom : unwrap('$1').
 const -> chars : '$1'.
-const -> string : '$1'.
+const -> string : unwrap('$1').
 const -> '_' : '$1'.
-const -> unit : '$1'.
+const -> unit : unwrap('$1').
 
 module_fun -> symbol '.' symbol '/' int :
   {L, Mod} = symbol_line_name('$1'),
   Fun = symbol_name('$3'),
-  {int, _, Arity} = '$5',
+  #a_int{val=Arity} = unwrap('$5'),
   #alpaca_far_ref{
      line=L,
      module=binary_to_atom(Mod, utf8),
@@ -433,15 +429,15 @@ bin_qualifier -> type_declare assign symbol :
 bin_qualifier -> symbol assign int :
     {L, S} = symbol_line_name('$1'),
     case S of
-        <<"size">> -> {size, '$3'};
-        <<"unit">> -> {unit, '$3'};
+        <<"size">> -> {size, unwrap('$3')};
+        <<"unit">> -> {unit, unwrap('$3')};
         _          -> return_error(L, {invalid_bin_qualifier, S})
     end.
 bin_qualifier -> symbol assign boolean :
     {L, S} = symbol_line_name('$1'),
-    case {S, '$3'} of
-        {<<"sign">>, {boolean, L, true}}  -> {bin_sign, L, <<"signed">>};
-        {<<"sign">>, {boolean, L, false}} -> {bin_sign, L, <<"unsigned">>};
+    case {S, unwrap('$3')} of
+        {<<"sign">>, #a_bool{line=L, val=true}}  -> {bin_sign, L, <<"signed">>};
+        {<<"sign">>, #a_bool{line=L, val=false}} -> {bin_sign, L, <<"unsigned">>};
         {_, _}                        ->
             return_error(L, {invalid_bin_qualifier, S})
     end.
@@ -459,16 +455,17 @@ bin_qualifier -> symbol assign symbol :
 bin_qualifiers -> bin_qualifier : ['$1'].
 bin_qualifiers -> bin_qualifier bin_qualifiers : ['$1' | '$2'].
 
+%% TODO:  this is not tested!  AST gen is a reasonable place to do so.
 bin_segment -> float :
-  {float, L, V} = '$1',
-  #alpaca_bits{value=alpaca_ast:float(L, V), type=float, line=term_line('$1')}.
+  #alpaca_bits{value=unwrap('$1'), type=float, line=term_line('$1')}.
 bin_segment -> int :
-  {int, L, V} = '$1',
-  #alpaca_bits{value=alpaca_ast:int(L, V), type=int, line=term_line('$1')}.
+  #alpaca_bits{value=unwrap('$1'), type=int, line=term_line(unwrap('$1'))}.
 bin_segment -> symbol :
   #alpaca_bits{value=unwrap('$1'), line=line(unwrap('$1'))}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
-bin_segment -> string : #alpaca_bits{value='$1', line=term_line('$1'), type=utf8}.
+bin_segment -> string :
+  Actual = unwrap('$1'),
+  #alpaca_bits{value=Actual, line=term_line(Actual), type=utf8}.
 %% TODO:  string bin_segment
 
 bin_segment -> bin_segment ':' bin_qualifiers :
@@ -518,7 +515,7 @@ record -> open_brace close_brace:
 
 unit -> '(' ')':
   {_, L} = '$1',
-  {unit, L}.
+  ast:unit(L).
 
 tuple_list -> simple_expr ',' simple_expr : ['$1', '$3'].
 tuple_list -> simple_expr ',' tuple_list : ['$1' | '$3'].
@@ -527,33 +524,59 @@ tuple -> '(' tuple_list ')' :
   #alpaca_tuple{line=L, arity=length('$2'), values='$2'}.
 
 infix -> term 'xor' term :
-         L1 = term_line('$1'),
-         FalseC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, false}]},
-                      result={boolean, L1, false}, line=L1},
-         FalseC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, true}]},
-                     result={boolean, L1, false}, line=L1},
-         TrueC1 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, true}, {boolean, L1, false}]},
-                     result={boolean, L1, true}, line=L1},
-         TrueC2 = #alpaca_clause{
-                      pattern=#alpaca_tuple{line=L1, arity=2, values=[{boolean, L1, false}, {boolean, L1, true}]},
-                     result={boolean, L1, true}, line=L1},
-         #alpaca_match{
-            match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
-            clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
-            line=L1
-           }.
+  L1 = term_line('$1'),
+  FalseC1 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						 , arity=2
+						 , values=[ ast:bool(L1, false)
+							  , ast:bool(L1, false)
+							  ]
+						 },
+			    result=ast:bool(L1, false)
+			  , line=L1
+			  },
+  FalseC2 = #alpaca_clause{pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, true)
+							 , ast:bool(L1, true)
+							 ]
+						}
+			  , result=ast:bool(L1, false)
+			  , line=L1
+			  },
+  TrueC1 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, true)
+							 , ast:bool(L1, false)
+							 ]
+						}
+			 , result=ast:bool(L1, true)
+			 , line=L1
+			 },
+  TrueC2 = #alpaca_clause{ pattern=#alpaca_tuple{ line=L1
+						, arity=2
+						, values=[ ast:bool(L1, false)
+							 , ast:bool(L1, true)
+							 ]
+						}
+			 , result=ast:bool(L1, true)
+			 , line=L1
+			 },
+  #alpaca_match{
+     match_expr=#alpaca_tuple{arity=2, values=['$1', '$3']},
+     clauses=[TrueC1, TrueC2, FalseC1, FalseC2],
+     line=L1
+    }.
+
 infix -> term 'and' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
-         FalseC = #alpaca_clause{
-                     pattern={boolean, L1, false},
-                     result={boolean, L1, false}, line=L1},
-         TrueC = #alpaca_clause{
-                    pattern={boolean, L2, true},
-                    result='$3', line=L2},
+         FalseC = #alpaca_clause{ pattern=ast:bool(L1, false)
+				, result=ast:bool(L1, false)
+				, line=L1
+				},
+         TrueC = #alpaca_clause{ pattern=ast:bool(L2, true)
+			       , result='$3'
+			       , line=L2},
          #alpaca_match{
             match_expr='$1',
             clauses=[TrueC, FalseC],
@@ -563,12 +586,14 @@ infix -> term 'and' term :
 infix -> term 'or' term :
          L1 = term_line('$1'),
          L2 = term_line('$3'),
-         TrueC = #alpaca_clause{
-                     pattern={boolean, L1, true},
-                     result={boolean, L1, true}, line=L1},
-         FalseC = #alpaca_clause{
-                    pattern={boolean, L2, false},
-                    result='$3', line=L2},
+         TrueC = #alpaca_clause{ pattern=ast:bool(L1, true)
+			       , result=ast:bool(L1, true)
+			       , line=L1
+			       },
+         FalseC = #alpaca_clause{ pattern=ast:bool(L2, false)
+				, result='$3'
+				, line=L2
+				},
          #alpaca_match{
             match_expr='$1',
             clauses=[TrueC, FalseC],
@@ -610,7 +635,7 @@ error -> raise_error term:
   {raise_error, L, list_to_atom(Kind), '$2'}.
 
 term -> literal_fun : '$1'.
-term -> const : '$1'.
+term -> const : unwrap('$1').
 term -> tuple : '$1'.
 term -> infix : '$1'.
 term -> symbol : unwrap('$1').
@@ -668,7 +693,7 @@ receive_block -> receive with match_clauses :
   {_, Line} = '$1',
   #alpaca_receive{line=Line, clauses='$3'}.
 receive_block -> receive_block after int simple_expr :
-  {_, _, Timeout} = '$3',
+  #a_int{val=Timeout} = unwrap('$3'),
   '$1'#alpaca_receive{timeout=Timeout, timeout_action='$4'}.
 
 %% Only supporting spawning functions inside the current module
@@ -688,12 +713,12 @@ definfix -> let '(' infixl ')' terms assign simple_expr :
   %% native AST is to let Alpaca code work with the AST.  This means that symbol
   %% names do need to be legitimate Alpaca strings in UTF-8, not Erlang strings.
   InfixName = infix_name(C),
-  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 definfix -> let '(' infixr ')' terms assign simple_expr :
   {infixr, L, C} = '$3',
   InfixName = infix_name(C),
-  make_define([alpaca_ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -702,8 +727,8 @@ binding -> let terms assign simple_expr in simple_expr :
 
 ffi_call -> beam atom atom cons with match_clauses:
   {_, L} = '$1',
-  #alpaca_ffi{module='$2',
-	      function_name='$3',
+  #alpaca_ffi{module=unwrap('$2'),
+	      function_name=unwrap('$3'),
 	      args='$4',
 	      clauses='$6',
 	      line=L}.
@@ -757,7 +782,7 @@ import_fun_item -> symbol '.' import_export_fun :
 import_fun_item -> symbol '.' import_export_fun '/' int:
   Mod = symbol_name('$1'),
   Fun = symbol_name('$3'),
-  {int, _, Arity} = '$5',
+  #a_int{val=Arity} = unwrap('$5'),
   {Fun, {binary_to_atom(Mod, utf8), Arity}}.
 import_fun_item -> fun_subset : '$1'.
 
@@ -771,16 +796,17 @@ all_infix -> infixr : '$1'.
 
 import_export_fun -> '(' all_infix ')' :
   {_, L, C} = '$2',
-  alpaca_ast:symbol(L, infix_name(C)).
+  ast:symbol(L, infix_name(C)).
 
 fun_and_arity -> import_export_fun '/' int :
   Name = symbol_name('$1'),
-  {int, _, Arity} = '$3',
+  #a_int{val=Arity} = unwrap('$3'),
   {Name, Arity}.
 fun_and_arity -> symbol '/' int :
-Name = symbol_name('$1'),
-{int, _, Arity} = '$3',
-{Name, Arity}.
+  Name = symbol_name('$1'),
+  %% Destructuring the tuple from leex, we don't need or want the `int` tag:
+  {_, #a_int{val=Arity}} = '$3',
+  {Name, Arity}.
 
 export_list -> fun_and_arity : ['$1'].
 export_list -> import_export_fun :
@@ -802,7 +828,7 @@ case '$1' of
         #alpaca_apply{line=line(S), expr=S, args=T};
     [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
         FunName = unicode:characters_to_binary(Fun, utf8),
-        Name = {Mod, alpaca_ast:symbol(L, FunName), length(T)},
+        Name = {Mod, ast:symbol(L, FunName), length(T)},
         #alpaca_apply{line=L, expr=Name, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
@@ -844,9 +870,9 @@ Erlang code.
 make_infix(Op, A, B) ->
     Name = case Op of
       {infixl, L, C} ->
-                   alpaca_ast:symbol(L, infix_name(C));
+                   ast:symbol(L, infix_name(C));
       {infixr, L, C} ->
-                   alpaca_ast:symbol(L, infix_name(C));
+                   ast:symbol(L, infix_name(C));
 
       {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
 
@@ -872,7 +898,7 @@ make_infix(Op, A, B) ->
                   expr=Name,
                   args=[A, B]}.
 
-make_define([{'Symbol', _}=Name|A], Expr, Level) ->
+make_define([#a_sym{}=Name|A], Expr, Level) ->
     L = line(Name),
     case validate_args(L, A) of
         {ok, []} ->
@@ -910,7 +936,7 @@ make_define([BadName|Args], _Expr, _) ->
 %% Unit is only valid for single argument functions as a way around
 %% the problem of distinguishing between nullary functions and
 %% variable bindings in let forms:
-validate_args(_L, [{unit, _}]=Args) ->
+validate_args(_L, [#a_unit{}]=Args) ->
     {ok, Args};
 validate_args(L, Args) ->
     validate_args(L, Args, []).
@@ -927,9 +953,11 @@ validate_args(L, [A|T], Memo) ->
     validate_args(L, T, [A|Memo]).
 
 %% Determine whether an expression is a literal
-is_literal({'Int', _}) -> true;
-is_literal({string, _, _}) -> true;
-is_literal({'Float', _}) -> true;
+is_literal(#a_unit{}) -> true;
+is_literal(#a_atom{}) -> true;
+is_literal(#a_int{}) -> true;
+is_literal(#a_str{}) -> true;
+is_literal(#a_flt{}) -> true;
 is_literal(#alpaca_fun{}) -> true;
 is_literal({alpaca_record, _, _, _, Members}) ->
     MemberExprs = lists:map(
@@ -951,13 +979,10 @@ is_literal({alpaca_binary, _, Members}) ->
     all_literals(MemberExprs);
 is_literal({alpaca_type_apply, _, _, Expr}) ->
     is_literal(Expr);
-is_literal({atom, _, _}) -> true;
-is_literal({boolean, _, _}) -> true;
+is_literal(#a_bool{}) -> true;
 is_literal({chars, _, _}) -> true;
 is_literal(#alpaca_tuple{values=Members}) ->
     all_literals(Members);
-is_literal({unit, _}) ->
-    true;
 is_literal(_) -> false.
 
 all_literals([]) -> true;
@@ -981,9 +1006,9 @@ term_line(Term) ->
 bin_to_atom(B) when is_binary(B) ->
     binary_to_atom(B, utf8).
 
-add_qualifier(#alpaca_bits{}=B, {size, {int, _, I}}) ->
+add_qualifier(#alpaca_bits{}=B, {size, #a_int{val=I}}) ->
     B#alpaca_bits{size=I, default_sizes=false};
-add_qualifier(#alpaca_bits{}=B, {unit, {int, _, I}}) ->
+add_qualifier(#alpaca_bits{}=B, {unit, #a_int{val=I}}) ->
     B#alpaca_bits{unit=I, default_sizes=false};
 add_qualifier(#alpaca_bits{}=B, {bin_endian, _, E}) ->
     B#alpaca_bits{endian=bin_to_atom(E)};
@@ -1006,21 +1031,21 @@ type_arity_error(L, Typ, Params) ->
     return_error(L, {wrong_type_arity, Typ, length(Params)}).
 
 symbol_name({symbol, S}) ->
-    alpaca_ast:symbol_name(S);
-symbol_name({'Symbol', _}=S) ->
-    alpaca_ast:symbol_name(S).
+    ast:symbol_name(S);
+symbol_name(S) ->
+    ast:symbol_name(S).
 
 symbol_line_name({symbol, S}) ->
-    {alpaca_ast:line(S), alpaca_ast:symbol_name(S)};
+    {ast:line(S), ast:symbol_name(S)};
 symbol_line_name({infixl, L, N}) ->
     {L, infix_name(N)};
 symbol_line_name({infixr, L, N}) ->
     {L, infix_name(N)}.
 
 line({symbol, S}) ->
-    alpaca_ast:line(S);
+    ast:line(S);
 line(X) ->
-    alpaca_ast:line(X).
+    ast:line(X).
 
 infix_name(C) ->
   BinC = unicode:characters_to_binary(C, utf8),
@@ -1037,7 +1062,7 @@ validate_match_pattern(Ptn) -> Ptn.
 validate_bin_segments([_Ptn]) -> ok;
 validate_bin_segments([Ptn | Rem]) ->
     case Ptn of
-        #alpaca_bits{default_sizes=true, type=T, value={'Symbol', _}=S}
+        #alpaca_bits{default_sizes=true, type=T, value=#a_sym{}=S}
         when T == binary; T == utf8 ->
             return_error(line(S), unsized_binary_before_end);
         _ -> validate_bin_segments(Rem)
@@ -1046,6 +1071,18 @@ validate_bin_segments([Ptn | Rem]) ->
 
 %% Yecc requires tuples to start with a token name it can recognize so we can't
 %% actually product and use Alpaca AST nodes straight from Leex.
+unwrap({unit, U}) ->
+    U;
+unwrap({boolean, B}) ->
+    B;
+unwrap({atom, A}) ->
+    A;
+unwrap({int, I}) ->
+    I;
+unwrap({float, F}) ->
+    F;
+unwrap({string, S}) ->
+    S;
 unwrap({symbol, S}) ->
     S;
 unwrap(X) ->

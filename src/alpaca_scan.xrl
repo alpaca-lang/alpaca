@@ -45,7 +45,7 @@ Rules.
 \:    : {token, {':', TokenLine}}.
 \[    : {token, {'[', TokenLine}}.
 \]    : {token, {']', TokenLine}}.
-()    : {token, {unit, TokenLine}}.
+()    : {token, {unit, ast:unit(TokenLine)}}.
 #{    : {token, {map_open, TokenLine}}.
 {     : {token, {open_brace, TokenLine}}.
 }     : {token, {close_brace, TokenLine}}.
@@ -78,7 +78,7 @@ xor         : {token, {'xor', TokenLine}}.
 
 error|exit|throw : {token, {'raise_error', TokenLine, TokenChars}}.
 
-true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
+true|false : {token, {boolean, ast:bool(TokenLine, list_to_atom(TokenChars))}}.
 
 %% Type variables (nicked from OCaml):
 '{SYM} : {token, {type_var, TokenLine, string:substr(TokenChars, 2)}}.
@@ -91,10 +91,10 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 {TYPE_CHECK} : {token, {type_check_tok, list_to_atom(TokenChars), TokenLine}}.
 
 %% Integer
-{D}+       : {token, {int, TokenLine, list_to_integer(TokenChars)}}.
+{D}+       : {token, {int, ast:int(TokenLine, list_to_integer(TokenChars))}}.
 
 %% Float
-{D}+\.{D}+ : {token, {float, TokenLine, list_to_float(TokenChars)}}.
+{D}+\.{D}+ : {token, {float, ast:float(TokenLine, list_to_float(TokenChars))}}.
 
 %% Binaries
 << : {token, {bin_open, TokenLine}}.
@@ -103,13 +103,13 @@ true|false : {token, {boolean, TokenLine, list_to_atom(TokenChars)}}.
 %% Symbol
 {SYM}  :
   Chars = unicode:characters_to_binary(TokenChars, utf8),
-  {token, {symbol, alpaca_ast:symbol(TokenLine, Chars)}}.
+  {token, {symbol, ast:symbol(TokenLine, Chars)}}.
 
 %% Atom
-{ATOM} : {token, {atom, TokenLine, tl(TokenChars)}}.
+{ATOM} : {token, {atom, ast:atom(TokenLine, list_to_atom(tl(TokenChars)))}}.
 {ATOM}"(\\"*|\\.|[^"\\])*" :
   S = string:substr(TokenChars, 3, TokenLen - 3),
-  {token, {atom, TokenLine, S}}.
+  {token, {atom, ast:atom(TokenLine, list_to_atom(S))}}.
 
 %% String
 "(\\"*|\\.|[^"\\])*" :
@@ -175,7 +175,7 @@ validate_comment(TokenLine, TokenChars) ->
 
 unescape(String, TokenLine, TokenChars) ->
   case unescape(String, []) of
-    {ok, Res} -> {token, {string, TokenLine, lists:reverse(Res)}};
+    {ok, Res} -> {token, {string, ast:string(TokenLine, lists:reverse(Res))}};
     {error, _} = Err -> {error, {Err, TokenLine, TokenChars}}
   end.
 unescape([], Acc) -> {ok, Acc};

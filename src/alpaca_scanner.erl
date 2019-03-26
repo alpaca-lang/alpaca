@@ -7,6 +7,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-include("alpaca_ast.hrl").
+
 scan(Code) when is_list(Code) -> 
     case alpaca_scan:string(Code) of
         {ok, Tokens, Num} -> {ok, infer_breaks(Tokens), Num};    
@@ -75,9 +77,9 @@ infer_breaks(Tokens) ->
 
 number_test_() ->
     [
-     ?_assertEqual({ok, [{int, 1, 5}], 1}, scan("5")),
-     ?_assertEqual({ok, [{float, 1, 3.14}], 1}, scan("3.14")),
-     ?_assertEqual({ok, [{float, 1, 102.0}], 1}, scan("102.0"))
+     ?_assertEqual({ok, [{int, #a_int{line=1, val=5}}], 1}, scan("5")),
+     ?_assertEqual({ok, [{float, #a_flt{line=1, val=3.14}}], 1}, scan("3.14")),
+     ?_assertEqual({ok, [{float, #a_flt{line=1, val=102.0}}], 1}, scan("102.0"))
     ].
 
 tuple_test_() ->
@@ -85,46 +87,43 @@ tuple_test_() ->
     [
      ?_assertEqual({ok, [
                          {'(', 1},
-                         {int, 1, 1},
+                         {int, #a_int{line=1, val=1}},
                          {')', 1}], 1},
                    scan("(1)")),
      ?_assertEqual(EmptyTupleExpected, scan("()")),
      ?_assertEqual(EmptyTupleExpected, scan("( )")),
      ?_assertEqual({ok, [
                          {'(', 1},
-                         {int, 1, 1},
+                         {int, #a_int{line=1, val=1}},
                          {',', 1},
-                         {int, 1, 2},
+                         {int, #a_int{line=1, val=2}},
                          {',', 1},
-                         {int, 1, 3},
+                         {int, #a_int{line=1, val=3}},
                          {')', 1}], 1},
                    scan("(1, 2, 3)"))
     ].
 
 symbol_test_() ->
-    [?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mySym">>}}}], 1},
+    [?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym">>}}], 1},
                    scan("mySym")),
-     ?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mySym1">>}}}], 1},
+     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym1">>}}], 1},
                    scan("mySym1")),
-     ?_assertMatch({ok, [{symbol,
-                          {'Symbol', #{line := 1, name := <<"mysym">>}}}], 1},
+     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mysym">>}}], 1},
                    scan("mysym"))].
 
 atom_test_() ->
-    [?_assertEqual({ok, [{atom, 1, "myAtom"}], 1}, scan(":myAtom"))].
+    [?_assertEqual({ok, [{atom, #a_atom{line=1, val=myAtom}}], 1}, scan(":myAtom"))].
 
 quoted_atom_test_() ->
-    [?_assertEqual({ok, [{atom, 1, "Quoted.Atom-Value"}], 1},
+    [?_assertEqual({ok, [{atom, #a_atom{line=1, val='Quoted.Atom-Value'}}], 1},
                    scan(":\"Quoted.Atom-Value\""))].
 
 string_escape_test_() ->
-    [?_assertEqual({ok, [{string, 1, "one\ntwo\n\tthree"}], 1}, 
+    [?_assertEqual({ok, [{string, #a_str{line=1, val="one\ntwo\n\tthree"}}], 1}, 
                    scan("\"one\\ntwo\\n\\tthree\"")),
-     ?_assertEqual({ok, [{string, 1, "this is a \"quoted\" string"}], 1}, 
+     ?_assertEqual({ok, [{string, #a_str{line=1, val="this is a \"quoted\" string"}}], 1}, 
                    scan("\"this is a \\\"quoted\\\" string\"")),
-     ?_assertEqual({ok, [{string, 1, "C:\\MYCMD.BAT"}], 1}, 
+     ?_assertEqual({ok, [{string, #a_str{line=1, val="C:\\MYCMD.BAT"}}], 1}, 
                    scan("\"C:\\\\MYCMD.BAT\"")),
      ?_assertMatch({error,{1,alpaca_scan,
                          {user,{{error,"Bad control sequence"},
@@ -136,60 +135,48 @@ string_escape_test_() ->
 let_test() ->
     Code = "let symbol = 5",
     ExpectedTokens = [{'let', 1},
-                      {symbol, {'Symbol', #{'__struct__' => record,
-                                            line => 1,
-                                            name => <<"symbol">>,
-                                            original => 'None'}}},
+                      {symbol, #a_sym{line = 1,
+                                      name = <<"symbol">>,
+                                      original = none}},
                       {assign, 1},
-                      {int, 1, 5}],
+                      {int, #a_int{line=1, val=5}}],
     ?assertEqual({ok, ExpectedTokens, 1}, scan(Code)).
 
 infer_test() ->
     Code = "module hello\nlet a = 0\nlet b = 1",
     ExpectedTokens = [{'module', 1}, {symbol, 
-                                      {'Symbol', 
-                                       #{'__struct__' => record,
-                                         line => 1,
-                                         name => <<"hello">>,
-                                         original => 'None'}}},
+                                      #a_sym{line = 1,
+                                             name = <<"hello">>,
+                                             original = none}},
                       {break, 2}, 
-                      {'let', 2}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 2,
-                                              name => <<"a">>,
-                                              original => 'None'}}},
-                      {assign, 2}, {int, 2, 0}, 
+                      {'let', 2}, {symbol, #a_sym{line = 2,
+                                                  name = <<"a">>,
+                                                  original = none}},
+                      {assign, 2}, {int, #a_int{line=2, val=0}},
                       {break, 3},
-                      {'let', 3}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 3,
-                                              name => <<"b">>,
-                                              original => 'None'}}},
-                      {assign, 3}, {int, 3, 1}
+                      {'let', 3}, {symbol, #a_sym{line = 3,
+                                                  name = <<"b">>,
+                                                  original = none}},
+                      {assign, 3}, {int, #a_int{line=3, val=1}}
                      ],
     ?assertEqual({ok, ExpectedTokens, 3}, scan(Code)).
 
 infer_bin_test() ->
     Code = "module bin_test\nlet a = << 10 : type = int >>",
     ExpectedTokens = [{'module', 1},
-                      {symbol, {'Symbol', #{'__struct__' => record,
-                                            line => 1,
-                                            name => <<"bin_test">>,
-                                            original => 'None'}}},
+                      {symbol, #a_sym{line = 1,
+                                      name = <<"bin_test">>,
+                                      original = none}},
                       {break, 2},
-                      {'let', 2}, {symbol, {'Symbol',
-                                            #{'__struct__' => record,
-                                              line => 2,
-                                              name => <<"a">>,
-                                              original => 'None'}}},
+                      {'let', 2}, {symbol, #a_sym{line = 2,
+                                                  name = <<"a">>,
+                                                  original = none}},
                        {assign, 2}, 
-                       {bin_open, 2}, {int, 2, 10},
+                       {bin_open, 2}, {int, #a_int{line=2, val=10}},
                        {':', 2}, {type_declare, 2},
-                       {assign, 2}, {symbol, {'Symbol',
-                                              #{'__struct__' => record,
-                                                line => 2,
-                                                name => <<"int">>,
-                                                original => 'None'}}},
+                       {assign, 2}, {symbol, #a_sym{line = 2,
+                                                    name = <<"int">>,
+                                                    original = none}},
                        {bin_close, 2}
                      ],
     ?assertEqual({ok, ExpectedTokens, 2}, scan(Code)).

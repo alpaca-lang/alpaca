@@ -91,8 +91,42 @@
           text="" :: string()}).
 -type alpaca_comment() :: #alpaca_comment{}.
 
+%% Literals:
 
--type alpaca_symbol() :: {symbol, integer(), string()}.
+-record(a_unit, { line=0 :: integer()}).
+-type alpaca_unit() :: #a_unit{}.
+
+-record(a_bool, { line=0 :: integer()
+                , val :: boolean()
+                }).
+-type alpaca_bool() :: {bool, integer(), boolean()}.
+
+-record(a_atom, { line=0 :: integer()
+                , val :: atom()
+                }).
+-type alpaca_atom() :: #a_atom{}.
+
+-record(a_int, { line=0 :: integer()
+               , val=0 :: integer()
+               }).
+-type alpaca_int() :: #a_int{}.
+
+-record(a_flt, { line=0 :: integer()
+               , val=0 :: float()
+               }).
+-type alpaca_float() :: #a_flt{}.
+
+-record(a_str, { line=0 :: integer()
+               , val :: string()
+               }).
+-type alpaca_string() :: #a_str{}.
+
+-record(a_sym, { line=0 :: integer()
+               , name :: binary()
+               , original=none :: none | binary()
+               }).
+-type alpaca_symbol() :: #a_sym{}.
+
 %% Reference to a symbol in a different module.  Arity can be 'none'
 %% if the user wishes to default to the first exported version of the
 %% reference.
@@ -103,12 +137,7 @@
           arity=none :: none | integer()}).
 -type alpaca_far_ref() :: #alpaca_far_ref{}.
 
--type alpaca_unit() :: {unit, integer()}.
--type alpaca_int() :: {'Int', #{line := integer(), val := integer()}}.
--type alpaca_float() :: {float, integer(), float()}.
 -type alpaca_number() :: alpaca_int()|alpaca_float().
--type alpaca_bool() :: {bool, integer(), boolean()}.
--type alpaca_atom() :: {atom, integer(), atom()}.
 
 -type alpaca_error() :: {raise_error,
                        integer(),
@@ -117,8 +146,6 @@
 
 %%% The variable _, meaning "don't care":
 -type alpaca_any() :: {any, integer()}.
-
--type alpaca_string() :: {string, integer(), string()}.
 
 -type alpaca_const() :: alpaca_unit()
                     | alpaca_any()
@@ -131,7 +158,7 @@
 %%% ### Binaries
 
 -record(alpaca_binary, {line=0 :: integer(),
-                      segments=[] :: list(alpaca_bits())}).
+                        segments=[] :: list(alpaca_bits())}).
 -type alpaca_binary() :: #alpaca_binary{}.
 
 -type alpaca_bits_type() :: int | float | binary | utf8.
