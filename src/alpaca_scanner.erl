@@ -103,12 +103,12 @@ tuple_test_() ->
                    scan("(1, 2, 3)"))
     ].
 
-symbol_test_() ->
-    [?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym">>}}], 1},
+label_test_() ->
+    [?_assertMatch({ok, [{label, #a_lab{line = 1, name = <<"mySym">>}}], 1},
                    scan("mySym")),
-     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mySym1">>}}], 1},
+     ?_assertMatch({ok, [{label, #a_lab{line = 1, name = <<"mySym1">>}}], 1},
                    scan("mySym1")),
-     ?_assertMatch({ok, [{symbol, #a_sym{line = 1, name = <<"mysym">>}}], 1},
+     ?_assertMatch({ok, [{label, #a_lab{line = 1, name = <<"mysym">>}}], 1},
                    scan("mysym"))].
 
 atom_test_() ->
@@ -133,10 +133,10 @@ string_escape_test_() ->
             
 
 let_test() ->
-    Code = "let symbol = 5",
+    Code = "let label = 5",
     ExpectedTokens = [{'let', 1},
-                      {symbol, #a_sym{line = 1,
-                                      name = <<"symbol">>,
+                      {label, #a_lab{line = 1,
+                                      name = <<"label">>,
                                       original = none}},
                       {assign, 1},
                       {int, #a_int{line=1, val=5}}],
@@ -144,17 +144,17 @@ let_test() ->
 
 infer_test() ->
     Code = "module hello\nlet a = 0\nlet b = 1",
-    ExpectedTokens = [{'module', 1}, {symbol, 
-                                      #a_sym{line = 1,
+    ExpectedTokens = [{'module', 1}, {label,
+                                      #a_lab{line = 1,
                                              name = <<"hello">>,
                                              original = none}},
                       {break, 2}, 
-                      {'let', 2}, {symbol, #a_sym{line = 2,
+                      {'let', 2}, {label, #a_lab{line = 2,
                                                   name = <<"a">>,
                                                   original = none}},
                       {assign, 2}, {int, #a_int{line=2, val=0}},
                       {break, 3},
-                      {'let', 3}, {symbol, #a_sym{line = 3,
+                      {'let', 3}, {label, #a_lab{line = 3,
                                                   name = <<"b">>,
                                                   original = none}},
                       {assign, 3}, {int, #a_int{line=3, val=1}}
@@ -164,17 +164,17 @@ infer_test() ->
 infer_bin_test() ->
     Code = "module bin_test\nlet a = << 10 : type = int >>",
     ExpectedTokens = [{'module', 1},
-                      {symbol, #a_sym{line = 1,
+                      {label, #a_lab{line = 1,
                                       name = <<"bin_test">>,
                                       original = none}},
                       {break, 2},
-                      {'let', 2}, {symbol, #a_sym{line = 2,
+                      {'let', 2}, {label, #a_lab{line = 2,
                                                   name = <<"a">>,
                                                   original = none}},
                        {assign, 2}, 
                        {bin_open, 2}, {int, #a_int{line=2, val=10}},
                        {':', 2}, {type_declare, 2},
-                       {assign, 2}, {symbol, #a_sym{line = 2,
+                       {assign, 2}, {label, #a_lab{line = 2,
                                                     name = <<"int">>,
                                                     original = none}},
                        {bin_close, 2}
