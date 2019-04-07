@@ -103,7 +103,7 @@ true|false : {token, {boolean, ast:bool(TokenLine, list_to_atom(TokenChars))}}.
 %% Symbol
 {SYM}  :
   Chars = unicode:characters_to_binary(TokenChars, utf8),
-  {token, {symbol, ast:symbol(TokenLine, Chars)}}.
+  {token, {label, ast:label(TokenLine, Chars)}}.
 
 %% Atom
 {ATOM} : {token, {atom, ast:atom(TokenLine, list_to_atom(tl(TokenChars)))}}.

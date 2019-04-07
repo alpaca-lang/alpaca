@@ -6,22 +6,24 @@
 %%   3. Functions that manipulate or mutate (making a copy of) AST nodes.
 
 %% Functions that construct AST node values:
--export([unit/1,
-	 bool/2,
-	 atom/2,
-	 int/2,
-	 float/2,
-	 string/2,
-	 symbol/2
+-export([ unit/1
+	, bool/2
+	, atom/2
+	, int/2
+	, float/2
+	, string/2
+	, label/2
+	, qlab/3
+	, qlab/4
 	]).
 
 %% Functions that retrieve parts of AST nodes:
 -export([line/1,
-	 symbol_name/1
+	 label_name/1
 	]).
 
 %% Functions that mutate/manipulate AST node internals:
--export([symbol_rename/2]).
+-export([label_rename/2]).
 
 -include("alpaca_ast.hrl").
 
@@ -37,7 +39,9 @@ line(#a_flt{line=L}) ->
     L;
 line(#a_str{line=L}) ->
     L;
-line(#a_sym{line=L}) ->
+line(#a_lab{line=L}) ->
+    L;
+line(#a_qlab{line=L}) ->
     L.
 
 unit(Line) ->
@@ -63,14 +67,20 @@ float(Line, Val) ->
 string(Line, Val) ->
     #a_str{line=Line, val=Val}.
 
-symbol(Line, Name) ->
-    #a_sym{line=Line, name=Name}.
+label(Line, Name) ->
+    #a_lab{line=Line, name=Name}.
 
-symbol_name(#a_sym{name=N}) ->
+qlab(Line, #a_lab{}=Space, #a_lab{}=Label) ->
+    #a_qlab{line=Line, space=Space, label=Label, arity=none}.
+
+qlab(Line, #a_lab{}=Space, #a_lab{}=Label, Arity) ->
+    #a_qlab{line=Line, space=Space, label=Label, arity=Arity}.
+
+label_name(#a_lab{name=N}) ->
     N.
 
-%% Used for renaming symbols as part of Alpaca's final AST generation stage,
+%% Used for renaming labels as part of Alpaca's final AST generation stage,
 %% after parsing with `yecc`.  See alpaca_ast_gen:rename_bindings/2 for more
 %% details.
-symbol_rename(#a_sym{name=Orig}=S, NewName) ->
-    S#a_sym{name=NewName, original=Orig}.
+label_rename(#a_lab{name=Orig}=S, NewName) ->
+    S#a_lab{name=NewName, original=Orig}.

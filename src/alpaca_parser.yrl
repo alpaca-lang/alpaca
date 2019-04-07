@@ -73,7 +73,7 @@ type_declare type_constructor type_var val
 test
 
 boolean int float atom string chars '_'
-symbol infixl infixr '.'
+label infixl infixr '.'
 assign int_math float_math minus plus
 '[' ']' cons_infix ':'
 bin_open bin_close
@@ -117,51 +117,49 @@ comment -> comment_lines :
                 line=L,
                 text=Chars}.
 
-type_import -> import_type symbol '.' symbol:
-  Mod = symbol_name('$2'),
-  Type = symbol_name('$4'),
-  #alpaca_type_import{module=binary_to_atom(Mod, utf8), type=Type}.
+type_import -> import_type label '.' label:
+  #alpaca_type_import{module=unwrap('$2'), type=unwrap('$4')}.
 
-types_to_export -> symbol : [unwrap('$1')].
-types_to_export -> symbol ',' types_to_export : [unwrap('$1')|'$3'].
+types_to_export -> label : [unwrap('$1')].
+types_to_export -> label ',' types_to_export : [unwrap('$1')|'$3'].
 
 type_export -> export_type types_to_export :
   {_, L}  = '$1',
-  Names = [symbol_name(S) || S <- '$2'],
+  Names = [label_name(S) || S <- '$2'],
   #alpaca_type_export{line=L, names=Names}.
 
-type_signature -> val symbol ':' sub_type_expr :
-  {L, N} = symbol_line_name('$2'),
+type_signature -> val label ':' sub_type_expr :
+  {L, N} = label_line_name('$2'),
   #alpaca_type_signature{name=N, line=L, type='$4'}.
 
-type_signature -> val symbol type_vars ':' sub_type_expr :
-  {L, N} = symbol_line_name('$2'),
+type_signature -> val label type_vars ':' sub_type_expr :
+  {L, N} = label_line_name('$2'),
   TV = make_vars_for_concrete_types('$3', L),
   #alpaca_type_signature{name=N, line=L, type='$5', vars=TV}.
 
 type_signature -> val '(' infixl ')' ':' sub_type_expr :
-  {L, N} = symbol_line_name('$3'),
+  {L, N} = label_line_name('$3'),
   #alpaca_type_signature{name=N, line=L, type='$6'}.
 
 type_signature -> val '(' infixl ')' type_vars ':' sub_type_expr :
-  {L, N} = symbol_line_name('$3'),
+  {L, N} = label_line_name('$3'),
   TV = make_vars_for_concrete_types('$5', L),
   #alpaca_type_signature{name=N, line=L, type='$7', vars=TV}.
 
 type_signature -> val '(' infixr ')' ':' sub_type_expr :
-  {L, N} = symbol_line_name('$3'),
+  {L, N} = label_line_name('$3'),
   #alpaca_type_signature{name=N, line=L, type='$6'}.
 
 type_signature -> val '(' infixr ')' type_vars ':' sub_type_expr :
-  {L, N} = symbol_line_name('$3'),
+  {L, N} = label_line_name('$3'),
   TV = make_vars_for_concrete_types('$5', L),
   #alpaca_type_signature{name=N, line=L, type='$7', vars=TV}.
 
 type_expressions -> sub_type_expr : ['$1'].
 type_expressions -> sub_type_expr type_expressions : ['$1'|'$2'].
 
-poly_type -> symbol type_expressions :
-  {L, N} = symbol_line_name('$1'),
+poly_type -> label type_expressions :
+  {L, N} = label_line_name('$1'),
 
   Members = '$2',
 
@@ -191,8 +189,8 @@ poly_type -> symbol type_expressions :
              vars = Vars}
   end.
 
-record_type_member -> symbol ':' type_expr :
-  N = symbol_name('$1'),
+record_type_member -> label ':' type_expr :
+  N = label_name('$1'),
   #t_record_member{name=binary_to_atom(N, utf8), type='$3'}.
 
 record_type_members -> record_type_member : ['$1'].
@@ -201,16 +199,17 @@ record_type_members -> record_type_member ',' record_type_members : ['$1' | '$3'
 record_type -> open_brace record_type_members close_brace :
   #t_record{members='$2'}.
 
-module_qualified_type_name -> symbol '.' symbol:
-  {L, Mod} = symbol_line_name('$1'),
-  Name = symbol_name('$3'),
+module_qualified_type_name -> label '.' label:
+  {L, Mod} = label_line_name('$1'),
+  Name = label_name('$3'),
   {module_qualified_type_name, L, Mod, Name}.
 
 module_qualified_type -> module_qualified_type_name :
   {module_qualified_type_name, L, Mod, Name} = '$1',
+  %% TODO:  like #a_qlab{} this should use labels for both module and name:
   #alpaca_type{
      line = L,
-     module = binary_to_atom(Mod, utf8),
+     module = Mod,
      name = {type_name, L, Name}}.
 
 module_qualified_type -> module_qualified_type_name type_expressions:
@@ -220,7 +219,7 @@ module_qualified_type -> module_qualified_type_name type_expressions:
 
   #alpaca_type{
      line = L,
-     module = binary_to_atom(Mod, utf8),
+     module = Mod,
      name = {type_name, L, Name},
      vars = Vars}.
 
@@ -230,8 +229,8 @@ type_expr -> sub_type_expr : '$1'.
 
 sub_type_expr -> type_var : '$1'.
 sub_type_expr -> record_type : '$1'.
-sub_type_expr -> symbol :
-  {L, N} = symbol_line_name('$1'),
+sub_type_expr -> label :
+  {L, N} = label_line_name('$1'),
 
   case N of
       <<"atom">> ->
@@ -285,7 +284,7 @@ type_tuple -> '(' comma_separated_type_list ')':
 
 %%% A type_member is one of three things:
 %%%
-%%% - a type name (symbol) followed by one or more type variables
+%%% - a type name (label) followed by one or more type variables
 %%% - a type constructor followed by one or more type variables
 %%% - a tuple built from any combination of the above with the same
 %%%   kind of tuples nested.
@@ -308,8 +307,8 @@ type_members -> type_member '|' type_members : ['$1'|'$3'].
 
 type -> type_declare poly_type_decl assign type_members :
   '$2'#alpaca_type{members='$4'}.
-type -> type_declare symbol assign type_members :
-  {L, N} = symbol_line_name('$2'),
+type -> type_declare label assign type_members :
+  {L, N} = label_line_name('$2'),
   %% Breaking this out to reduce repetition:
   MakeType = fun() ->
 		    #alpaca_type{
@@ -324,8 +323,8 @@ type -> type_declare symbol assign type_members :
       _   -> MakeType()
   end.
 
-poly_type_decl -> symbol type_vars :
-  {L, N} = symbol_line_name('$1'),
+poly_type_decl -> label type_vars :
+  {L, N} = label_line_name('$1'),
   #alpaca_type{
      line=L,
      name={type_name, L, N},
@@ -334,10 +333,11 @@ poly_type_decl -> symbol type_vars :
 type_vars -> type_var : ['$1'].
 type_vars -> type_var type_vars : ['$1'|'$2'].
 
-module_qualified_type_constructor -> symbol '.' type_constructor :
-  Mod = symbol_name('$1'),
+module_qualified_type_constructor -> label '.' type_constructor :
+  Mod = label_name('$1'),
   {type_constructor, L, N} = '$3',
-  #type_constructor{line=L, module=binary_to_atom(Mod, utf8), name=N}.
+  %% TODO:  should use labels, not the binaries from them:
+  #type_constructor{line=L, module=Mod, name=N}.
 
 type_apply -> module_qualified_type_constructor term :
   #alpaca_type_apply{name='$1', arg='$2'}.
@@ -384,19 +384,13 @@ const -> string : unwrap('$1').
 const -> '_' : '$1'.
 const -> unit : unwrap('$1').
 
-module_fun -> symbol '.' symbol '/' int :
-  {L, Mod} = symbol_line_name('$1'),
-  Fun = symbol_name('$3'),
+module_fun -> label '.' label '/' int :
+  {L, _} = label_line_name('$1'),
   #a_int{val=Arity} = unwrap('$5'),
-  #alpaca_far_ref{
-     line=L,
-     module=binary_to_atom(Mod, utf8),
-     name=Fun,
-     arity=Arity}.
-module_fun -> symbol '.' symbol :
-  {L, Mod} = symbol_line_name('$1'),
-  Fun = symbol_name('$3'),
-  #alpaca_far_ref{line=L, module=binary_to_atom(Mod, utf8), name=Fun}.
+  ast:qlab(L, unwrap('$1'), unwrap('$3'), Arity).
+module_fun -> label '.' label :
+  {L, _} = label_line_name('$1'),
+  ast:qlab(L, unwrap('$1'), unwrap('$3')).
 
 %% ----- Lists  ------------------------
 literal_cons_items -> simple_expr : ['$1'].
@@ -417,8 +411,8 @@ cons -> '[' literal_cons_items ']':
   lists:foldr(F, {nil, L}, '$2').
 
 %% -----  Binaries  --------------------
-bin_qualifier -> type_declare assign symbol :
-    {L, S} = symbol_line_name('$3'),
+bin_qualifier -> type_declare assign label :
+    {L, S} = label_line_name('$3'),
     case S of
         <<"binary">> -> {bin_type, S};
         <<"float">> -> {bin_type, S};
@@ -426,24 +420,24 @@ bin_qualifier -> type_declare assign symbol :
         <<"utf8">> -> {bin_type, S};
         _      -> return_error(L, {invalid_bin_type, S})
     end.
-bin_qualifier -> symbol assign int :
-    {L, S} = symbol_line_name('$1'),
+bin_qualifier -> label assign int :
+    {L, S} = label_line_name('$1'),
     case S of
         <<"size">> -> {size, unwrap('$3')};
         <<"unit">> -> {unit, unwrap('$3')};
         _          -> return_error(L, {invalid_bin_qualifier, S})
     end.
-bin_qualifier -> symbol assign boolean :
-    {L, S} = symbol_line_name('$1'),
+bin_qualifier -> label assign boolean :
+    {L, S} = label_line_name('$1'),
     case {S, unwrap('$3')} of
         {<<"sign">>, #a_bool{line=L, val=true}}  -> {bin_sign, L, <<"signed">>};
         {<<"sign">>, #a_bool{line=L, val=false}} -> {bin_sign, L, <<"unsigned">>};
         {_, _}                        ->
             return_error(L, {invalid_bin_qualifier, S})
     end.
-bin_qualifier -> symbol assign symbol :
-    K = symbol_name('$1'),
-    {L, V} = symbol_line_name('$3'),
+bin_qualifier -> label assign label :
+    K = label_name('$1'),
+    {L, V} = label_line_name('$3'),
     case {K, V} of
         {<<"end">>, <<"big">>}    -> {bin_endian, L, V};
         {<<"end">>, <<"little">>} -> {bin_endian, L, V};
@@ -460,7 +454,7 @@ bin_segment -> float :
   #alpaca_bits{value=unwrap('$1'), type=float, line=term_line('$1')}.
 bin_segment -> int :
   #alpaca_bits{value=unwrap('$1'), type=int, line=term_line(unwrap('$1'))}.
-bin_segment -> symbol :
+bin_segment -> label :
   #alpaca_bits{value=unwrap('$1'), line=line(unwrap('$1'))}.
 bin_segment -> binary : #alpaca_bits{value='$1', line=term_line('$1'), type=binary}.
 bin_segment -> string :
@@ -493,8 +487,8 @@ map_literal -> map_open map_literal_pairs close_brace :
 map_add -> map_open map_pair '|' term close_brace:
   #alpaca_map_add{line=term_line('$1'), to_add='$2', existing='$4'}.
 
-record_member -> symbol assign simple_expr:
-  {L, N} = symbol_line_name('$1'),
+record_member -> label assign simple_expr:
+  {L, N} = label_line_name('$1'),
   #alpaca_record_member{line=L, name=binary_to_atom(N, utf8), val='$3'}.
 
 record_members -> record_member: ['$1'].
@@ -638,7 +632,7 @@ term -> literal_fun : '$1'.
 term -> const : unwrap('$1').
 term -> tuple : '$1'.
 term -> infix : '$1'.
-term -> symbol : unwrap('$1').
+term -> label : unwrap('$1').
 term -> cons : '$1'.
 term -> binary : '$1'.
 term -> map_literal : '$1'.
@@ -653,7 +647,7 @@ term -> error : '$1'.
 terms -> term : ['$1'].
 terms -> term terms : ['$1'|'$2'].
 
-type_check -> type_check_tok symbol :
+type_check -> type_check_tok label :
   {_, Check, L} = '$1',
   #alpaca_type_check{type=Check, line=L, expr=unwrap('$2')}.
 
@@ -698,7 +692,7 @@ receive_block -> receive_block after int simple_expr :
 
 %% Only supporting spawning functions inside the current module
 %% for now:
-spawn_pid -> spawn symbol terms:
+spawn_pid -> spawn label terms:
   {_, L} = '$1',
   #alpaca_spawn{line=L,
               module=undefined,
@@ -710,15 +704,15 @@ defn -> let terms assign simple_expr : make_define('$2', '$4', 'top').
 definfix -> let '(' infixl ')' terms assign simple_expr :
   {infixl, L, C} = '$3',
   %% This conversion may seem excessive but note that the purpose of the Alpaca
-  %% native AST is to let Alpaca code work with the AST.  This means that symbol
+  %% native AST is to let Alpaca code work with the AST.  This means that label
   %% names do need to be legitimate Alpaca strings in UTF-8, not Erlang strings.
   InfixName = infix_name(C),
-  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:label(L, InfixName) | '$5'], '$7', 'top').
 
 definfix -> let '(' infixr ')' terms assign simple_expr :
   {infixr, L, C} = '$3',
   InfixName = infix_name(C),
-  make_define([ast:symbol(L, InfixName) | '$5'], '$7', 'top').
+  make_define([ast:label(L, InfixName) | '$5'], '$7', 'top').
 
 binding -> let defn in simple_expr : make_binding('$2', '$4').
 
@@ -733,9 +727,9 @@ ffi_call -> beam atom atom cons with match_clauses:
 	      clauses='$6',
 	      line=L}.
 
-module_def -> module symbol :
-{L, Name} = symbol_line_name('$2'),
-{module, binary_to_atom(Name, utf8), L}.
+module_def -> module label :
+%  {L, Name} = label_line_name('$2'),
+  {module, unwrap('$2')}.
 
 export_def -> export export_list : {export, '$2'}.
 %% Imported functions come out of the parser in the following tuple format:
@@ -753,69 +747,60 @@ import_def -> import import_fun_items : {import, lists:flatten('$2')}.
 %% fun_list_items get turned into the correct tuple format above when they
 %% become a fun_subset (see a bit further below).
 fun_list_items -> import_export_fun :
-  F = symbol_name('$1'),
-  [F].
+  ['$1'].
 fun_list_items -> fun_and_arity : ['$1'].
 fun_list_items -> import_export_fun ',' fun_list_items :
-  F = symbol_name('$1'),
-  [F | '$3'].
+  ['$1' | '$3'].
 fun_list_items -> fun_and_arity ',' fun_list_items : ['$1' | '$3'].
 
 %% Here we associate the module name with each of the functions being imported.
 %% We do this so we can deal with a flat proplist later on when resolving
 %% functions that aren't defined in the module importing these functions.
-fun_subset -> symbol '.' '[' fun_list_items ']' :
-  Mod = binary_to_atom(symbol_name('$1'), utf8),
-  F = fun({Name, Arity}) -> {Name, {Mod, Arity}};
-         (Name)          -> {Name, Mod}
+fun_subset -> label '.' '[' fun_list_items ']' :
+  Mod = unwrap('$1'),
+  F = fun({Name, Arity}) -> ast:qlab(ast:line(Mod), Mod, Name, Arity);
+         (Name)          -> ast:qlab(ast:line(Mod), Mod, Name)
   end,
   lists:map(F, '$4').
 
 %% Individually imported items now:
 
 %% module.foo means import all arities for foo:
-import_fun_item -> symbol '.' import_export_fun :
-  Mod = symbol_name('$1'),
-  Fun = symbol_name('$3'),
-  {Fun, binary_to_atom(Mod, utf8)}.
+import_fun_item -> label '.' import_export_fun :
+  Mod = unwrap('$1'),
+  ast:qlab(ast:line(Mod), Mod, '$3').
 %% module.foo/1 means only import foo/1:
-import_fun_item -> symbol '.' import_export_fun '/' int:
-  Mod = symbol_name('$1'),
-  Fun = symbol_name('$3'),
+import_fun_item -> label '.' import_export_fun '/' int:
   #a_int{val=Arity} = unwrap('$5'),
-  {Fun, {binary_to_atom(Mod, utf8), Arity}}.
+  Mod = unwrap('$1'),
+  ast:qlab(ast:line(Mod), Mod, '$3', Arity).
 import_fun_item -> fun_subset : '$1'.
 
 import_fun_items -> import_fun_item : ['$1'].
 import_fun_items -> import_fun_item ',' import_fun_items : ['$1'|'$3'].
 
-import_export_fun -> symbol : unwrap('$1').
+import_export_fun -> label : unwrap('$1').
 
 all_infix -> infixl : '$1'.
 all_infix -> infixr : '$1'.
 
 import_export_fun -> '(' all_infix ')' :
   {_, L, C} = '$2',
-  ast:symbol(L, infix_name(C)).
+  ast:label(L, infix_name(C)).
 
 fun_and_arity -> import_export_fun '/' int :
-  Name = symbol_name('$1'),
   #a_int{val=Arity} = unwrap('$3'),
-  {Name, Arity}.
-fun_and_arity -> symbol '/' int :
-  Name = symbol_name('$1'),
+  {'$1', Arity}.
+fun_and_arity -> label '/' int :
   %% Destructuring the tuple from leex, we don't need or want the `int` tag:
   {_, #a_int{val=Arity}} = '$3',
-  {Name, Arity}.
+  {unwrap('$1'), Arity}.
 
 export_list -> fun_and_arity : ['$1'].
-export_list -> import_export_fun :
-  Name = symbol_name('$1'),
-  [Name].
+export_list -> import_export_fun : ['$1'].
 export_list -> fun_and_arity ',' export_list : ['$1' | '$3'].
-export_list -> symbol ',' export_list :
-  Name = symbol_name('$1'),
-  [Name | '$3'].
+export_list -> label ',' export_list :
+  [unwrap('$1') | '$3'].
 
 %% TODO:  we should be able to apply the tail to the result of
 %%        an expression that yields a function.  This check
@@ -824,12 +809,10 @@ simple_expr -> terms :
 case '$1' of
     [T] ->
         T;
-    [{symbol, S} | T] ->
+    [{label, S} | T] ->
         #alpaca_apply{line=line(S), expr=S, args=T};
-    [#alpaca_far_ref{line=L, module=Mod, name=Fun} | T] ->
-        FunName = unicode:characters_to_binary(Fun, utf8),
-        Name = {Mod, ast:symbol(L, FunName), length(T)},
-        #alpaca_apply{line=L, expr=Name, args=T};
+    [#a_qlab{line=L}=Expr | T] ->
+        #alpaca_apply{line=L, expr=Expr, args=T};
     [Term|Args] ->
         #alpaca_apply{line=term_line(Term), expr=Term, args=Args}
 end.
@@ -870,9 +853,9 @@ Erlang code.
 make_infix(Op, A, B) ->
     Name = case Op of
       {infixl, L, C} ->
-                   ast:symbol(L, infix_name(C));
+                   ast:label(L, infix_name(C));
       {infixr, L, C} ->
-                   ast:symbol(L, infix_name(C));
+                   ast:label(L, infix_name(C));
 
       {int_math, L, "%"} -> {bif, '%', L, erlang, 'rem'};
 
@@ -898,7 +881,7 @@ make_infix(Op, A, B) ->
                   expr=Name,
                   args=[A, B]}.
 
-make_define([#a_sym{}=Name|A], Expr, Level) ->
+make_define([#a_lab{}=Name|A], Expr, Level) ->
     L = line(Name),
     case validate_args(L, A) of
         {ok, []} ->
@@ -1030,19 +1013,19 @@ make_vars_for_concrete_types(Vars, Line) ->
 type_arity_error(L, Typ, Params) ->
     return_error(L, {wrong_type_arity, Typ, length(Params)}).
 
-symbol_name({symbol, S}) ->
-    ast:symbol_name(S);
-symbol_name(S) ->
-    ast:symbol_name(S).
+label_name({label, S}) ->
+    ast:label_name(S);
+label_name(S) ->
+    ast:label_name(S).
 
-symbol_line_name({symbol, S}) ->
-    {ast:line(S), ast:symbol_name(S)};
-symbol_line_name({infixl, L, N}) ->
+label_line_name({label, S}) ->
+    {ast:line(S), ast:label_name(S)};
+label_line_name({infixl, L, N}) ->
     {L, infix_name(N)};
-symbol_line_name({infixr, L, N}) ->
+label_line_name({infixr, L, N}) ->
     {L, infix_name(N)}.
 
-line({symbol, S}) ->
+line({label, S}) ->
     ast:line(S);
 line(X) ->
     ast:line(X).
@@ -1062,7 +1045,7 @@ validate_match_pattern(Ptn) -> Ptn.
 validate_bin_segments([_Ptn]) -> ok;
 validate_bin_segments([Ptn | Rem]) ->
     case Ptn of
-        #alpaca_bits{default_sizes=true, type=T, value=#a_sym{}=S}
+        #alpaca_bits{default_sizes=true, type=T, value=#a_lab{}=S}
         when T == binary; T == utf8 ->
             return_error(line(S), unsized_binary_before_end);
         _ -> validate_bin_segments(Rem)
@@ -1083,7 +1066,7 @@ unwrap({float, F}) ->
     F;
 unwrap({string, S}) ->
     S;
-unwrap({symbol, S}) ->
+unwrap({label, S}) ->
     S;
 unwrap(X) ->
     X.

@@ -131,7 +131,7 @@ apply_type_vars(Str, [TV | Rest], NextVar) ->
     NewStr = re:replace(Str, TV, <<"'", NextVar>>, [global, {return, binary}]),
     apply_type_vars(NewStr, Rest, NextVar+1).
 
-format_binding(#alpaca_binding{type=Type, name=#a_sym{name=Name}}) ->
+format_binding(#alpaca_binding{type=Type, name=#a_lab{name=Name}}) ->
     TypeSigRepr = format_type(Type),
     TypeVarsRepr = case re:run(TypeSigRepr, <<"'[a-z]">>,
                               [global, {capture, first, binary}]) of
@@ -195,23 +195,21 @@ format_type_def(#alpaca_type_alias{name={_, _, Name}, target=T}) ->
     <<"type ", Name/binary, " = ", TargetRepr/binary>>.
 
 format_module(#alpaca_module{functions=Funs,
-                             name=Name,
+                             name=ModName,
                              types=ModTypes,
                              type_exports=TypeExports,
                              function_exports=FunExports}, Opts) ->
-
-    ModName = atom_to_binary(Name, utf8),
     %% Sort funs by line
     SortedFuns = lists:sort(
-        fun(#alpaca_binding{name=#a_sym{line = L1}},
-            #alpaca_binding{name=#a_sym{line = L2}}) ->
+        fun(#alpaca_binding{name=#a_lab{line = L1}},
+            #alpaca_binding{name=#a_lab{line = L2}}) ->
                 L1 =< L2
         end,
         Funs),
     {PublicFuns, PrivateFuns} = lists:partition(
-        fun(#alpaca_binding{name=#a_sym{name=FunName}, type=T}) ->
-            lists:any(fun(N) when is_binary(N) -> N == FunName;
-                         ({N, Arity}) ->
+        fun(#alpaca_binding{name=#a_lab{name=FunName}, type=T}) ->
+            lists:any(fun(#a_lab{name=N}) when is_binary(N) -> N == FunName;
+                         ({#a_lab{name=N}, Arity}) when is_binary(N) ->
                              case T of
                                 {t_arrow, Args, _} ->
                                     (N == FunName) and (length(Args) == Arity);

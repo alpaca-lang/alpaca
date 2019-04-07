@@ -1,4 +1,4 @@
-%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ft=erlang ts=4 sw=4 et
 %%%
 %%% Copyright 2016 Jeremy Pierre
@@ -1388,7 +1388,7 @@ inst_constructor_arg(Arg, _, _, Env) ->
 find_type(Name, []) -> throw({error, {unknown_type, Name}});
 find_type(Name, [#alpaca_type{name={type_name, _, Name}}=T|_]) -> T;
 find_type(Name, [#alpaca_type_alias{name={type_name, _, Name}}=T|_]) -> T;
-find_type(Name, [_|Types]) -> find_type(Name, Types).
+find_type(Name, [_Miss|Types]) -> find_type(Name, Types).
 
 %% When we use a type specified elsewhere within another type, like mixing
 %% options and lists, we need to make sure that the two types use the same name
@@ -1455,14 +1455,14 @@ inst_binding(VarName, Line, Lvl, #env{bindings=Bs} = Env) ->
 lookup_binding(VarName, Env, Default) ->
     case Env of
         #env{current_module=#alpaca_module{functions=Funs}} ->
-            MatchingFuns = [B || #alpaca_binding{name=#a_sym{name = N}}=B <- Funs,
+            MatchingFuns = [B || #alpaca_binding{name=#a_lab{name = N}}=B <- Funs,
                                  N =:= VarName
                            ],
             case MatchingFuns of
                 [] ->
                     Default;
                 %% There's no way to tell which arity version of a function is
-                %% intended from a symbol alone so we're defaulting to the
+                %% intended from a label alone so we're defaulting to the
                 %% first one bound to the name we're looking for:
                 [F|_] ->
                     case typ_of(Env, 0, F) of
@@ -1581,8 +1581,8 @@ private_type_error(SourceModule, Module, Type) ->
 
 retrieve_type(SourceModule, Module, Type, []) ->
     throw(missing_type_error(SourceModule, Module, Type));
-retrieve_type(SM, M, T, [#alpaca_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
-    case [TT || #alpaca_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T] of
+retrieve_type(SM, #a_lab{name=M}, T, [#alpaca_module{name=M, types=Ts, type_exports=ETs}|Rem]) ->
+    case [TT || #alpaca_type{name={type_name, _, TN}}=TT <- Ts, TN =:= T#a_lab.name] of
         [#alpaca_type{name={_, _, TN}}=Type] ->
             %% now make sure the type is exported:
             case [X || X <- ETs, X =:= TN] of
@@ -1629,11 +1629,11 @@ type_modules([M|Ms], Env, Acc) ->
 type_module(#alpaca_module{precompiled=true}=M, _Env) -> 
     {ok, M};
 type_module(#alpaca_module{functions=Fs,
-                        name=Name,
-                        types=Ts,
-                        type_imports=Imports,
-                        tests=Tests}=M,
-           #env{modules=Modules}=Env) ->
+                           name=Name,
+                           types=Ts,
+                           type_imports=Imports,
+                           tests=Tests}=M,
+            #env{modules=Modules}=Env) ->
     [] = validate_types(M, Modules),
 
     %% Fold function to yield all the imported types or report a missing one.
@@ -1680,8 +1680,8 @@ type_module(#alpaca_module{functions=Fs,
                             Err;
                         {Env4, FunRes} ->
                             case type_module_tests(Tests, Env4, ok, FunRes) of
-                                {error, _} = Err        ->
-                                    Err;
+                                {error, _} = Err2        ->
+                                    Err2;
                                 Funs when is_list(Funs) ->
                                     {ok, M#alpaca_module{functions=Funs, typed=true}}
                             end
@@ -1691,14 +1691,14 @@ type_module(#alpaca_module{functions=Fs,
 
 typ_module_funs([], Env, Memo) ->
     {Env, lists:reverse(Memo)};
-typ_module_funs([#alpaca_binding{name=#a_sym{name=Name}}=F|Rem], Env, Memo) ->
+typ_module_funs([#alpaca_binding{name=#a_lab{name=Name}}=F|Rem], Env, Memo) ->
     case typ_of(Env, 0, F) of
         {error, _} = E ->
             E;
         {Typ, NV} ->
             Env2 = update_counter(NV, Env),
             Env3 = update_binding(Name, Typ, Env2),
-            typ_module_funs(Rem, Env3, [F#alpaca_binding{type=unwrap(Typ)}|Memo])
+            typ_module_funs(Rem, Env3, [F#alpaca_binding{type=unwrap(Typ)} | Memo])
     end.
 
 type_module_tests(_, _Env, {error, _}=Err, _) ->
@@ -1713,9 +1713,10 @@ type_module_tests([#alpaca_test{expression=E}|Rem], Env, _, Funs) ->
 %% Here we make a quick pass over each type defined in a module to ensure
 %% types that are members of a type are defined in this module or imported.
 validate_types(#alpaca_module{name=Mod, types=Types, type_imports=Imports}, Mods) ->
+    %% TODO:  inconsistent use of labels vs raw binary:
     TypeNames =
         [N || #alpaca_type{name={_, _, N}} <- Types] ++
-        [N || #alpaca_type_import{type=N} <- Imports] ++
+        [N || #alpaca_type_import{type=#a_lab{name=N}} <- Imports] ++
         [N || #alpaca_type_alias{name={_, _, N}} <- Types],
     validate_types(Mod, TypeNames, Mods, Types).
 
@@ -1806,46 +1807,77 @@ typ_of(#env{next_var=VN}, _Lvl, #a_str{}) ->
     {new_cell(t_string), VN};
 typ_of(#env{next_var=VN}, _Lvl, {chars, _, _}) ->
     {new_cell(t_chars), VN};
-typ_of(Env, Lvl, #a_sym{line=L, name=N}) ->
+typ_of(Env, Lvl, #a_lab{line=L, name=N}) ->
     case inst_binding(N, L, Lvl, Env) of
         {error, _} = E -> E;
         {T, #env{next_var=VarNum}, _} -> {T, VarNum}
     end;
-typ_of(Env, _Lvl, #alpaca_far_ref{module=Mod, name=N, line=_L, arity=A}) ->
-    EnteredModules = [Mod | Env#env.entered_modules],
-    {ok, Module, _} = extract_module_bindings(Env, Mod, N),
-
-    Funs = case Module#alpaca_module.typed of
-        true ->
-            Module#alpaca_module.functions;
-        false ->
-            %% Type the called function in its own module:
-            Env2 = Env#env{current_module=Module,
-                          entered_modules=EnteredModules},
-            {ok, #alpaca_module{functions=F}} = type_module(Module, Env2),
-            F
-    end,
-
-    [Typ] = [Typ || #alpaca_binding{
-                       name=#a_sym{name = X},
-                       type=Typ,
-                       bound_expr=#alpaca_fun{arity=Arity}} <- Funs,
-                    N =:= X,
-                    A =:= Arity],
-
+%% A qualified label is currently taken to represent a reference to a binding
+%% in another module.  In future, it will represent _either_ a binding in
+%% another module or a binding inside of a record (field accessor.)
+typ_of( Env
+      , _Lvl
+      , #a_qlab{ space=#a_lab{name=Mod}
+               , label=#a_lab{name=N}=Label
+               , line=_L
+               , arity=A
+               }
+      ) ->
+    %% First we check to see if we have mutually recursive modules, including
+    %% across some chain of calls.  We do this by tracking which modules the
+    %% typer has already "entered" to perform type checking, and then looking
+    %% to see if the typer will have to *re*-enter one of the previously typed
+    %% modules.  `Err` here simply abstracts the actual error report generation,
+    %% while the following case statement performs the actual check.
+    %%
+    %% This decision to prevent mutually recursive modules was, frankly, an
+    %% *arbitrary* early decision in an attempt to keep complexity down.  It may
+    %% very well bear revisiting.
     Err = fun() ->
                   [CurrMod|_] = Env#env.entered_modules,
                   throw({error, {bidirectional_module_ref, Mod, CurrMod}})
           end,
 
-    case [M || M <- Env#env.entered_modules, M == Mod] of
-        []    -> Typ;
-        [Mod] -> case Env#env.current_module of
-                     #alpaca_module{name=Mod} -> Typ;
+    %% Here's the actual bidirectional/cyclic module check:
+    case [M || M <- Env#env.entered_modules, M =:= Mod] of
+        []    -> ok;
+        [_] -> case Env#env.current_module of
+                     #alpaca_module{name=Mod} -> ok;
                      _ -> Err()
                  end;
         _     -> Err()
     end,
+
+    %% The check has passed, so we're going to go through the following steps:
+    %%   1. Add the target module to our list of entered modules, preventing
+    %%      further cycles.  The "target module" is the one to which the
+    %%      qualified label refers.
+    %%   2. Check if the target module has already been typed.  If it has *not*
+    %%      been typed yet, do so now.
+    %%   3. Retrieve the binding from the target module that matches the target
+    %%      binding name *and* arity.  A failure to find a matching arity may
+    %%      indicate an attempt to curry the target binding which is handled
+    %%      elsewhere.  See `typ_of(_, _, #alpaca_apply{...})` for more details.
+    EnteredModules = [Mod | Env#env.entered_modules],
+
+    {ok, Module, _} = extract_module_bindings(Env, Mod, Label),
+    Funs = case Module#alpaca_module.typed of
+               true ->
+                   Module#alpaca_module.functions;
+               false ->
+                   %% Type the called function in its own module:
+                   Env2 = Env#env{current_module=Module,
+                                  entered_modules=EnteredModules},
+                   {ok, #alpaca_module{functions=F}} = type_module(Module, Env2),
+                   F
+           end,
+
+    [Typ] = [Typ || #alpaca_binding{
+                       name=#a_lab{name = X},
+                       type=Typ,
+                       bound_expr=#alpaca_fun{arity=Arity}} <- Funs,
+                    N =:= X,
+                    A =:= Arity],
 
     #env{next_var=NV}=Env,
     %% deep copy to cell the various types, needed
@@ -1891,7 +1923,7 @@ typ_of(Env, Lvl, #alpaca_cons{line=Line, head=H, tail=T}) ->
             {nil, _} -> {new_cell({t_list, HTyp}), NV1};
             #alpaca_cons{}=Cons ->
                 typ_of(update_counter(NV1, Env), Lvl, Cons);
-            #a_sym{}=S ->
+            #a_lab{}=S ->
                 L = ast:line(S),
                 {STyp, Next} =
                     typ_of(update_counter(NV1, Env), Lvl, S),
@@ -2029,7 +2061,7 @@ typ_of(Env, _Lvl, #alpaca_type_apply{name=N, arg=none}) ->
     end;
 typ_of(Env, Lvl, #alpaca_type_apply{name=N, arg=A}) ->
     %% Some things come back from typing without being properly contained in a
-    %% reference cell, specifically those bound to symbols.  This can be a
+    %% reference cell, specifically those bound to labels.  This can be a
     %% problem when typing this kind of application because we jump straight
     %% to unify/4 which requires both arguments to be in cells while other parts
     %% of the typer balk at things being immediately celled.  An overhaul of the
@@ -2073,8 +2105,8 @@ typ_of(Env, Lvl, {bif, AlpacaName, L, _, _}) ->
             {T, VarNum}
     end;
 
-typ_of(Env, Lvl, #alpaca_apply{expr={Mod, #a_sym{}=Sym, Arity}, args=Args}) ->
-    X = ast:symbol_name(Sym),
+typ_of(Env, Lvl, #alpaca_apply{expr={Mod, #a_lab{}=Sym, Arity}, args=Args}) ->
+    X = ast:label_name(Sym),
     L = ast:line(Sym),
     Satisfy =
         fun() ->
@@ -2100,7 +2132,7 @@ typ_of(Env, Lvl, #alpaca_apply{expr={Mod, #a_sym{}=Sym, Arity}, args=Args}) ->
                             {ok, #alpaca_module{functions=Funs}} ->
                                 [T] = [Typ ||
                                           #alpaca_binding{
-                                             name=#a_sym{name = N},
+                                             name=#a_lab{name = N},
                                              type=Typ,
                                              bound_expr=#alpaca_fun{
                                                            arity=A}} <- Funs,
@@ -2148,7 +2180,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 {{t_arrow, TArgs, TRet}, NextVar} ->
                     case length(Args) >= length(TArgs) of
                         true ->
-                            #a_sym{name = N} = Expr,
+                            #a_lab{name = N} = Expr,
                             Mod = Env#env.current_module#alpaca_module.name,
                             {error, {not_found, Mod, N, length(Args)}};
                         false ->
@@ -2162,14 +2194,14 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
         fun(_OriginalErr) ->
             %% Attempt to find a curryable version
             {Mod, FN, Env2} = case Expr of
-                #a_sym{}=Sym ->
-                    FunName = ast:symbol_name(Sym),
+                #a_lab{}=Sym ->
+                    FunName = ast:label_name(Sym),
                     {Env#env.current_module, FunName, Env};
 
                 {bif, FunName, _, _, _} ->
                     {Env#env.current_module, FunName, Env};
 
-                {alpaca_far_ref, _, ModName, FunName, _} ->
+                #a_qlab{space=#a_lab{name=ModName}, label=FunName} ->
                     EnteredModules = [Env#env.current_module | Env#env.entered_modules],
                     {ok, Module, _} = extract_module_bindings(Env, ModName, FunName),
                     E = Env#env{current_module=Module,
@@ -2189,13 +2221,13 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             end
     end,
     %% If the expression we're applying arguments to is a named function
-    %% (e.g. a symbol or bif), attempt to find it in the module.
+    %% (e.g. a label or bif), attempt to find it in the module.
     %% This ForwardFun function is used specifically to find functions defined
     %% later than the application we're trying to type.
     ForwardFun =
         fun() ->
                 FN = case Expr of
-                         #a_sym{name=N}          -> N;
+                         #a_lab{name=N}          -> N;
                          {bif, FunName, _, _, _} -> FunName
                      end,
                 Mod = Env#env.current_module,
@@ -2231,7 +2263,7 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
             catch
                 error:{arity_error, _, _} ->
                     case Expr of
-                        #alpaca_far_ref{} -> CurryFun({error, uncurryable_far_ref});
+                        #a_qlab{} -> CurryFun({error, uncurryable_far_ref});
                         _ -> ForwardFun()
                     end
             end
@@ -2436,7 +2468,7 @@ typ_of(EnvIn, Lvl, #alpaca_fun{line=_L, name=N, versions=Vs}) ->
 
 %% A function binding, possibly inside a function if E2 /= `undefined`:
 typ_of(Env, Lvl, #alpaca_binding{
-                    name=#a_sym{name=N},
+                    name=#a_lab{name=N},
                     bound_expr=#alpaca_fun{}=E,
                     signature=Sig,
                     body=E2}) ->
@@ -2482,7 +2514,7 @@ typ_of(Env, Lvl, #alpaca_binding{
     end;
 
 %% A var binding inside a function:
-typ_of(Env, Lvl, #alpaca_binding{name=#a_sym{name=N}, bound_expr=E1, body=E2}) ->
+typ_of(Env, Lvl, #alpaca_binding{name=#a_lab{name=N}, bound_expr=E1, body=E2}) ->
     case typ_of(Env, Lvl, E1) of
         {error, _}=Err ->
             Err;
@@ -2801,15 +2833,25 @@ extract_fun(Env, ModuleName, FunName, Arity) ->
             end
     end.
 
+filter_bindings([], _BindingName, Memo) ->
+    lists:reverse(Memo);
+filter_bindings([{#a_lab{name=N}, Arity}|Rem], N, Memo) ->
+    filter_bindings(Rem, N, [{N, Arity}|Memo]);
+filter_bindings([_|Rem], BindingName, Memo) ->
+    filter_bindings(Rem, BindingName, Memo).
+
 %% Arity-neutral version of extract_fun so that we can get all top-level
 %% bindings for a name from a given module.
-extract_module_bindings(Env, ModuleName, BindingName) ->
+extract_module_bindings(Env
+                       , ModuleName
+                       , #a_lab{name=BindingName}
+                       ) when is_binary(ModuleName) ->
     case [M || M <- Env#env.modules, M#alpaca_module.name =:= ModuleName] of
         [] ->
             {error, {no_module, ModuleName}};
         [Module] ->
             Exports = Module#alpaca_module.function_exports,
-            case [F || {N, _A} = F <- Exports, N =:= BindingName] of
+            case filter_bindings(Exports, BindingName, []) of
                 []  ->
                     throw({error, {not_exported, ModuleName, BindingName}});
                 Funs ->
@@ -2838,16 +2880,16 @@ get_curryable_funs(Module, FN, MinArity) ->
 
 filter_to_fun([], _, _) ->
     not_found;
-filter_to_fun([#alpaca_binding{name=#a_sym{name = N}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
+filter_to_fun([#alpaca_binding{name=#a_lab{name = N}, bound_expr=#alpaca_fun{arity=Arity}}=Fun|_], FN, A)
   when Arity =:= A, N =:= FN ->
     {ok, Fun};
-filter_to_fun([#alpaca_binding{name=#a_sym{name =  N}}=Fun|_], FN, 0) when N =:= FN ->
+filter_to_fun([#alpaca_binding{name=#a_lab{name =  N}}=Fun|_], FN, 0) when N =:= FN ->
     {ok, Fun};
 filter_to_fun([_F|Rem], FN, Arity) ->
     filter_to_fun(Rem, FN, Arity).
 
 filter_to_curryable_funs(Funs, FN, MinArity) ->
-    Pred = fun(#alpaca_binding{name=#a_sym{name=N}, bound_expr=#alpaca_fun{arity=Arity}}) ->
+    Pred = fun(#alpaca_binding{name=#a_lab{name=N}, bound_expr=#alpaca_fun{arity=Arity}}) ->
                case {Arity >= MinArity, N =:= FN} of
                     {true, true} -> true;
                     _ -> false
@@ -2856,7 +2898,7 @@ filter_to_curryable_funs(Funs, FN, MinArity) ->
            end,
     lists:filter(Pred, Funs).
 
-%%% for clauses we need to add bindings to the environment for any symbols
+%%% for clauses we need to add bindings to the environment for any labels
 %%% (variables) that occur in the pattern.  "NameNum" is used to give
 %%% "wildcard" variable names (the '_' throwaway label) sequential and thus
 %%% differing _actual_ variable names.  This is necessary so that two different
@@ -2873,7 +2915,7 @@ filter_to_curryable_funs(Funs, FN, MinArity) ->
         Lvl::integer(),
         NameNum::integer()) -> {typ(), alpaca_expression(), env(), integer()} |
                                {error, term()}.
-add_bindings(#a_sym{name=Name}=S, Env, Lvl, NameNum) ->
+add_bindings(#a_lab{name=Name}=S, Env, Lvl, NameNum) ->
     {Typ, Env2} = new_var(Lvl, Env),
     {Typ, S, update_binding(Name, Typ, Env2), NameNum};
 
@@ -2987,7 +3029,7 @@ add_bindings(Exp, Env, Lvl, NameNum) ->
     end.
 
 %%% Tuples may have multiple instances of the '_' wildcard/"don't care"
-%%% symbol.  Each instance needs a unique name for unification purposes
+%%% label.  Each instance needs a unique name for unification purposes
 %%% so the individual occurrences of '_' get renamed with numbers in order,
 %%% e.g. (1, _, _) would become (1, _0, _1).
 rename_wildcards(#alpaca_tuple{values=Vs}=Tup, NameNum) ->
@@ -3040,7 +3082,7 @@ rename_wildcards(Vs, NameNum) when is_list(Vs) ->
     {lists:reverse(Renamed), NN};
 rename_wildcards({'_', L}, N) ->
     Name = unicode:characters_to_binary(integer_to_list(N)++"_", utf8),
-    Sym = ast:symbol(L, Name),
+    Sym = ast:label(L, Name),
     {Sym, N+1};
 rename_wildcards(O, N) ->
     {O, N}.
@@ -3126,16 +3168,16 @@ clause_test_() ->
                    typ_of(
                      new_env(),
                      #alpaca_clause{
-                        pattern=ast:symbol(1, <<"x">>),
+                        pattern=ast:label(1, <<"x">>),
                         result=ast:atom(1, true)})),
      ?_assertMatch({{t_clause, t_int, none, t_int}, _},
                    typ_of(
                      new_env(),
                      #alpaca_clause{
-                        pattern=ast:symbol(1, <<"x">>),
+                        pattern=ast:label(1, <<"x">>),
                         result=#alpaca_apply{
                                   expr={bif, '+', 1, erlang, '+'},
-                                  args=[ast:symbol(1, <<"x">>),
+                                  args=[ast:label(1, <<"x">>),
                                         ast:int(1, 2)]}}))
     ].
 
@@ -3285,12 +3327,12 @@ module_typing_test() ->
     ?assertMatch({ok, #alpaca_module{
                          functions=[
                                     #alpaca_binding{
-                                       name=#a_sym{line = 5, name = <<"add">>},
+                                       name=#a_lab{line = 5, name = <<"add">>},
                                        type={t_arrow,
                                              [t_int, t_int],
                                              t_int}},
                                     #alpaca_binding{
-                                       name=#a_sym{line = 7, name = <<"head">>},
+                                       name=#a_lab{line = 7, name = <<"head">>},
                                        type={t_arrow,
                                              [{t_list, {unbound, A, _}}],
                                              {unbound, A, _}}}
@@ -3310,10 +3352,10 @@ module_with_forward_reference_test() ->
        {ok, #alpaca_module{
                functions=[
                           #alpaca_binding{
-                             name=#a_sym{line = 5, name = <<"add">>},
+                             name=#a_lab{line = 5, name = <<"add">>},
                              type={t_arrow, [t_int, t_int], t_int}},
                           #alpaca_binding{
-                             name=#a_sym{line = 7, name = <<"adder">>},
+                             name=#a_lab{line = 7, name = <<"adder">>},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M, Env#env{current_module=M, modules=[M]})).
 
@@ -3336,7 +3378,7 @@ simple_inter_module_test() ->
                function_exports=[],
                functions=[
                           #alpaca_binding{
-                             name=#a_sym{line = 3, name = <<"add">>},
+                             name=#a_lab{line = 3, name = <<"add">>},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
        type_module(M1, Env)).
 
@@ -3354,9 +3396,9 @@ bidirectional_module_fail_test() ->
     [M1, M2] = make_modules([Mod1, Mod2]),
     E = new_env(),
     Env = E#env{modules=[M1, M2]},
-    ?assertThrow({bidirectional_module_ref,
-                  inter_module_two,
-                  inter_module_one},
+    ?assertThrow({error, {bidirectional_module_ref,
+                  <<"inter_module_two">>,
+                  <<"inter_module_one">>}},
                  type_module(M2, Env)).
 
 
@@ -3397,13 +3439,13 @@ infinite_mutual_recursion_test() ->
     [M] = make_modules([Code]),
     E = new_env(),
     ?assertMatch({ok, #alpaca_module{
-                         name=mutual_rec_test,
+                         name= <<"mutual_rec_test">>,
                          functions=[
                                     #alpaca_binding{
-                                       name=#a_sym{line = 3, name = <<"a">>},
+                                       name=#a_lab{line = 3, name = <<"a">>},
                                        type={t_arrow, [t_int], t_rec}},
                                     #alpaca_binding{
-                                       name=#a_sym{line = 5, name = <<"b">>},
+                                       name=#a_lab{line = 5, name = <<"b">>},
                                        type={t_arrow, [t_int], t_rec}}]}},
                  type_module(M, E)).
 
@@ -3417,13 +3459,13 @@ terminating_mutual_recursion_test() ->
     [M] = make_modules([Code]),
     E = new_env(),
     ?assertMatch({ok, #alpaca_module{
-                         name=terminating_mutual_rec_test,
+                         name= <<"terminating_mutual_rec_test">>,
                          functions=[
                                     #alpaca_binding{
-                                       name=#a_sym{line = 3, name = <<"a">>},
+                                       name=#a_lab{line = 3, name = <<"a">>},
                                        type={t_arrow, [t_int], t_atom}},
                                     #alpaca_binding{
-                                       name=#a_sym{line = 5, name = <<"b">>},
+                                       name=#a_lab{line = 5, name = <<"b">>},
                                        type={t_arrow, [t_int], t_atom}}]}},
                  type_module(M, E)).
 
@@ -3761,7 +3803,7 @@ type_constructor_with_arrow_arg_test() ->
     Invalid = Base ++
               "let p x y = x + y\n\n"
               "let make () = Constructor p",
-     ?assertMatch({error,{cannot_unify, constructor, _, t_bool, t_int}},
+     ?assertMatch({error,{cannot_unify, <<"constructor">>, _, t_bool, t_int}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_with_aliased_arrow_arg_test() ->
@@ -3772,7 +3814,7 @@ type_constructor_with_aliased_arrow_arg_test() ->
     Valid = Base ++ "let f (W b) = b 1 1\n\n",
     ?assertMatch({ok, _}, module_typ_and_parse(Valid)),
     Invalid = Base ++ "let f (W b) = b 1 :atom\n\n",
-    ?assertMatch({error, {cannot_unify,constructor, 7, t_int, t_atom}},
+    ?assertMatch({error, {cannot_unify, <<"constructor">>, 7, t_int, t_atom}},
                   module_typ_and_parse(Invalid)).
 
 type_constructor_multi_level_type_alias_arg_test() ->
@@ -3847,7 +3889,7 @@ rename_constructor_wildcard_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name=#a_sym{line = 5, name = <<"a">>},
+                             name=#a_lab{line = 5, name = <<"a">>},
                              type={t_arrow,
                                    [#adt{
                                        name = <<"t">>,
@@ -3898,10 +3940,10 @@ json_union_type_test() ->
        {ok,
         #alpaca_module{
            types=[#alpaca_type{
-                     module='json_union_type_test',
+                     module= <<"json_union_type_test">>,
                      name={type_name, 3, <<"json">>}}],
            functions=[#alpaca_binding{
-                         name=#a_sym{name = <<"json_to_atom">>},
+                         name=#a_lab{name = <<"json_to_atom">>},
                          type={t_arrow,
                                [#adt{name = <<"json">>,
                                      members=[{t_list,
@@ -3932,7 +3974,7 @@ module_with_types_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name=#a_sym{line = 5, name = <<"a">>},
+                             name=#a_lab{line = 5, name = <<"a">>},
                              type={t_arrow,
                                    [#adt{
                                        name = <<"t">>,
@@ -3963,11 +4005,18 @@ recursive_polymorphic_adt_fails_to_unify_with_base_type_test() ->
     [M] = make_modules([Code]),
     Res = type_modules([M]),
     ?assertMatch({error,
-                  {cannot_unify,tree,15,
-                   #adt{name = <<"tree">>,
-                        vars=[{"a",_}],
-                        members=[{t_adt_cons,"Node"},{t_adt_cons,"Leaf"}]},
-                   t_int}},
+                  { cannot_unify
+                  , <<"tree">>
+                  , 15
+                  , #adt{ name = <<"tree">>
+                        , vars=[{"a",_}]
+                        , members=[ {t_adt_cons,"Node"}
+                                  , {t_adt_cons,"Leaf"}
+                                  ]
+                        }
+                  , t_int
+                  }
+                 },
                  Res).
 
 polymorphic_tree_code() ->
@@ -3994,7 +4043,7 @@ type_tag_arity_test_() ->
              %% here rather than explicit full Symbol as its representation will
              %% change over time.
              ?assertMatch(
-                {error, {error, {too_many_type_arguments, opt, 3, "None"}}},
+                {error, {error, {too_many_type_arguments, <<"opt">>, 3, "None"}}},
                 Res)
      end
     , fun() ->
@@ -4007,7 +4056,7 @@ type_tag_arity_test_() ->
              [M] = make_modules([Code]),
              Res = type_modules([M]),
              ?assertMatch(
-                {error, {error, {not_enough_type_arguments, m, 3, "X"}}},
+                {error, {error, {not_enough_type_arguments, <<"m">>, 3, "X"}}},
                 Res)
       end
     ].
@@ -4035,7 +4084,7 @@ module_matching_lists_test() ->
     Res = type_module(M, Env),
     ?assertMatch({ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name=#a_sym{line = 5, name = <<"a">>},
+                                       name=#a_lab{line = 5, name = <<"a">>},
                                        type={t_arrow,
                                              [#adt{
                                                  name = <<"my_list">>,
@@ -4069,21 +4118,21 @@ type_var_protection_test() ->
     ?assertMatch(
        {ok, #alpaca_module{
                functions=[#alpaca_binding{
-                             name=#a_sym{line = 5, name = <<"a">>},
+                             name=#a_lab{line = 5, name = <<"a">>},
                              type={t_arrow,
                                    [#adt{
                                        name = <<"my_list">>,
                                        vars=[{"x", t_int}]}],
                                    t_atom}},
                           #alpaca_binding{
-                             name=#a_sym{line = 7, name = <<"b">>},
+                             name=#a_lab{line = 7, name = <<"b">>},
                              type={t_arrow,
                                    [#adt{
                                        name = <<"my_list">>,
                                        vars=[{"x", t_float}]}],
                                    t_atom}},
                           #alpaca_binding{
-                             name=#a_sym{line = 9, name = <<"c">>},
+                             name=#a_lab{line = 9, name = <<"c">>},
                              type={t_arrow,
                                    [t_unit],
                                    {t_tuple,
@@ -4107,7 +4156,7 @@ type_var_protection_fail_unify_test() ->
 
     Res = type_modules([M]),
     ?assertMatch(
-       {error, {cannot_unify, module_matching_lists, 5, t_int, t_float}}, Res).
+       {error, {cannot_unify, <<"module_matching_lists">>, 5, t_int, t_float}}, Res).
 
 type_error_in_test_test() ->
     Code =
@@ -4116,7 +4165,7 @@ type_error_in_test_test() ->
         "test \"add floats\" = add 1.0 2.0",
     Res = module_typ_and_parse(Code),
     ?assertEqual(
-       {error, {cannot_unify, type_error_in_test, 5, t_int, t_float}}, Res).
+       {error, {cannot_unify, <<"type_error_in_test">>, 5, t_int, t_float}}, Res).
 
 %% At the moment we don't care what the type of the test expression is,
 %% only that it type checks.
@@ -4233,7 +4282,7 @@ polymorphic_process_as_return_value_test() ->
         "  let u = send :a p in\n"
         "  p",
     Res = module_typ_and_parse(Code),
-    ?assertMatch({error, {cannot_unify, poly_process, 12, t_float, t_atom}}, Res).
+    ?assertMatch({error, {cannot_unify, <<"poly_process">>, 12, t_float, t_atom}}, Res).
 
 polymorphic_spawn_test() ->
     FunCode =
@@ -4293,7 +4342,7 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name=#a_sym{line = 5, name = <<"a">>},
+                                      name=#a_lab{line = 5, name = <<"a">>},
                                       type={t_receiver,
                                             #adt{name = <<"my_union">>},
                                             {t_arrow,
@@ -4313,14 +4362,14 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name=#a_sym{line = 3, name = <<"f">>},
+                                      name=#a_lab{line = 3, name = <<"f">>},
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
                                              [t_int],
                                              t_atom}}},
                                    #alpaca_binding{
-                                      name=#a_sym{line = 5, name = <<"g">>},
+                                      name=#a_lab{line = 5, name = <<"g">>},
                                       type={t_receiver,
                                             t_int,
                                             {t_arrow,
@@ -4340,14 +4389,14 @@ receive_test_() ->
              ?assertMatch(
                 {ok, #alpaca_module{
                         functions=[#alpaca_binding{
-                                      name=#a_sym{line = 5, name = <<"a">>},
+                                      name=#a_lab{line = 5, name = <<"a">>},
                                       type={t_receiver,
                                             #adt{name = <<"t">>},
                                             {t_arrow,
                                              [t_unit],
                                              t_rec}}},
                                    #alpaca_binding{
-                                      name=#a_sym{line = 7, name = <<"b">>},
+                                      name=#a_lab{line = 7, name = <<"b">>},
                                       type={t_receiver,
                                             #adt{name = <<"t">>},
                                             {t_arrow,
@@ -4401,7 +4450,7 @@ spawn_test_() ->
                  "let start_f init = spawn f init",
              ?assertMatch({ok, #alpaca_module{
                                   functions=[#alpaca_binding{
-                                                name=#a_sym{line = 5,
+                                                name=#a_lab{line = 5,
                                                             name = <<"f">>},
                                                 type={t_receiver,
                                                       t_int,
@@ -4409,7 +4458,7 @@ spawn_test_() ->
                                                        [t_int],
                                                        t_rec}}},
                                              #alpaca_binding{
-                                                name=#a_sym{line = 7,
+                                                name=#a_lab{line = 7,
                                                             name = <<"start_f">>},
                                                 type={t_arrow,
                                                       [t_int],
@@ -4426,7 +4475,7 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name=#a_sym{line = 3,
+                                       name=#a_lab{line = 3,
                                                    name = <<"recv">>},
                                        type={t_receiver,
                                              t_int,
@@ -4434,7 +4483,7 @@ spawn_test_() ->
                                               [t_unit],
                                               t_int}}},
                                     #alpaca_binding{
-                                       name=#a_sym{line = 5,
+                                       name=#a_lab{line = 5,
                                                    name = <<"not_recv">>},
                                        type={t_receiver,
                                              t_int,
@@ -4458,21 +4507,21 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name=#a_sym{name = <<"a">>},
+                                       name=#a_lab{name = <<"a">>},
                                        type={t_receiver,
                                              #adt{name = <<"t">>},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
                                     #alpaca_binding{
-                                       name=#a_sym{name = <<"b">>},
+                                       name=#a_lab{name = <<"b">>},
                                        type={t_receiver,
                                              #adt{name = <<"t">>},
                                              {t_arrow,
                                               [t_int],
                                               t_rec}}},
                                     #alpaca_binding{
-                                       name=#a_sym{name = <<"start_a">>},
+                                       name=#a_lab{name = <<"start_a">>},
                                        type={t_arrow,
                                              [t_int],
                                              {t_pid, #adt{name = <<"t">>}}}}]}},
@@ -4506,7 +4555,7 @@ spawn_test_() ->
               ?assertMatch(
                  {ok, #alpaca_module{
                          functions=[#alpaca_binding{
-                                       name=#a_sym{name = <<"f">>},
+                                       name=#a_lab{name = <<"f">>},
                                        type={t_arrow, [t_int], t_rec}},
                                     #alpaca_binding{}]}},
                  module_typ_and_parse(Code))
@@ -4543,7 +4592,7 @@ send_message_test_() ->
                   "module send_to_non_pid\n\n"
                   "let f x = send 1 2",
               ?assertMatch(
-                 {error, {cannot_unify, send_to_non_pid, _, t_int, {t_pid, _}}},
+                 {error, {cannot_unify, <<"send_to_non_pid">>, _, t_int, {t_pid, _}}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -4589,7 +4638,7 @@ record_inference_test_() ->
              ?assertMatch({ok,
                            #alpaca_module{
                               functions=[#alpaca_binding{
-                                            name=#a_sym{name = <<"f">>},
+                                            name=#a_lab{name = <<"f">>},
                                             type={t_arrow,
                                                   [#t_record{
                                                       members=[#t_record_member{
@@ -4604,7 +4653,7 @@ record_inference_test_() ->
                                                                    type=t_int}],
                                                        row_var={unbound, A, _}}]}}},
                                          #alpaca_binding{
-                                            name=#a_sym{name = <<"g">>},
+                                            name=#a_lab{name = <<"g">>},
                                             type={t_arrow,
                                                   [t_unit],
                                                   {t_tuple,
@@ -4840,7 +4889,7 @@ unify_with_error_test_() ->
               Code =
                   "module m\n"
                   "let f () = throw (x, :a)",
-              ?assertMatch({error, {bad_variable_name, m, 2, <<"x">>}},
+              ?assertMatch({error, {bad_variable_name, <<"m">>, 2, <<"x">>}},
                            module_typ_and_parse(Code))
       end
     ].
@@ -5035,13 +5084,13 @@ types_in_types_test_() ->
     AstCode =
         "module types_in_types\n\n"
         "export format/1\n\n"
-        "export_type symbol,expr,ast\n\n"
-        "type symbol = Symbol string\n\n"
-        "type expr = symbol | Apply (expr, expr) "
+        "export_type label,expr,ast\n\n"
+        "type label = Symbol string\n\n"
+        "type expr = label | Apply (expr, expr) "
         "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
-        "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
+        "type ast = expr | Fun {name: label, arity: int, body: expr}\n\n",
     [fun() ->
-             %% Without importing `symbol` we should be fine if we're not
+             %% Without importing `label` we should be fine if we're not
              %% referencing its constructor directly:
              FormatterCode =
                  "module formatter\n\n"
@@ -5056,10 +5105,10 @@ types_in_types_test_() ->
                 type_modules([M1, M2]))
      end
     , fun() ->
-              %% Importing `symbol` and not using it should be fine:
+              %% Importing `label` and not using it should be fine:
               FormatterCode =
                   "module formatter\n\n"
-                  "import_type types_in_types.symbol\n\n"
+                  "import_type types_in_types.label\n\n"
                   "import_type types_in_types.expr\n\n"
                   "import_type types_in_types.ast\n\n"
                   "let format ast_node = format 0 ast_node\n\n"
@@ -5071,7 +5120,7 @@ types_in_types_test_() ->
                  type_modules([M1, M2]))
       end
     , fun() ->
-              %% NOT importing `symbol` and then trying to use its type
+              %% NOT importing `label` and then trying to use its type
               %% constructor should yield an error:
               FormatterCode =
                   "module formatter\n\n"
@@ -5079,33 +5128,33 @@ types_in_types_test_() ->
                   "import_type types_in_types.ast\n\n"
                   "let format ast_node = format 0 ast_node\n\n"
                   "let format d Match {e=e, clauses=cs} = :match\n\n"
-                  "let format d Symbol _ = :symbol\n\n"
+                  "let format d Symbol _ = :label\n\n"
                   "let foo () = format 0 Match {e=Symbol \"x\", clauses=[]}",
 
               [M1, M2] = make_modules([AstCode, FormatterCode]),
               ?assertMatch(
-                 {error, {bad_constructor, formatter, 11, "Symbol"}},
+                 {error, {bad_constructor, <<"formatter">>, 11, "Symbol"}},
                  type_modules([M1, M2]))
       end
     , fun() ->
               Ast =
                   "module types_in_types\n\n"
                   "export format/1\n\n"
-                  "export_type symbol,expr,ast\n\n"
-                  "type symbol = Symbol {name: string}\n\n"
-                  "type expr = symbol | Apply (expr, expr) "
+                  "export_type label,expr,ast\n\n"
+                  "type label = Symbol {name: string}\n\n"
+                  "type expr = label | Apply (expr, expr) "
                   "| Match {e: expr, clauses: list {pattern: expr, result: expr}}\n\n"
-                  "type ast = expr | Fun {name: symbol, arity: int, body: expr}\n\n",
+                  "type ast = expr | Fun {name: label, arity: int, body: expr}\n\n",
 
-              %% Importing `symbol` should let us use the constructor:
+              %% Importing `label` should let us use the constructor:
               FormatterCode =
                   "module formatter\n"
-                  "import_type types_in_types.symbol\n"
+                  "import_type types_in_types.label\n"
                   "import_type types_in_types.expr\n"
                   "import_type types_in_types.ast\n\n"
                   "let format ast_node = format 0 ast_node\n\n"
                   "let format d Match {e=e, clauses=cs} = :match\n\n"
-                  "let format d Symbol _ = :symbol\n\n"
+                  "let format d Symbol _ = :label\n\n"
                   "let foo () = format 0 Match {e=Symbol {name=\"x\"}, clauses=[]}",
 
               [M1, M2] = make_modules([Ast, FormatterCode]),
@@ -5169,8 +5218,8 @@ module_qualified_types_test_() ->
               [M1, M2] = make_modules([Code1, Code2]),
               ?assertMatch({error,
                             {cannot_unify, _, _,
-                             #adt{name = <<"a">>, module=n},
-                             #adt{name = <<"a">>, module=m}}},
+                             #adt{name = <<"a">>, module= <<"n">>},
+                             #adt{name = <<"a">>, module= <<"m">>}}},
                            type_modules([M1, M2]))
       end
      , fun() ->
@@ -5178,7 +5227,7 @@ module_qualified_types_test_() ->
                    "module m "
                    "let f n.A x = x + 1",
                [M] = make_modules([Code]),
-               ?assertMatch({error, {bad_module, m, 1, n}}, type_modules([M]))
+               ?assertMatch({error, {bad_module, <<"m">>, 1, <<"n">>}}, type_modules([M]))
        end
     ].
 
@@ -5317,9 +5366,9 @@ concrete_type_parameters_test_() ->
                  "let make_opt x = IntOpt option.Some x",
 
              ImportsOption =
-                 "module imports_option "
-                 "import_type option.option "
-                 "type int_opt = IntOpt option int "
+                 "module imports_option \n"
+                 "import_type option.option \n"
+                 "type int_opt = IntOpt option int \n"
                  "let make_opt x = IntOpt Some x",
 
              Mods1 = make_modules([Option, UsesOption]),
@@ -5327,12 +5376,12 @@ concrete_type_parameters_test_() ->
 
              ?assertMatch({ok,
                            [#alpaca_module{
-                               name=uses_option,
+                               name= <<"uses_option">>,
                                types=[#alpaca_type{
                                          members=[#alpaca_constructor{
                                                      arg=#alpaca_type{
                                                             name={_, _, <<"option">>},
-                                                            module=option,
+                                                            module= <<"option">>,
                                                             vars=[{_, t_int}]
                                                            }}]}],
                                functions=[#alpaca_binding{
@@ -5340,7 +5389,7 @@ concrete_type_parameters_test_() ->
                                                    [t_int],
                                                    #adt{
                                                       name= <<"int_opt">>,
-                                                      module=uses_option
+                                                      module= <<"uses_option">>
                                                      }}
                                             }]
                               },
@@ -5348,7 +5397,7 @@ concrete_type_parameters_test_() ->
                           type_modules(Mods1)),
              ?assertMatch({ok,
                            [#alpaca_module{
-                               name=imports_option,
+                               name= <<"imports_option">>,
                                types=[#alpaca_type{
                                          members=[#alpaca_constructor{
                                                      arg=#alpaca_type{
@@ -5360,7 +5409,7 @@ concrete_type_parameters_test_() ->
                                                    [t_int],
                                                    #adt{
                                                       name= <<"int_opt">>,
-                                                      module=imports_option
+                                                      module= <<"imports_option">>
                                                      }}
                                             }]
                               },
@@ -5407,8 +5456,16 @@ ensure_private_types_cant_import_test_() ->
 
              Mods1 = make_modules([PrivateOptions, ImportOption]),
              Mods2 = make_modules([PrivateOptions, UsesOption]),
-             ?assertMatch({error, {unexported_type, _, _, <<"opt">>}},
+             ?assertMatch({error, {unexported_type, _, _, #a_lab{line=2, name= <<"opt">>}}},
                           type_modules(Mods1)),
+             %% TODO:  this passes but should not, because if a type is private
+             %%        to a module (not exported), it should not be accessible
+             %%        at all.
+             %%
+             %%        Private types further complicate things if they're used
+             %%        by an exported type.  We don't check for that now.
+             %%        _Abstract_ types instead of private might be more
+             %%        consistent.
              ?assertMatch({ok, [_, _]}, type_modules(Mods2))
      end
      %% Make sure exporting a type containing a private type doesn't leak the
@@ -5425,7 +5482,7 @@ ensure_private_types_cant_import_test_() ->
                   "let use_a x = A x",
 
               Mods = make_modules([Exported, UsesB]),
-              ?assertMatch({error, {bad_constructor, uses_b, 3, "A"}},
+              ?assertMatch({error, {bad_constructor, <<"uses_b">>, 3, "A"}},
                            type_modules(Mods))
       end
 
@@ -5439,7 +5496,7 @@ ensure_private_types_cant_import_test_() ->
                    "let f x = private_type.A x",
 
                Mods = make_modules([PrivateType, UsesA]),
-               ?assertMatch({error, {bad_constructor, uses_a, 2, "A"}},
+               ?assertMatch({error, {bad_constructor, <<"uses_a">>, 2, "A"}},
                             type_modules(Mods))
        end
     ].
@@ -5451,7 +5508,7 @@ error_on_missing_types_test_() ->
              Code =
                  "module m \n"
                  "type t = b",
-             ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
+             ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"b">>}},
                           module_typ_and_parse(Code))
      end
      , fun() ->
@@ -5459,42 +5516,42 @@ error_on_missing_types_test_() ->
                    "module m \n"
                    "type t 'a = A 'a \n"
                    "type u = t b",
-               ?assertMatch({error, {unknown_type, m, 3, <<"b">>}},
+               ?assertMatch({error, {unknown_type, <<"m">>, 3, <<"b">>}},
                             module_typ_and_parse(Code))
        end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T b",
-              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
+              ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = (int, b)",
-              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
+              ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = {x: b}",
-              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
+              ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = T int | list b",
-              ?assertMatch({error, {unknown_type, m, 2, <<"b">>}},
+              ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"b">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               Code =
                   "module m \n"
                   "type t = map atom c",
-              ?assertMatch({error, {unknown_type, m, 2, <<"c">>}},
+              ?assertMatch({error, {unknown_type, <<"m">>, 2, <<"c">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5522,14 +5579,14 @@ error_on_missing_types_test_() ->
               Code =
                   "module m \n"
                   "type t 'a = n.u",
-              ?assertMatch({error, {bad_module, m, 2, n}},
+              ?assertMatch({error, {bad_module, <<"m">>, 2, <<"n">>}},
                             module_typ_and_parse(Code))
       end
     , fun() ->
               M1 = "module m",
               M2 = "module n \n type t = m.a",
               Mods = make_modules([M1, M2]),
-              ?assertMatch({error, {unknown_type, n, 2, <<"a">>}},
+              ?assertMatch({error, {unknown_type, <<"n">>, 2, <<"a">>}},
                             type_modules(Mods))
       end
     ].
@@ -5642,7 +5699,7 @@ record_transform_test_() ->
                   "type t = T {x: int, y: float} \n"
                   "let main () = T {x=1}",
               ?assertMatch(
-                 {error, {missing_record_field, m, 3,  y}},
+                 {error, {missing_record_field, <<"m">>, 3,  y}},
                  module_typ_and_parse(Code))
       end
     ].
@@ -5737,7 +5794,7 @@ bad_signature_unify_fail_test() ->
       "module sig \n"
       "val double : fn string -> string\n"
       "let double x = x * x",
-    ?assertMatch({error,{cannot_unify,sig,2,t_int,t_string}},
+    ?assertMatch({error,{cannot_unify, <<"sig">>, 2, t_int, t_string}},
                  module_typ_and_parse(Code)).
 
 poly_specialization_unify_fail_test() ->
@@ -5748,7 +5805,7 @@ poly_specialization_unify_fail_test() ->
       "let intsOnly x = x\n"
       "-- Without the type signature, the below would succeed\n"
       "let tryWithString () = intsOnly \"hello world\"",
-    ?assertMatch({error,{cannot_unify,sig,6,t_int,t_string}},
+    ?assertMatch({error,{cannot_unify, <<"sig">>, 6, t_int, t_string}},
                  module_typ_and_parse(Code)). 
 
 beam_with_signatures_test() ->
@@ -5763,7 +5820,7 @@ beam_with_signatures_test() ->
     Good = "atomToBinary :hello",
     Fail = "atomToBinary 42",
     
-    ?assertMatch({error,{cannot_unify,sig,7,t_atom,t_int}},
+    ?assertMatch({error,{cannot_unify, <<"sig">>, 7, t_atom, t_int}},
                  module_typ_and_parse(Code ++ Fail)),
 
     ?assertMatch({ok, _},
@@ -5777,7 +5834,7 @@ missing_type_var_in_signature_test() ->
       "let missingTypeVar x = (x, x)\n"
       "let main () = missingTypeVar 10",
     %% TODO:  this nested error is wrong.  Should be an exception, not value.
-    ?assertMatch({error, {error, {unknown_type_var, sig, 3, "a"}}},
+    ?assertMatch({error, {error, {unknown_type_var, <<"sig">>, 3, "a"}}},
                  module_typ_and_parse(Code)).  
 
 nested_adt_test() ->
@@ -5887,7 +5944,7 @@ record_unification_test_() ->
                  "let foo :a s = {a=true, b=0 | s} \n"
                  "let foo :b s = {b=1| s} \n",
 
-             ?assertMatch({error, {missing_record_field, m, 4, a}},
+             ?assertMatch({error, {missing_record_field, <<"m">>, 4, a}},
                           module_typ_and_parse(Code))
      end
     , fun() ->
@@ -5895,7 +5952,7 @@ record_unification_test_() ->
 		  "module mod\n"
 		  "let foo :a = {a=true, b=0}\n"
 		  "let foo :b = {b=0}\n",
-	      ?assertMatch({error, {missing_record_field, mod, 3, a}},
+	      ?assertMatch({error, {missing_record_field, <<"mod">>, 3, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5905,7 +5962,7 @@ record_unification_test_() ->
 		  "let foo :a = {a=true, b=0}\n",
               %% Incorrect error, see the following issue:
               %% https://github.com/alpaca-lang/alpaca/issues/263
-	      ?assertMatch({error, {missing_record_field, mod, 3, a}},
+	      ?assertMatch({error, {missing_record_field, <<"mod">>, 3, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5918,7 +5975,7 @@ record_unification_test_() ->
 		  "  | :a -> {a=true, b=0} ",
               %% Incorrect error, see the following issue:
               %% https://github.com/alpaca-lang/alpaca/issues/263
-	      ?assertMatch({error, {missing_record_field, m, 5, a}},
+	      ?assertMatch({error, {missing_record_field, <<"m">>, 5, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5931,7 +5988,7 @@ record_unification_test_() ->
 		  "  | :a -> {a=true, b=0} \n"
 		  "  | :b -> {b=1}",
 
-	      ?assertMatch({error, {missing_record_field, m, 7, a}},
+	      ?assertMatch({error, {missing_record_field, <<"m">>, 7, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5942,7 +5999,7 @@ record_unification_test_() ->
 		  "  match sym with "
 		  "  | :a -> {a=true, b=0 | rec } "
 		  "  | :b -> {b=1 | rec}",
-	      ?assertMatch({error, {missing_record_field, m, 3, a}},
+	      ?assertMatch({error, {missing_record_field, <<"m">>, 3, a}},
 			   module_typ_and_parse(Code))
       end
     , fun() ->
@@ -5975,7 +6032,7 @@ record_unification_test_() ->
                   "let foo {x=x, y=y} = (x, y) \n"
                   "let use_foo () = foo {x=1}",
               ?assertMatch(
-                 {error, {missing_record_field, m, 5, y}},
+                 {error, {missing_record_field, <<"m">>, 5, y}},
                  module_typ_and_parse(Code1)),
 
               %% Now uncommented:
@@ -5986,7 +6043,7 @@ record_unification_test_() ->
                   "let foo {x=x, y=y} = (x, y) \n"
                   "let use_foo () = foo {x=1}",
               ?assertMatch(
-                 {error, {missing_record_field, m, 5, y}},
+                 {error, {missing_record_field, <<"m">>, 5, y}},
                  module_typ_and_parse(Code2))
       end
 ].
@@ -6002,10 +6059,10 @@ iolist_test_() ->
                  "match (iolist_to_string iolist) with\n"
                  "| \"hello world\" -> :ok\n"
                  "| _ -> throw :not_equal",
-             ?assertMatch({error, {cannot_unify,hello_world,
+             ?assertMatch({error, {cannot_unify, <<"hello_world">>,
                                            4,
                                            t_string,
-                                           {t_list,t_string}}},
+                                           {t_list, t_string}}},
                           module_typ_and_parse(Code))
      end
      %% Checking to make sure that adding a type unifying strings and lists of
@@ -6039,7 +6096,7 @@ iolist_test_() ->
                    "  [\"h\", [\"i\", [\"!\"]]]",
 
               ?assertMatch({error, {cannot_unify,
-                                    iolist_example,
+                                    <<"iolist_example">>,
                                     8,
                                     t_string,
                                     {t_list,t_string}}},
@@ -6104,7 +6161,7 @@ type_specs_and_vars_test_() ->
                   "  | None -> None \n"
                   "  | Some value -> value",
               ?assertMatch(
-                 {error, {bad_constructor, m, 5, "None"}},
+                 {error, {bad_constructor, <<"m">>, 5, "None"}},
                  module_typ_and_parse(Code))
       end
     , fun() ->
@@ -6136,7 +6193,7 @@ type_specs_and_vars_test_() ->
                   "let getX {x=x} = x \n"
                   "let shouldFailToGetX () = getX {x=1}",
               ?assertMatch(
-                 {error, {missing_record_field, x, 5, y}},
+                 {error, {missing_record_field, <<"x">>, 5, y}},
                  module_typ_and_parse(Code))
       end
     ].

@@ -39,19 +39,13 @@
              ]).
 
 -include("alpaca_ast.hrl").
+-include("alpaca.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
 -define(COMPILER_VERSION, "0.2.8").
-
--record(compiled_module, {
-          name :: atom(),
-          filename :: string(),
-          bytes :: binary()}).
-
--type compile_res() :: {ok, list(#compiled_module{})} | {error, term()}.
 
 -spec compiler_info() -> list({atom(), term()}).
 compiler_info() ->
@@ -65,13 +59,17 @@ file(File) ->
 file(File, Opts) ->
     compile({files, [File]}, Opts).
 
--spec compile({text, list(binary())}
-              |{files, list(string())}) -> compile_res().
+-spec compile( { text, list(binary())}
+               | {text_set, list({Filename :: string(), Code :: string()})}
+               | {files, list(string())}) -> {ok, list(compile_res())}.
 compile(What) ->
     compile(What, []).
 
 compile({text, Code}, Opts) ->
     compile_phase_1([{"<no file>", Code}], Opts);
+
+compile({text_set, Sources}, Opts) ->
+    compile_phase_1(Sources, Opts);
 
 compile({files, Filenames}, Opts) ->
     %% Files may be .beam files or .alp files
@@ -157,7 +155,7 @@ load_files(Filenames) ->
 compile_module(#alpaca_module{name=N}=Mod, Opts) ->
     {ok, Forms} = alpaca_codegen:gen(Mod, Opts),
     {ok, _, Bin} = compile:forms(Forms, [report, verbose, from_core]),
-    PrefixedName = list_to_atom("alpaca_" ++ atom_to_list(N)),
+    PrefixedName = list_to_atom("alpaca_" ++ binary_to_list(N)),
     #compiled_module{
        name=PrefixedName,
        filename=atom_to_list(PrefixedName) ++ ".beam",
@@ -246,7 +244,7 @@ private_types_error_test() ->
     Code = load_files(Files),
     {ok, Mods} = alpaca_ast_gen:make_modules(Code),
     ?assertEqual(
-       {error, {unexported_type, list_opts, basic_adt, <<"my_list">>}},
+       {error, {unexported_type, <<"list_opts">>, <<"basic_adt">>, ast:label(5, <<"my_list">>)}},
        type_modules(Mods)).
 
 basic_pid_test() ->
@@ -542,8 +540,8 @@ failing_test_test() ->
     ?assertMatch(error, M:test()),
     pd(M).
 
-forward_symbol_reference_test() ->
-    Files = ["test_files/forward_symbol_reference.alp"],
+forward_label_reference_test() ->
+    Files = ["test_files/forward_label_reference.alp"],
     [M] = compile_and_load(Files, [test]),
     ?assertMatch(15, M:hof_fail({})),
     ?assertMatch(15, M:val_fail({})),
@@ -651,9 +649,17 @@ types_from_precompiled_module_test() ->
 default_imports_test() ->
     Files = ["test_files/default.alp", "test_files/use_default.alp"],
 
-    DefaultImports = {
-        [{default, <<"identity">>}, {default, <<"always">>, 2}],
-        [{default, <<"box">>}]},
+    DefaultImports = {[ ast:qlab( 3
+                                , ast:label(3, <<"default">>)
+                                , ast:label(3, <<"identity">>))
+                      , ast:qlab( 3
+                                , ast:label(3, <<"default">>)
+                                , ast:label(3, <<"always">>)
+                                , 2)
+                      ],
+                      [ { ast:label(4, <<"default">>)
+                        , ast:label(4, <<"box">>)} ]
+                     },
 
     {ok, [Compiled, Default]} = alpaca:compile(
         {files, Files},

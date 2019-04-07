@@ -19,16 +19,17 @@
 %% get decent runtime feedback on failures.
 -module(stacktrace_tests).
 -include_lib("eunit/include/eunit.hrl").
+-include("alpaca.hrl").
 
 simple_badarith_test() ->
     Mod =
 	"module arith_err \n"
 	"export main/1 \n"
-	"let main () = 1 + :a",
+	"let main x = 1 + x",
     {error, error, badarith, Trace} =
 	run_for_trace(
-	  [{"arith_err.alp", alpaca_arith_err, Mod}],
-	  fun() -> alpaca_arith_err:main({}) end),
+	  [{"arith_err.alp", Mod}],
+	  fun() -> alpaca_arith_err:main(atom) end),
     Expected = {alpaca_arith_err, main, 1, [{file, "arith_err.alp"}, {line, 3}]},
     ?assertMatch([Expected | _], Trace).
 
@@ -37,11 +38,11 @@ indirect_badarith_test() ->
 	"module indirect_arith \n"
 	"export foo/1 \n"
 	"let bar x = x + 1 \n"
-	"let foo () = bar :a",
+	"let foo y = bar y",
     {error, error, badarith, Trace} =
 	run_for_trace(
-	  [{"indirect_arith.alp", alpaca_indirect_arith, Mod}],
-	  fun() -> alpaca_indirect_arith:foo({}) end),
+	  [{"indirect_arith.alp", Mod}],
+	  fun() -> alpaca_indirect_arith:foo(atom_again) end),
     Expected1 = {alpaca_indirect_arith, bar, 1, [{file, "indirect_arith.alp"}, {line, 3}]},
     ?assertMatch([Expected1 | _], Trace).
 
@@ -53,7 +54,7 @@ fun_pattern_test() ->
 	"let f 1 = :one \n",
     {error, error, if_clause, Trace} =
 	run_for_trace(
-	  [{"fun_pattern.alp", alpaca_fun_pattern, Mod}],
+	  [{"fun_pattern.alp", Mod}],
 	  fun() -> alpaca_fun_pattern:f(2) end),
     %% Incorrect line number, see the following issue:
     %% https://github.com/alpaca-lang/alpaca/issues/263
@@ -66,7 +67,7 @@ throw_test() ->
 	"export f/1 \n"
 	"let f () = throw :wat",
     {error, throw, wat, Trace} = run_for_trace(
-				   [{"t.alp", alpaca_t, Mod}],
+				   [{"t.alp", Mod}],
 				   fun() -> alpaca_t:f({}) end),
     ?assertMatch([{alpaca_t, f, 1, [{file, "t.alp"}, {line, 3}]} | _], Trace).
 
@@ -80,53 +81,33 @@ multi_module_test() ->
 	"export g/1 \n"
 	"let g x = a.f x",
     {error, error, badarith, Trace} = run_for_trace(
-				   [{"a.alp", alpaca_a, Mod1}, {"b.alp", alpaca_b, Mod2}],
+				   [{"a.alp", Mod1}, {"b.alp", Mod2}],
 				   fun() -> alpaca_b:g(an_atom) end),
     %% Somewhat surprising, I thought I might get the full trace through module
     %% b as well.
     ?assertMatch([{alpaca_a, f, 1, [{file, "a.alp"}, {line, 3}]} | _], Trace).
 
-undef_test() ->
-    Mod1 =
-	"module m \n"
-	"export f/1 \n"
-	"let f () = n.g 1",
-    Mod2 =
-	"module n \n"
-	"export foo/1 \n"
-	"let foo () = :foo",
-
-    {error, error, undef, Trace} = run_for_trace(
-				     [{"m.alp", alpaca_m, Mod1}, {"n.alp", alpaca_n, Mod2}],
-				     fun() -> alpaca_m:f({}) end),
-    %% Interesting that we don't seem to get call site details even though the
-    %% call itself is annotated:
-    ?assertMatch([{alpaca_n, g, [1], []} | _], Trace).
-
 %% A wrapper that compiles the provided code for one or more modules and
 %% executes the provided operation.  Captures any resulting stack trace so that
 %% the caller can check correctness.
 run_for_trace(ModulesWithFilenames, Expr) ->
-    Compile = fun({FN, ModName, ModCode}) ->
-		      {ok, _, Bin} = parse_and_gen(ModCode, FN),
-		      {module, _} = code:load_binary(ModName, FN, Bin),
-		      {ModName, Bin}
-	      end,
-    Ms = lists:map(Compile, ModulesWithFilenames),
+    % Temporary, callers should change:
+    ToCompile = [{FN, Code} || {FN, Code} <- ModulesWithFilenames],
+    {ok, Compiled} = alpaca:compile({text_set, ToCompile}),
+    Ms = lists:map(
+           fun(#compiled_module{name=M, filename=F, bytes=B}) -> {M, F, B} end,
+           Compiled
+          ),
+    [code:load_binary(M, F, B) || {M, F, B} <- Ms],
+
     Ret = try Expr() of
 	      Res -> {ok, Res}
 	  catch Type:Detail ->
 		  Trace = erlang:get_stacktrace(),
 		  {error, Type, Detail, Trace}
 	  end,
-    [pd(M) || {M, _} <- Ms],
+    [pd(M) || {M, _, _} <- Ms],
     Ret.
-
-%% Note that this skips the type checker!
-parse_and_gen(Code, FN) ->
-    {ok, [Mod]} = alpaca_ast_gen:make_modules([{FN, Code}]),
-    {ok, Forms} = alpaca_codegen:gen(Mod, []),
-    compile:forms(Forms, [report, verbose, from_core]).
 
 %% Purge and delete the given module from the VM.
 pd(Module) ->
