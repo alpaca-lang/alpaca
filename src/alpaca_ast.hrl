@@ -121,21 +121,26 @@
                }).
 -type alpaca_string() :: #a_str{}.
 
--record(a_sym, { line=0 :: integer()
+-record(a_lab, { line=0 :: integer()
                , name :: binary()
                , original=none :: none | binary()
                }).
--type alpaca_symbol() :: #a_sym{}.
+-type alpaca_label() :: #a_lab{}.
 
-%% Reference to a symbol in a different module.  Arity can be 'none'
-%% if the user wishes to default to the first exported version of the
-%% reference.
--record(alpaca_far_ref, {
-          line=0 :: integer(),
-          module=undefined :: atom(),
-          name="" :: string(),
-          arity=none :: none | integer()}).
--type alpaca_far_ref() :: #alpaca_far_ref{}.
+%% Reference to a label that resides in a different namespace (a label
+%% qualified with a namespace).  Examples are functions in other modules or
+%% labels for a record.
+%%
+%% Arity can be 'none' if the user is specifying a record label or wishes to
+%% default to the first exported version of the label in another module when
+%% used inline.  Imports and exports that don't specify arity will also be
+%% recorded as qualified labels temporarily without arity.
+-record(a_qlab, { line=0 :: integer()
+                , space :: alpaca_label()
+                , label :: alpaca_label()
+                , arity=none :: none | integer()
+                }).
+-type alpaca_qualified_label() :: #a_qlab{}.
 
 -type alpaca_number() :: alpaca_int()|alpaca_float().
 
@@ -172,7 +177,7 @@
                     %% This is in keeping with how Erlang compiles to Core
                     %% Erlang.
                     default_sizes=true :: boolean(),
-                    value={symbol, 0, ""} :: alpaca_symbol()|alpaca_number()|alpaca_string(),
+                    value=#a_lab{} :: alpaca_label()|alpaca_number()|alpaca_string(),
                     size=8 :: non_neg_integer()|all,
                     unit=1 :: non_neg_integer(),
                     type=int :: alpaca_bits_type(),
@@ -344,7 +349,7 @@
           line=-1 :: integer(),
           name=undefined :: atom(),
           type=undefined :: typ(),
-          val={symbol, -1, ""} :: alpaca_value_expression()}).
+          val=ast:label(-1, <<"">>) :: alpaca_value_expression()}).
 -type alpaca_record_member() :: #alpaca_record_member{}.
 
 -record(alpaca_record, {arity=0 :: integer(),
@@ -373,20 +378,20 @@
 %% TODO:  revisit this in alpaca_typer.erl as well as scanning and parsing:
 -record(alpaca_type_check, {type=undefined :: undefined|type_check(),
                           line=0 :: integer(),
-                          expr=undefined :: undefined|alpaca_symbol()}).
+                          expr=undefined :: undefined|alpaca_label()}).
 -type alpaca_type_check() :: #alpaca_type_check{}.
 
 -record(alpaca_clause, {type=undefined :: typ(),
                       line=0 :: integer(),
-                      pattern={symbol, 0, "_"} :: alpaca_expression(),
+                      pattern=ast:label(0, <<"_">>) :: alpaca_expression(),
                       guards=[] :: list(alpaca_expression()),
-                      result={symbol, 0, "_"} :: alpaca_expression()
+                      result=ast:label(-1, <<"">>) :: alpaca_expression()
                      }).
 -type alpaca_clause() :: #alpaca_clause{}.
 
 -record(alpaca_match, {type=undefined :: typ(),
                      line=0 :: integer(),
-                     match_expr={symbol, 0, "_"} :: alpaca_expression(),
+                     match_expr=ast:label(0, <<"_">>) :: alpaca_expression(),
                      clauses=[#alpaca_clause{}] :: nonempty_list(alpaca_clause())
                     }).
 -type alpaca_match() :: #alpaca_match{}.
@@ -410,7 +415,7 @@
                      line=0 :: integer(),
                      module=undefined :: atom(),
                      from_module=undefined :: atom(),
-                     function={symbol, 0, ""} :: alpaca_symbol(),
+                     function=ast:label(-1, <<"">>) :: alpaca_label(),
                      args=[] :: list(alpaca_expression())}).
 -type alpaca_spawn() :: #alpaca_spawn{}.
 
@@ -438,8 +443,8 @@
 
 %%% Expressions that result in values:
 -type alpaca_value_expression() :: alpaca_const()
-                               | alpaca_symbol()
-                               | alpaca_far_ref()
+                               | alpaca_label()
+                               | alpaca_qualified_label()
                                | alpaca_list()
                                | alpaca_binary()
                                | alpaca_map()
@@ -495,9 +500,9 @@
 -record(alpaca_apply, {type=undefined :: typ(),
                        line=0 :: integer(),
                        expr=undefined :: undefined
-                                       | {alpaca_symbol(), integer()}
-                                       | {atom(), alpaca_symbol(), integer()}
-                                       | alpaca_symbol()
+                                       | alpaca_label()
+                                       | {alpaca_label(), integer()}
+                                       | alpaca_qualified_label()
                                        | alpaca_bif_name()
                                        | alpaca_expression(),
                      args=[] :: list(alpaca_expression())
@@ -527,7 +532,7 @@
 
 -record(alpaca_type_signature, {
           line=0 :: integer(),
-          name=undefined :: undefined | alpaca_symbol(),
+          name=undefined :: undefined | alpaca_label(),
           type=undefined :: typ(),
           vars=undefined :: list(alpaca_type_var())
          }).
@@ -538,7 +543,7 @@
 %% things like function and variable bindings within a top-level function.
 -record(alpaca_binding, {
           line=0 :: integer(),
-          name=undefined :: undefined | alpaca_symbol(),
+          name=undefined :: undefined | alpaca_label(),
           type=undefined :: typ(),
           bound_expr=undefined :: undefined | alpaca_expression(),
           body=undefined :: undefined | alpaca_expression(),
@@ -547,8 +552,8 @@
 
 -type alpaca_binding() :: #alpaca_binding{}.
 
--record(alpaca_type_import, {module=undefined :: atom(),
-                           type=undefined :: string()}).
+-record(alpaca_type_import, { module=undefined :: alpaca_label()
+                            , type=undefined :: alpaca_label()}).
 -type alpaca_type_import() :: #alpaca_type_import{}.
 
 -record(alpaca_type_export, {line=0 :: integer(),
@@ -556,7 +561,7 @@
 -type alpaca_type_export() :: #alpaca_type_export{}.
 
 -record(alpaca_module, {
-          name=no_module :: atom(),
+          name = none :: none | binary(),
           filename=undefined :: string() | undefined,
           function_exports=[] :: list({string(), integer()}|string()),
           function_imports=[] :: list({string(), {atom(), integer()}|string()}),
