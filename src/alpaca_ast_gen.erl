@@ -96,12 +96,6 @@ make_modules(Code, PrecompiledMods, DefaultImports) ->
 
       {DefaultFuns, DefaultTypes} = DefaultImports,
 
-      DefaultFunsA = lists:map(
-          fun ({Mod, F}) -> {F, Mod};
-              ({Mod, F, Arity}) -> {F, {Mod, Arity}}
-          end,
-          DefaultFuns),
-
       DefaultTypesA = lists:map(
           fun({Mod, T}) -> #alpaca_type_import{module=Mod, type=T} end,
           DefaultTypes),
@@ -110,7 +104,7 @@ make_modules(Code, PrecompiledMods, DefaultImports) ->
       ModulesWithDefaults = lists:map(
           fun(#alpaca_module{function_imports=Imports, type_imports=Types}=M) ->
               M#alpaca_module{
-                  function_imports=Imports ++ DefaultFunsA,
+                  function_imports=Imports ++ DefaultFuns,
                   type_imports=Types ++ DefaultTypesA}
           end,
           Modules),
@@ -150,7 +144,7 @@ parse_module({FileName, Text}) when is_list(Text) ->
     {ok, Mod2} = apply_signatures(Tokens, Mod),
     Mod2.
 
-parse_module([], #alpaca_module{name=no_module}=M) ->
+parse_module([], #alpaca_module{name=none}=M) ->
     parse_error(M, 1, no_module);
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
@@ -205,7 +199,7 @@ expand_exports(Modules) ->
     expand_exports(Modules, []).
 
 name_and_arity(#alpaca_binding{name=BindingName, bound_expr=E}) ->
-    N = ast:symbol_name(BindingName),
+    N = ast:label_name(BindingName),
     case E of
         #alpaca_fun{arity=A} -> {N, A};
         _                    -> {N, 0}
@@ -216,9 +210,11 @@ expand_exports([], Memo) ->
 expand_exports([M|Tail], Memo) ->
     F = fun({_, _}=FunWithArity) ->
                 FunWithArity;
-           (Name) when is_binary(Name) ->
+           (#a_lab{name=LabelName}=Name) when is_binary(LabelName) ->
+                %% TODO:  not sure if name_and_arity should return a full label
+                %%        instead.
                 NameAndArity = [name_and_arity(F) || F <- M#alpaca_module.functions],
-                [{Name, A} || {N, A} <- NameAndArity, N =:= Name]
+                [{Name, A} || {N, A} <- NameAndArity, LabelName =:= N]
         end,
     Exports = lists:flatten(lists:map(F, M#alpaca_module.function_exports)),
     expand_exports(Tail, [M#alpaca_module{function_exports=Exports}|Memo]).
@@ -240,15 +236,15 @@ expand_imports(Modules) ->
 expand_imports([], _, Memo) ->
     Memo;
 expand_imports([M|Tail], ExportMap, Memo) ->
-    F = fun({_, {_, _}}=FunWithArity) ->
-                FunWithArity;
-           ({Fun, Mod}) when is_atom(Mod) ->
+    F = fun (#a_qlab{space=#a_lab{name=Mod}, label=#a_lab{name=Fun}, arity=none}=QL) ->
                 case maps:get(Mod, ExportMap, error) of
                     error ->
                         parse_error(M, 1, {no_module, Mod});
                     Funs ->
-                        [{Fun, {Mod, A}} || {FN, A} <- Funs, FN =:= Fun]
-                end
+                        [QL#a_qlab{arity=A} || {FN, A} <- Funs, FN#a_lab.name =:= Fun]
+                end;
+            (#a_qlab{}=FunWithArity) ->
+                FunWithArity
         end,
     Imports = lists:flatten(lists:map(F, M#alpaca_module.function_imports)),
     M2 = M#alpaca_module{function_imports=Imports},
@@ -261,7 +257,7 @@ group_funs(Funs, _ModuleName) ->
           lists:map(fun name_and_arity/1, lists:reverse(Funs)),
           []),
     F = fun(#alpaca_binding{name=BN, bound_expr=Expr}, Acc) ->
-                N = ast:symbol_name(BN),
+                N = ast:label_name(BN),
                 {N, A, V} = case Expr of
                                 #alpaca_fun{arity=Arity, versions=[Ver]} ->
                                     {N, Arity, Ver};
@@ -278,7 +274,7 @@ group_funs(Funs, _ModuleName) ->
               NewVs = lists:reverse(maps:get(Key, Grouped)),
               [X|_] = NewVs,
               L = term_line(X),
-              NewName = ast:symbol(L, N),
+              NewName = ast:label(L, N),
               %% we use the first occurence's line as the function's primary
               %% location:
               case A of
@@ -351,7 +347,7 @@ rebind_and_validate_module(NextVarNum, #alpaca_module{}=Mod, Modules) ->
 rebind_and_validate_functions(NextVarNum, #alpaca_module{}=Mod, Modules) ->
     #alpaca_module{name=_MN, functions=Funs, tests=Tests}=Mod,
     BindingF = fun(#alpaca_binding{name=NSym, bound_expr=BE}) ->
-                       N = ast:symbol_name(NSym),
+                       N = ast:label_name(NSym),
                        case BE of
                            #alpaca_fun{arity=A} -> {N, A};
                            _ -> {N, 0}
@@ -418,9 +414,9 @@ unique_type_constructors(Mod, Types) ->
         {error, {N, L}} -> parse_error(Mod, L, {duplicate_constructor, N})
     end.
 
-update_memo(#alpaca_module{name=no_module}=Mod, {module, Name, _}) ->
+update_memo(#alpaca_module{name=none}=Mod, {module, #a_lab{name=Name}}) ->
     Mod#alpaca_module{name=Name};
-update_memo(#alpaca_module{name=Name}=Mod, {module, DupeName, L}) ->
+update_memo(#alpaca_module{name=Name}=Mod, {module, #a_lab{line=L, name=DupeName}}) ->
     parse_error(Mod, L, {module_rename, Name, DupeName});
 update_memo(#alpaca_module{type_imports=Imports}=M, #alpaca_type_import{}=I) ->
     M#alpaca_module{type_imports=Imports ++ [I]};
@@ -506,7 +502,7 @@ rename_bindings(Environment, #alpaca_binding{}=TopLevel) ->
                                 body=E},
                         %% As with patterns and clauses we deliberately
                         %% throw away the rename map M4 here so that the
-                        %% same symbols can be reused by distinctly
+                        %% same labels can be reused by distinctly
                         %% different function definitions.
                         {Env4, Map, [FV2|Versions]}
                 end,
@@ -522,13 +518,13 @@ rename_bindings(Env, #alpaca_test{expression=Expr}=Test) ->
     {Env2, Map, Test#alpaca_test{expression=Expr2}}.
 
 rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
-    F = fun(#a_sym{line=L, name=N}, {#env{next_var=NV}=E, AccMap, Syms}) ->
+    F = fun(#a_lab{line=L, name=N}, {#env{next_var=NV}=E, AccMap, Syms}) ->
                 case maps:get(N, AccMap, undefined) of
                     undefined ->
                         Synth = next_var(NV),
                         { E#env{next_var=NV+1}
                         , maps:put(N, Synth, AccMap)
-                        , [ast:symbol(L, Synth)|Syms]
+                        , [ast:label(L, Synth)|Syms]
                         };
                     _ ->
                         parse_error(Mod, L, {duplicate_definition, N})
@@ -542,7 +538,7 @@ rebind_args(#env{current_module=Mod}=Env, Map, Args) ->
     {Env2, M, lists:reverse(Args2)}.
 
 rename_bindings(#env{current_module=Mod}=StartEnv, M,
-                #alpaca_binding{name=#a_sym{line=L, name=Name}=NameSym}=Binding) ->
+                #alpaca_binding{name=#a_lab{line=L, name=Name}=NameSym}=Binding) ->
 
     #alpaca_binding{bound_expr=Expr, body=Body} = Binding,
     {NewName, En2, M2} = case maps:get(Name, M, undefined) of
@@ -561,7 +557,7 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
             {Env4, Map3, Body2} = rename_bindings(Env3, Map2, Body),
 
             NewDef = Binding#alpaca_binding{
-                       name=ast:symbol_rename(NameSym, NewName),
+                       name=ast:label_rename(NameSym, NewName),
                        bound_expr=Def#alpaca_fun{
                                     versions=Vs2},
                        body=Body2},
@@ -570,7 +566,7 @@ rename_bindings(#env{current_module=Mod}=StartEnv, M,
             {Env3, Map2, Expr2} = rename_bindings(En2, M2, Expr),
             {Env4, Map3, Body2} = rename_bindings(Env3, Map2, Body),
             {Env4, Map3, Binding#alpaca_binding{
-                           name=ast:symbol_rename(NameSym, NewName),
+                           name=ast:label_rename(NameSym, NewName),
                            bound_expr=Expr2,
                            body=Body2}}
     end;
@@ -599,25 +595,26 @@ rename_bindings(Env, Map, #alpaca_apply{expr=N, args=Args}=App) ->
               end,
 
     FName = case N of
-                #a_sym{} = S ->
-                    FN = ast:symbol_name(S),
+                #a_lab{} = S ->
+                    FN = ast:label_name(S),
                     case rename_bindings(Env, Map, S) of
                         %% Not renamed so either calling a top level function
-                        %% in the current module or it's a refernce to something
+                        %% in the current module or it's a reference to something
                         %% that might be imported:
                         {_, _, N} ->
-                            FN = ast:symbol_name(N),
+                            FN = ast:label_name(N),
                             Arity = length(Args),
                             AllFuns = ModFuns() ++ ImpFuns(),
                             case proplists:get_value({FN, Arity}, AllFuns, undef) of
                                 local -> N;
                                 undef -> N;
-                                Mod -> {Mod, N, Arity}
+                                Mod   -> {Mod, N, Arity}
                             end;
                         %% Renamed, proceed:
                         {_, _, X} -> X
                     end;
-                _ -> N
+                _ ->
+                    N
             end,
     {_, _, Name} = rename_bindings(Env, Map, FName),
     {Env2, M2, Args2} = rename_binding_list(Env, Map, Args),
@@ -698,22 +695,31 @@ rename_bindings(Env, Map, #alpaca_record_transform{}=Update) ->
     {Env3, Map3, E2} = rename_bindings(Env2, Map2, E),
     {Env3, Map3, #alpaca_record_transform{additions=Renamed, existing=E2, line=L}};
 
-rename_bindings(Env, Map, #a_sym{line=L, name=N}=S) ->
+rename_bindings(Env, Map, #a_lab{line=L, name=N}=S) ->
     case maps:get(N, Map, undefined) of
         undefined ->
             %% if there's a top-level binding we use that, otherwise
-            %% try to resolve the symbol from imports:
+            %% try to resolve the label from imports:
             Mod = Env#env.current_module,
             Funs = Mod#alpaca_module.functions,
             case [FN || #alpaca_binding{name=FN} <- Funs, FN =:= N] of
                 [_|_] -> {Env, Map, S};
                 [] ->
                     Imports = Mod#alpaca_module.function_imports,
-                    case [{M, A} || {FN, {M, A}} <- Imports, FN =:= N] of
+                    case [{M, A} || #a_qlab{ space=M
+                                           , label=#a_lab{name=NN}
+                                           , arity=A
+                                           } <- Imports, NN =:= N
+                         ]
+                    of
                         [{Module, Arity}|_] ->
-                            FR = #alpaca_far_ref{
-                                    module=Module,
-                                    name=N,
+                            FR = #a_qlab{
+                                    %% Rewrite the line number to match the
+                                    %% function application rather than the
+                                    %% import statement we get the module name
+                                    %% from:
+                                    space=Module#a_lab{line=L},
+                                    label=S,
                                     line=L,
                                     arity=Arity},
                             {Env, Map, FR};
@@ -721,17 +727,25 @@ rename_bindings(Env, Map, #a_sym{line=L, name=N}=S) ->
                             {Env, Map, S}
                     end
             end;
-        Synthetic -> {Env, Map, ast:symbol_rename(S, Synthetic)}
+        Synthetic -> {Env, Map, ast:label_rename(S, Synthetic)}
     end;
 rename_bindings(#env{current_module=CurrentMod}=Env, Map,
-                #alpaca_far_ref{module=M, name=N, arity=none, line=L}=FR) ->
+                #a_qlab{space=#a_lab{name=M}, label=#a_lab{name=N}, arity=none, line=L}=FR) ->
     %% Find the first exported occurrence of M:N
     Modules = [Mod || #alpaca_module{name=MN}=Mod <- Env#env.modules, M =:= MN],
     case Modules of
         [Mod] ->
-            As = [A || {F, A} <- Mod#alpaca_module.function_exports, F =:= N],
+            Filtered = lists:filter(fun({#a_lab{name=F}, _}) ->
+                                            case {F, N} of
+                                                {X, X} -> true;
+                                                _Miss -> false
+                                            end
+                                    end,
+                                    Mod#alpaca_module.function_exports
+                                   ),
+            As = [A || {_, A} <- Filtered],
             case As of
-                [A|_] -> {Env, Map, FR#alpaca_far_ref{arity=A}};
+                [A|_] -> {Env, Map, FR#a_qlab{arity=A}};
                 _     -> parse_error(CurrentMod, L,
                                      {function_not_exported, M, N})
             end;
@@ -808,7 +822,7 @@ rewrite_fun_versions(E, M, #alpaca_fun{versions=Vs}) ->
                         body=FunBody2},
                 %% As with patterns and clauses we deliberately
                 %% throw away the rename map here so that the
-                %% same symbols can be reused by distinctly
+                %% same labels can be reused by distinctly
                 %% different function definitions.
                 {Env4, Map, [FV2|NewVersions]}
         end,
@@ -894,13 +908,13 @@ make_bindings(Env, M, #alpaca_type_apply{arg=Arg}=TA) ->
     {Env2, M2, Arg2} = make_bindings(Env, M, Arg),
     {Env2, M2, TA#alpaca_type_apply{arg=Arg2}};
 
-make_bindings(#env{current_module=Mod}=Env, M, #a_sym{line=L, name=Name}=S) ->
+make_bindings(#env{current_module=Mod}=Env, M, #a_lab{line=L, name=Name}=S) ->
     case maps:get(Name, M, undefined) of
         undefined ->
             #env{next_var=NV} = Env,
             Synth = next_var(NV),
             Env2 = Env#env{next_var=NV+1},
-            {Env2, maps:put(Name, Synth, M), ast:symbol_rename(S, Synth)};
+            {Env2, maps:put(Name, Synth, M), ast:label_rename(S, Synth)};
         _ ->
             parse_error(Mod, L, {duplicate_definition, Name})
     end;
@@ -927,7 +941,7 @@ scan_tokens_for_deps(Tokens, Deps, Mod) ->
         {NextBatch, Rem} ->
             %% If we can't parse the tokens, ignore the error
             case parse(NextBatch) of
-                {ok, {module, Name, _}} ->
+                {ok, {module, #a_lab{name=Name}}} ->
                     scan_tokens_for_deps(Rem, Deps, Name);
                 {ok, Parsed} ->
                     scan_tokens_for_deps(Rem, find_deps(Parsed, Deps), Mod);
@@ -973,7 +987,7 @@ attach_signature(Sig, [Fun|Rem], Acc) ->
     end,
 
     case {FN, SN} of
-        {#a_sym{name = N}, N} ->
+        {#a_lab{name = N}, N} ->
             %% Multi-arity means for t_arrow we need to match
             %% on the length of args
             case ST of
@@ -993,15 +1007,13 @@ attach_signature(Sig, [Fun|Rem], Acc) ->
     end.  
 
 find_deps({import, Is}, Deps) ->
-    lists:foldl(
-        fun({_, {Mod, _}}, Acc) ->
-                maps:put(Mod, Mod, Acc);
-           ({_, Mod}, Acc) ->
-                maps:put(Mod, Mod, Acc)
-        end, Deps, Is);
+    lists:foldl(fun(#a_qlab{space=#a_lab{name=Mod}}, Acc) ->
+                        maps:put(Mod, Mod, Acc)
+                end,
+                Deps, Is);
 find_deps(#alpaca_binding{bound_expr=Expr}, Deps) ->
     find_deps(Expr, Deps);
-find_deps(#alpaca_type_import{module=Mod}, Deps) ->
+find_deps(#alpaca_type_import{module=#a_lab{name=Mod}}, Deps) ->
     maps:put(Mod, Mod, Deps);
 find_deps(#alpaca_fun{versions=Versions}, Deps) ->
     lists:foldl(fun find_deps/2, Deps, Versions);
@@ -1010,7 +1022,9 @@ find_deps(#alpaca_fun_version{body=Body}, Deps) ->
 find_deps(#alpaca_apply{args=Args, expr=Expr}, Deps) ->
     Deps_ = lists:foldl(fun find_deps/2, Deps, Args),
     case Expr of
-        {Mod, _, _} when is_atom(Mod) -> maps:put(Mod, Mod, Deps_);
+        %% TODO:  this is going to fail when record field accessors show up:
+        #a_qlab{space=#a_lab{name=Mod}} ->
+            maps:put(Mod, Mod, Deps_);
         _ -> Deps_
     end;
 find_deps(#alpaca_match{match_expr=Expr, clauses=Clauses}, Deps) ->
@@ -1051,8 +1065,8 @@ find_deps(_, Deps) -> Deps.
 test_parse(S) ->
     parse(alpaca_scanner:scan(S)).
 
-symbols_test_() ->
-    [?_assertMatch({ok, #a_sym{line = 1, name = <<"oneSymbol">>}},
+labels_test_() ->
+    [?_assertMatch({ok, #a_lab{line = 1, name = <<"oneSymbol">>}},
                    parse(alpaca_scanner:scan("oneSymbol")))
     ].
 
@@ -1115,126 +1129,126 @@ defn_test_() ->
      ?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"x">>},
+            name=#a_lab{line = 1, name = <<"x">>},
             bound_expr=#a_int{line=1, val=5}}},
         parse(alpaca_scanner:scan("let x=5"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
               {alpaca_apply,undefined,1,
-               #a_sym{line = 1, name = <<"sideEffectingFun">>},
+               #a_lab{line = 1, name = <<"sideEffectingFun">>},
                [#a_int{line=1, val=5}]}}},
         parse(alpaca_scanner:scan("let x=sideEffectingFun 5"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
               {alpaca_record,2,1,false,
                [{alpaca_record_member,1,one,undefined,
                  #a_int{line=1, val=10}},
                 {alpaca_record_member,1,two,undefined,
                  {alpaca_apply,undefined,1,
-                  #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                  #a_lab{line = 1, name = <<"sideEffectingFun">>},
                   [#a_int{line=1, val=5}]}}]}}},
         parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
               {alpaca_cons, undefined, 1,
                #a_int{line=1, val=1},
                {alpaca_cons, undefined, 1,
                 {alpaca_apply, undefined, 1,
-                 #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                 #a_lab{line = 1, name = <<"sideEffectingFun">>},
                  [#a_int{line=1, val=5}]},
                 {nil, 1}}}}},
         parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
 
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
               {alpaca_apply,undefined,1,
-               #a_sym{line = 1, name = <<"sideEffectingFun">>},
+               #a_lab{line = 1, name = <<"sideEffectingFun">>},
                [#a_int{line=1, val=5}]}}},
         parse(alpaca_scanner:scan("let x=sideEffectingFun 5"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
               {alpaca_record,2,1,false,
                [{alpaca_record_member,1,one,undefined,
                  #a_int{line=1, val=10}},
                 {alpaca_record_member,1,two,undefined,
                  {alpaca_apply,undefined,1,
-                  #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                  #a_lab{line = 1, name = <<"sideEffectingFun">>},
                   [#a_int{line=1, val=5}]}}]}}},
         parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
                      {alpaca_cons,undefined, 1,
                              #a_int{line=1, val=1},
                              {alpaca_cons,undefined, 1,
                                  {alpaca_apply,undefined,1,
-                                  #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                                  #a_lab{line = 1, name = <<"sideEffectingFun">>},
                                   [#a_int{line=1, val=5}]},
                               {nil, 1}}}}},
         parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
                          {alpaca_record,2,1,false,
                              [{alpaca_record_member,1,one,undefined,
                                #a_int{line=1, val=10}},
                               {alpaca_record_member,1,two,undefined,
                                {alpaca_apply,undefined,1,
-                                #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                                #a_lab{line = 1, name = <<"sideEffectingFun">>},
                                 [#a_int{line=1, val=5}]}}]}}},
         parse(alpaca_scanner:scan("let x={one = 10, two = (sideEffectingFun 5)}"))),
      ?_assertMatch(
-        {ok, {error, non_literal_value, #a_sym{line = 1, name = <<"x">>},
+        {ok, {error, non_literal_value, #a_lab{line = 1, name = <<"x">>},
                      {alpaca_cons, undefined, 1,
                       #a_int{line=1, val=1},
                       {alpaca_cons, undefined, 1,
                        {alpaca_apply, undefined, 1,
-                        #a_sym{line = 1, name = <<"sideEffectingFun">>},
+                        #a_lab{line = 1, name = <<"sideEffectingFun">>},
                         [#a_int{line=1, val=5}]},
                        {nil, 1}}}}},
         parse(alpaca_scanner:scan("let x=[1, (sideEffectingFun 5)]"))),
      ?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"double">>},
+            name=#a_lab{line = 1, name = <<"double">>},
             bound_expr=#alpaca_fun{
                           versions=[#alpaca_fun_version{
-                                       args=[#a_sym{line = 1, name = <<"x">>}],
+                                       args=[#a_lab{line = 1, name = <<"x">>}],
                                        body=#alpaca_apply{
                                                type=undefined,
                                                expr={bif, '+', 1, erlang, '+'},
-                                               args=[#a_sym{line = 1, name = <<"x">>},
-                                                     #a_sym{line = 1, name = <<"x">>}
+                                               args=[#a_lab{line = 1, name = <<"x">>},
+                                                     #a_lab{line = 1, name = <<"x">>}
                                                     ]}}]}}},
         parse(alpaca_scanner:scan("let double x = x + x"))),
      ?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"add">>},
+            name=#a_lab{line = 1, name = <<"add">>},
             bound_expr=#alpaca_fun{
                           versions=[#alpaca_fun_version{
-                                       args=[#a_sym{line = 1, name = <<"x">>},
-                                             #a_sym{line = 1, name = <<"y">>}
+                                       args=[#a_lab{line = 1, name = <<"x">>},
+                                             #a_lab{line = 1, name = <<"y">>}
                                             ],
                                        body=#alpaca_apply{
                                                type=undefined,
                                                expr={bif, '+', 1, erlang, '+'},
-                                               args=[#a_sym{line = 1, name = <<"x">>},
-                                                     #a_sym{line = 1, name = <<"y">>}
+                                               args=[#a_lab{line = 1, name = <<"x">>},
+                                                     #a_lab{line = 1, name = <<"y">>}
                                                     ]}}]}}},
         parse(alpaca_scanner:scan("let add x y = x + y"))),
         ?_assertMatch(
             {ok,
              #alpaca_binding{
-                name=#a_sym{line = 1, name = <<"(<*>)">>},
+                name=#a_lab{line = 1, name = <<"(<*>)">>},
                 bound_expr=#alpaca_fun{
                               versions=[#alpaca_fun_version{
-                                           args=[#a_sym{line = 1, name = <<"x">>},
-                                                 #a_sym{line = 1, name = <<"y">>}
+                                           args=[#a_lab{line = 1, name = <<"x">>},
+                                                 #a_lab{line = 1, name = <<"y">>}
                                                 ],
                                            body=#alpaca_apply{
                                                    type=undefined,
                                                    expr={bif, '+', 1, erlang, '+'},
-                                                   args=[#a_sym{line = 1, name = <<"x">>},
-                                                         #a_sym{line = 1, name = <<"y">>}
+                                                   args=[#a_lab{line = 1, name = <<"x">>},
+                                                         #a_lab{line = 1, name = <<"y">>}
                                                         ]}}]}}},
            parse(alpaca_scanner:scan("let (<*>) x y = x + y")))
     ].
@@ -1250,54 +1264,54 @@ let_binding_test_() ->
     [?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"double">>},
+            name=#a_lab{line = 1, name = <<"double">>},
             bound_expr=#alpaca_fun{
                           versions=[#alpaca_fun_version{
-                                       args=[#a_sym{line = 1, name = <<"x">>}],
+                                       args=[#a_lab{line = 1, name = <<"x">>}],
                                        body=#alpaca_apply{
                                                type=undefined,
                                                expr={bif, '+', 1, erlang, '+'},
-                                               args=[#a_sym{line = 1, name = <<"x">>},
-                                                     #a_sym{line = 1, name = <<"x">>}
+                                               args=[#a_lab{line = 1, name = <<"x">>},
+                                                     #a_lab{line = 1, name = <<"x">>}
                                                     ]}}]},
             body=#alpaca_apply{
-                    expr=#a_sym{line = 1, name = <<"double">>},
+                    expr=#a_lab{line = 1, name = <<"double">>},
                     args=[#a_int{line=1, val=2}]}}},
         parse(alpaca_scanner:scan("let double x = x + x in double 2"))),
      ?_assertMatch({ok, #alpaca_binding{
-                           name=#a_sym{line = 1, name = <<"x">>},
+                           name=#a_lab{line = 1, name = <<"x">>},
                            bound_expr=#alpaca_apply{
-                                         expr=#a_sym{line = 1, name = <<"double">>},
+                                         expr=#a_lab{line = 1, name = <<"double">>},
                                          args=[#a_int{line=1, val=2}]},
                            body=#alpaca_apply{
-                                   expr=#a_sym{line = 1, name = <<"double">>},
-                                   args=[#a_sym{line = 1, name = <<"x">>}]}}},
+                                   expr=#a_lab{line = 1, name = <<"double">>},
+                                   args=[#a_lab{line = 1, name = <<"x">>}]}}},
                    parse(alpaca_scanner:scan("let x = double 2 in double x"))),
      ?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"doubler">>},
+            name=#a_lab{line = 1, name = <<"doubler">>},
             bound_expr=
                 #alpaca_fun{
                    versions=
                        [#alpaca_fun_version{
-                           args=[#a_sym{line = 1, name = <<"x">>}],
+                           args=[#a_lab{line = 1, name = <<"x">>}],
                            body=
                                #alpaca_binding{
-                                  name=#a_sym{line = 2, name = <<"double">>},
+                                  name=#a_lab{line = 2, name = <<"double">>},
                                   bound_expr=
                                       #alpaca_fun{
                                          versions=
                                              [#alpaca_fun_version{
-                                                 args=[#a_sym{line = 2, name = <<"x">>}],
+                                                 args=[#a_lab{line = 2, name = <<"x">>}],
                                                  body=#alpaca_apply{
                                                          type=undefined,
                                                          expr={bif, '+', 2, erlang, '+'},
-                                                         args=[#a_sym{line = 2, name = <<"x">>},
-                                                               #a_sym{line = 2, name = <<"x">>}
+                                                         args=[#a_lab{line = 2, name = <<"x">>},
+                                                               #a_lab{line = 2, name = <<"x">>}
                                                               ]}}]},
                                   body=#alpaca_apply{
-                                          expr=#a_sym{line = 3, name = <<"double">>},
+                                          expr=#a_lab{line = 3, name = <<"double">>},
                                           args=[#a_int{line=3, val=2}]}}}]}}},
         parse(alpaca_scanner:scan(
                 "let doubler x =\n"
@@ -1306,53 +1320,53 @@ let_binding_test_() ->
      ?_assertMatch(
         {ok,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"my_fun">>},
+            name=#a_lab{line = 1, name = <<"my_fun">>},
             bound_expr=
                 #alpaca_fun{
                    versions=
                        [#alpaca_fun_version{
-                           args=[#a_sym{line = 1, name = <<"x">>},
-                                 #a_sym{line = 1, name = <<"y">>}],
+                           args=[#a_lab{line = 1, name = <<"x">>},
+                                 #a_lab{line = 1, name = <<"y">>}],
                            body=#alpaca_binding{
-                                   name=#a_sym{line = 1, name = <<"xer">>},
+                                   name=#a_lab{line = 1, name = <<"xer">>},
                                    bound_expr=
                                        #alpaca_fun{
                                           versions=
                                               [#alpaca_fun_version{
-                                                  args=[#a_sym{line = 1, name = <<"a">>}],
+                                                  args=[#a_lab{line = 1, name = <<"a">>}],
                                                   body=#alpaca_apply{
                                                           type=undefined,
                                                           expr={bif, '+', 1, erlang, '+'},
-                                                          args=[#a_sym{line = 1, name = <<"a">>},
-                                                                #a_sym{line = 1, name = <<"a">>}
+                                                          args=[#a_lab{line = 1, name = <<"a">>},
+                                                                #a_lab{line = 1, name = <<"a">>}
                                                                ]}}]},
                                    body=#alpaca_binding{
-                                           name=#a_sym{line = 1, name = <<"yer">>},
+                                           name=#a_lab{line = 1, name = <<"yer">>},
                                            bound_expr=
                                                #alpaca_fun{
                                                   versions=
                                                       [#alpaca_fun_version{
-                                                          args=[#a_sym{line = 1, name = <<"b">>}],
+                                                          args=[#a_lab{line = 1, name = <<"b">>}],
                                                           body=#alpaca_apply{
                                                                   type=undefined,
                                                                   expr={bif, '+', 1, erlang, '+'},
-                                                                  args=[#a_sym{line = 1,
+                                                                  args=[#a_lab{line = 1,
                                                                                name = <<"b">>},
-                                                                        #a_sym{line = 1,
+                                                                        #a_lab{line = 1,
                                                                                name = <<"b">>}
                                                                        ]}}]},
                                            body=#alpaca_apply{
                                                    type=undefined,
                                                    expr={bif, '+', 1, erlang, '+'},
                                                    args=[#alpaca_apply{
-                                                            expr=#a_sym{line = 1,
+                                                            expr=#a_lab{line = 1,
                                                                         name = <<"xer">>},
-                                                            args=[#a_sym{line = 1,
+                                                            args=[#a_lab{line = 1,
                                                                          name = <<"x">>}]},
                                                          #alpaca_apply{
-                                                            expr=#a_sym{line = 1,
+                                                            expr=#a_lab{line = 1,
                                                                         name = <<"yer">>},
-                                                            args=[#a_sym{line = 1,
+                                                            args=[#a_lab{line = 1,
                                                                          name = <<"y">>}
                                                                  ]}]}}}}]}}},
         parse(alpaca_scanner:scan(
@@ -1363,47 +1377,63 @@ let_binding_test_() ->
     ].
 
 application_test_() ->
-    [?_assertMatch({ok, #alpaca_apply{expr=#a_sym{line = 1, name = <<"double">>},
+    [?_assertMatch({ok, #alpaca_apply{expr=#a_lab{line = 1, name = <<"double">>},
                                       args=[#a_int{line=1, val=2}]}},
                    parse(alpaca_scanner:scan("double 2"))),
-     ?_assertMatch({ok, #alpaca_apply{expr=#a_sym{line = 1, name = <<"two">>},
-                                      args=[#a_sym{line = 1, name = <<"symbols">>}]}},
-                   parse(alpaca_scanner:scan("two symbols"))),
-     ?_assertMatch({ok, #alpaca_apply{expr=#a_sym{line = 1, name = <<"x">>},
-                                    args=[#a_sym{line = 1, name = <<"y">>},
-                                          #a_sym{line = 1, name = <<"z">>}]}},
+     ?_assertMatch({ok, #alpaca_apply{expr=#a_lab{line = 1, name = <<"two">>},
+                                      args=[#a_lab{line = 1, name = <<"labels">>}]}},
+                   parse(alpaca_scanner:scan("two labels"))),
+     ?_assertMatch({ok, #alpaca_apply{expr=#a_lab{line = 1, name = <<"x">>},
+                                    args=[#a_lab{line = 1, name = <<"y">>},
+                                          #a_lab{line = 1, name = <<"z">>}]}},
                    parse(alpaca_scanner:scan("x y z"))),
      ?_assertMatch({ok, #alpaca_apply{
-                           expr={'mod',
-                                 #a_sym{line = 1, name = <<"fun">>},
-                                 2},
+                           expr=#a_qlab{ space = #a_lab{name= <<"mod">>}
+                                       , label = #a_lab{name= <<"fun">>}
+                                       , line = 1
+                                       },
                            args=[#a_int{line=1, val=1},
-                                 #a_sym{line = 1, name = <<"x">>}]}},
+                                 #a_lab{line = 1, name = <<"x">>}]}},
                    parse(alpaca_scanner:scan("mod.fun 1 x")))
     ].
 
 module_def_test_() ->
-    [?_assertMatch({ok, {module, 'test_mod', 1}},
+    [?_assertMatch({ok, {module, #a_lab{line=1, name = <<"test_mod">>}}},
                    parse(alpaca_scanner:scan("module test_mod"))),
-     ?_assertMatch({ok, {module, 'myMod', 1}},
+     ?_assertMatch({ok, {module, #a_lab{line=1, name = <<"myMod">>}}},
                    parse(alpaca_scanner:scan("module myMod"))),
-     ?_assertThrow({parse_error, ?FILE, 2, {module_rename, mod1, mod2}},
+     ?_assertThrow({parse_error, ?FILE, 2, {module_rename, <<"mod1">>, <<"mod2">>}},
                    parse_module({?FILE, "module mod1\nmodule mod2"}))
     ].
 
 export_test_() ->
-    [?_assertMatch({ok, {export, [{<<"add">>, 2}]}},
+    [?_assertMatch({ok, {export, [{#a_lab{name= <<"add">>}, 2}]}},
                    parse(alpaca_scanner:scan("export add/2")))
     ].
 
 import_test_() ->
-    [?_assertMatch({ok, {import, [{<<"foo">>, some_mod},
-                                  {<<"bar">>, {some_mod, 2}}]}},
+    [?_assertMatch({ok, {import, [ #a_qlab{ space=#a_lab{name= <<"some_mod">>}
+                                          , label=#a_lab{name= <<"foo">>}
+                                          }
+                                 , #a_qlab{ space=#a_lab{name= <<"some_mod">>}
+                                          , label=#a_lab{name= <<"bar">>}
+                                          , arity=2
+                                          }
+                                 ]}},
                    parse(alpaca_scanner:scan("import some_mod.[foo, bar/2]"))),
      ?_assertMatch(
-        {ok, {import, [{<<"foo">>, mod1},
-                       {<<"bar">>, {mod2, 1}},
-                       {<<"baz">>, mod2}]}},
+        {ok, {import, [ #a_qlab{ space=#a_lab{name= <<"mod1">>}
+                               , label=#a_lab{name= <<"foo">>}
+                               , arity=none
+                               }
+                      , #a_qlab{ space=#a_lab{name= <<"mod2">>}
+                               , label=#a_lab{name= <<"bar">>}
+                               , arity=1
+                               }
+                      , #a_qlab{ space=#a_lab{name= <<"mod2">>}
+                               , label=#a_lab{name= <<"baz">>}
+                               }
+                      ]}},
         parse(alpaca_scanner:scan("import mod1.foo, mod2.[bar/1, baz]"))),
      fun() ->
              Code1 =
@@ -1413,10 +1443,23 @@ import_test_() ->
 
              ?assertMatch(
                 #alpaca_module{
-                    function_imports=[{<<"bar">>, {foo, 2}},
-                                      {<<"add">>, {math, 2}},
-                                      {<<"sub">>, {math, 2}},
-                                      {<<"mult">>, math}]},
+                    function_imports=[ #a_qlab{ space=#a_lab{name= <<"foo">>}
+                                              , label=#a_lab{name= <<"bar">>}
+                                              , arity=2
+                                              }
+                                     , #a_qlab{ space=#a_lab{name= <<"math">>}
+                                              , label=#a_lab{name= <<"add">>}
+                                              , arity=2
+                                              }
+                                     , #a_qlab{ space=#a_lab{name= <<"math">>}
+                                              , label=#a_lab{name= <<"sub">>}
+                                              , arity=2
+                                              }
+                                     , #a_qlab{ space=#a_lab{name= <<"math">>}
+                                              , label=#a_lab{name= <<"mult">>}
+                                              , arity=none
+                                              }
+                                     ]},
                 parse_module({?FILE, Code1}))
      end
     ].
@@ -1431,21 +1474,21 @@ expr_test_() ->
                    parse(alpaca_scanner:scan("1 + 5"))),
      ?_assertMatch({ok,
                     #alpaca_apply{
-                       expr=#a_sym{line = 1, name = <<"add">>},
-                       args=[#a_sym{line = 1, name = <<"x">>},
+                       expr=#a_lab{line = 1, name = <<"add">>},
+                       args=[#a_lab{line = 1, name = <<"x">>},
                              #a_int{line=1, val=2}]}},
                    parse(alpaca_scanner:scan("add x 2"))),
      ?_assertMatch({ok,
-                    #alpaca_apply{expr=#a_sym{line = 1, name = <<"double">>},
-                                  args=[#a_sym{line = 1, name = <<"x">>}]}},
+                    #alpaca_apply{expr=#a_lab{line = 1, name = <<"double">>},
+                                  args=[#a_lab{line = 1, name = <<"x">>}]}},
                    parse(alpaca_scanner:scan("(double x)"))),
      ?_assertMatch({ok, #alpaca_apply{
-                           expr=#a_sym{line = 1, name = <<"tuple_func">>},
+                           expr=#a_lab{line = 1, name = <<"tuple_func">>},
                            args=[#alpaca_tuple{
                                     arity=2,
-                                    values=[#a_sym{line = 1, name = <<"x">>},
+                                    values=[#a_lab{line = 1, name = <<"x">>},
                                             #a_int{line=1, val=1}]},
-                                 #a_sym{line = 1, name = <<"y">>}]}},
+                                 #a_lab{line = 1, name = <<"y">>}]}},
                    parse(alpaca_scanner:scan("tuple_func (x, 1) y")))
     ].
 
@@ -1458,41 +1501,41 @@ module_with_let_test() ->
         "  adder x y",
     ?assertMatch({ok,
        [#alpaca_module{
-           name='test_mod',
-           function_exports=[{<<"add">>,2}],
+           name= <<"test_mod">>,
+           function_exports=[{#a_lab{line=3, name= <<"add">>}, 2}],
            functions=
                [#alpaca_binding{
-                   name=#a_sym{line = 5, name = <<"add">>},
+                   name=#a_lab{line = 5, name = <<"add">>},
                    bound_expr=
                        #alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 5, name = <<"svar_0">>},
-                                        #a_sym{line = 5, name = <<"svar_1">>}],
+                                  args=[#a_lab{line = 5, name = <<"svar_0">>},
+                                        #a_lab{line = 5, name = <<"svar_1">>}],
                                   body=#alpaca_binding{
-                                          name=#a_sym{line = 6, name = <<"svar_2">>},
+                                          name=#a_lab{line = 6, name = <<"svar_2">>},
                                           bound_expr=
                                               #alpaca_fun{
                                                  versions=
                                                      [#alpaca_fun_version{
-                                                         args=[#a_sym{line = 6,
+                                                         args=[#a_lab{line = 6,
                                                                       name = <<"svar_3">>},
-                                                               #a_sym{line = 6,
+                                                               #a_lab{line = 6,
                                                                       name = <<"svar_4">>}],
                                                          body=#alpaca_apply{
                                                                  type=undefined,
                                                                  expr={bif, '+', 6, erlang, '+'},
-                                                                 args=[#a_sym{line = 6,
+                                                                 args=[#a_lab{line = 6,
                                                                               name = <<"svar_3">>},
-                                                                       #a_sym{line = 6,
+                                                                       #a_lab{line = 6,
                                                                               name = <<"svar_4">>}
                                                                       ]}}]},
                                           body=#alpaca_apply{
-                                                  expr=#a_sym{line = 7,
+                                                  expr=#a_lab{line = 7,
                                                               name = <<"svar_2">>},
-                                                  args=[#a_sym{line = 7,
+                                                  args=[#a_lab{line = 7,
                                                                name = <<"svar_0">>},
-                                                        #a_sym{line = 7,
+                                                        #a_lab{line = 7,
                                                                name = <<"svar_1">>}
                                                        ]}}}]}}]}]},
                  test_make_modules([Code])).
@@ -1500,13 +1543,13 @@ module_with_let_test() ->
 match_test_() ->
     [?_assertMatch(
         {ok, #alpaca_match{
-                match_expr=#a_sym{line = 1, name = <<"x">>},
+                match_expr=#a_lab{line = 1, name = <<"x">>},
                 clauses=[#alpaca_clause{
                             pattern=#a_int{line=2, val=0},
-                            result=#a_sym{line = 2, name = <<"zero">>}},
+                            result=#a_lab{line = 2, name = <<"zero">>}},
                          #alpaca_clause{
                             pattern={'_', 3},
-                            result=#a_sym{line = 3, name = <<"non_zero">>}}
+                            result=#a_lab{line = 3, name = <<"non_zero">>}}
                         ]}},
         parse(alpaca_scanner:scan(
                 "match x with\n"
@@ -1514,9 +1557,9 @@ match_test_() ->
                 "| _ -> non_zero\n"))),
      ?_assertMatch(
         {ok, #alpaca_match{match_expr=#alpaca_apply{
-                                         expr=#a_sym{line = 1, name = <<"add">>},
-                                         args=[#a_sym{line = 1, name = <<"x">>},
-                                               #a_sym{line = 1, name = <<"y">>}]},
+                                         expr=#a_lab{line = 1, name = <<"add">>},
+                                         args=[#a_lab{line = 1, name = <<"x">>},
+                                               #a_lab{line = 1, name = <<"y">>}]},
                            clauses=[#alpaca_clause{
                                        pattern=#a_int{line=2, val=0},
                                        result=#a_atom{line=2, val=zero}},
@@ -1534,19 +1577,19 @@ match_test_() ->
                 "| _ -> :more_than_one\n"))),
      ?_assertMatch(
         {ok, #alpaca_match{
-                match_expr=#a_sym{line = 1, name = <<"x">>},
+                match_expr=#a_lab{line = 1, name = <<"x">>},
                 clauses=[#alpaca_clause{
                             pattern=#alpaca_tuple{
                                        arity=2,
                                        values=[{'_', 2},
-                                               #a_sym{line = 2, name = <<"x">>}
+                                               #a_lab{line = 2, name = <<"x">>}
                                               ]},
                             result=#a_atom{line=2, val=anything_first}},
                          #alpaca_clause{
                             pattern=#alpaca_tuple{
                                        arity=2,
                                        values=[#a_int{line=3, val=1},
-                                               #a_sym{line = 3, name = <<"x">>}]},
+                                               #a_lab{line = 3, name = <<"x">>}]},
                             result=#a_atom{line=3, val=one_first}}]}},
         parse(alpaca_scanner:scan(
                 "match x with\n"
@@ -1556,8 +1599,8 @@ match_test_() ->
         {ok, #alpaca_match{
                 match_expr=#alpaca_tuple{
                               arity=2,
-                              values=[#a_sym{line = 1, name = <<"x">>},
-                                      #a_sym{line = 1, name = <<"y">>}]},
+                              values=[#a_lab{line = 1, name = <<"x">>},
+                                      #a_lab{line = 1, name = <<"y">>}]},
                 clauses=[#alpaca_clause{
                             pattern=#alpaca_tuple{
                                        arity=2,
@@ -1565,7 +1608,7 @@ match_test_() ->
                                                   arity=2,
                                                   values=[{'_', 2},
                                                           #a_int{line=2, val=1}]},
-                                               #a_sym{line = 2, name = <<"a">>}
+                                               #a_lab{line = 2, name = <<"a">>}
                                               ]},
                             result=#a_atom{line=2, val=nested_tuple}}]}},
         parse(alpaca_scanner:scan(
@@ -1583,7 +1626,7 @@ tuple_test_() ->
                    parse(alpaca_scanner:scan("(1, 2)"))),
      ?_assertMatch({ok, #alpaca_tuple{
                            arity=2,
-                           values=[#a_sym{line = 1, name = <<"x">>},
+                           values=[#a_lab{line = 1, name = <<"x">>},
                                    #a_int{line=1, val=1}]}},
                    parse(alpaca_scanner:scan("(x, 1)"))),
      ?_assertMatch({ok,
@@ -1592,7 +1635,7 @@ tuple_test_() ->
                        values=[#alpaca_tuple{
                                   arity=2,
                                   values=[#a_int{line=1, val=1},
-                                          #a_sym{line = 1, name = <<"x">>}
+                                          #a_lab{line = 1, name = <<"x">>}
                                          ]},
                                #a_int{line=1, val=12}]}},
                    parse(alpaca_scanner:scan("((1, x), 12)")))
@@ -1613,23 +1656,23 @@ list_test_() ->
                            tail={nil, 1}}},
                    parse(alpaca_scanner:scan("[1]"))),
      ?_assertMatch({ok, #alpaca_cons{
-                           head=#a_sym{line = 1, name = <<"x">>},
+                           head=#a_lab{line = 1, name = <<"x">>},
                            tail=#alpaca_cons{head=#a_int{line=1, val=1},
                                              tail={nil, 1}}}},
                    parse(alpaca_scanner:scan("x :: [1]"))),
      ?_assertMatch({ok, #alpaca_cons{head=#a_int{line=1, val=1},
-                                     tail=#a_sym{line = 1, name = <<"y">>}}},
+                                     tail=#a_lab{line = 1, name = <<"y">>}}},
                    parse(alpaca_scanner:scan("1 :: y"))),
      ?_assertMatch(
         {ok, #alpaca_match{
-                match_expr=#a_sym{line = 1, name = <<"x">>},
+                match_expr=#a_lab{line = 1, name = <<"x">>},
                 clauses=[#alpaca_clause{pattern={nil,2},
                                         result={nil,2}},
                          #alpaca_clause{
                             pattern=#alpaca_cons{
-                                       head=#a_sym{line = 3, name = <<"h">>},
-                                       tail=#a_sym{line = 3, name = <<"t">>}},
-                            result=#a_sym{line = 3, name = <<"h">>}}]}},
+                                       head=#a_lab{line = 3, name = <<"h">>},
+                                       tail=#a_lab{line = 3, name = <<"t">>}},
+                            result=#a_lab{line = 3, name = <<"h">>}}]}},
         parse(alpaca_scanner:scan(
                 "match x with\n"
                 "  [] -> []\n"
@@ -1661,8 +1704,8 @@ binary_test_() ->
        ),
      ?_assertMatch(
         {ok, #alpaca_binary{
-                segments=[#alpaca_bits{value=#a_sym{line = 1, name = <<"a">>}},
-                          #alpaca_bits{value=#a_sym{line = 1, name = <<"b">>}}]}},
+                segments=[#alpaca_bits{value=#a_lab{line = 1, name = <<"a">>}},
+                          #alpaca_bits{value=#a_lab{line = 1, name = <<"b">>}}]}},
         parse(alpaca_scanner:scan("<<a: size=8 type=int, b: size=8 type=int>>"))),
      ?_assertMatch(
         {error, {1, alpaca_parser, unsized_binary_before_end}},
@@ -1705,70 +1748,72 @@ simple_module_test() ->
         "let sub x y = x - y",
     ?assertMatch({ok,
        [#alpaca_module{
-           name='test_mod',
-           function_exports=[{<<"add">>, 2},{<<"sub">>, 2}],
+           name= <<"test_mod">>,
+           function_exports=[ {#a_lab{line=3, name= <<"add">>}, 2}
+                            , {#a_lab{line=3, name= <<"sub">>}, 2}
+                            ],
            functions=
                [#alpaca_binding{
-                   name=#a_sym{line = 5, name = <<"adder">>},
+                   name=#a_lab{line = 5, name = <<"adder">>},
                    bound_expr=
                        #alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 5, name = <<"svar_0">>},
-                                        #a_sym{line = 5, name = <<"svar_1">>}],
+                                  args=[#a_lab{line = 5, name = <<"svar_0">>},
+                                        #a_lab{line = 5, name = <<"svar_1">>}],
                                   body=#alpaca_apply{type=undefined,
                                                      expr={bif, '+', 5, erlang, '+'},
-                                                     args=[#a_sym{line = 5,
+                                                     args=[#a_lab{line = 5,
                                                                   name = <<"svar_0">>},
-                                                           #a_sym{line = 5,
+                                                           #a_lab{line = 5,
                                                                   name = <<"svar_1">>}
                                                            ]}}]}},
                 #alpaca_binding{
-                   name=#a_sym{line = 7, name = <<"add1">>},
+                   name=#a_lab{line = 7, name = <<"add1">>},
                    bound_expr=
                        #alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 7,
+                                  args=[#a_lab{line = 7,
                                                name = <<"svar_2">>}],
                                   body=#alpaca_apply{
-                                          expr=#a_sym{line = 7,
+                                          expr=#a_lab{line = 7,
                                                       name = <<"adder">>},
-                                          args=[#a_sym{line = 7,
+                                          args=[#a_lab{line = 7,
                                                        name = <<"svar_2">>},
                                                 #a_int{line=7, val=1}
                                                ]}}]}},
                 #alpaca_binding{
-                   name=#a_sym{line = 9, name = <<"add">>},
+                   name=#a_lab{line = 9, name = <<"add">>},
                    bound_expr=
                        #alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 9,
+                                  args=[#a_lab{line = 9,
                                                name = <<"svar_3">>},
-                                        #a_sym{line = 9,
+                                        #a_lab{line = 9,
                                                name = <<"svar_4">>}],
-                                  body=#alpaca_apply{expr=#a_sym{line = 9,
+                                  body=#alpaca_apply{expr=#a_lab{line = 9,
                                                                  name = <<"adder">>},
-                                                     args=[#a_sym{line = 9,
+                                                     args=[#a_lab{line = 9,
                                                                   name = <<"svar_3">>},
-                                                           #a_sym{line = 9,
+                                                           #a_lab{line = 9,
                                                                   name = <<"svar_4">>}
                                                           ]}}]}},
                 #alpaca_binding{
-                   name=#a_sym{line = 11, name = <<"sub">>},
+                   name=#a_lab{line = 11, name = <<"sub">>},
                    bound_expr=
                        #alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 11, name = <<"svar_5">>},
-                                        #a_sym{line = 11, name = <<"svar_6">>}
+                                  args=[#a_lab{line = 11, name = <<"svar_5">>},
+                                        #a_lab{line = 11, name = <<"svar_6">>}
                                        ],
                                   body=#alpaca_apply{type=undefined,
                                                      expr={bif, '-', 11, erlang, '-'},
-                                                     args=[#a_sym{line = 11,
+                                                     args=[#a_lab{line = 11,
                                                                   name = <<"svar_5">>},
-                                                           #a_sym{line = 11,
+                                                           #a_lab{line = 11,
                                                                   name = <<"svar_6">>}
                                                           ]}}]}}]}]},
        test_make_modules([Code])).
@@ -1780,13 +1825,13 @@ break_test() ->
            "let b = 6\n\n",
      ?assertMatch({ok,
        [#alpaca_module{
-           name='test_mod',
+           name= <<"test_mod">>,
            function_exports=[],
            functions=[#alpaca_binding{
-                         name=#a_sym{line = 4, name = <<"a">>},
+                         name=#a_lab{line = 4, name = <<"a">>},
                          bound_expr=#a_int{line=4, val=5}},
                       #alpaca_binding{
-                         name=#a_sym{line = 6, name = <<"b">>},
+                         name=#a_lab{line = 6, name = <<"b">>},
                          bound_expr=#a_int{line=6, val=6}}]}]},
        test_make_modules([Code])).
 
@@ -1814,24 +1859,24 @@ rebinding_test_() ->
     [?_assertMatch(
         {_, _,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"f">>, original = none},
+            name=#a_lab{line = 1, name = <<"f">>, original = none},
             bound_expr=#alpaca_fun{
                           versions=
                               [#alpaca_fun_version{
-                                  args=[#a_sym{line = 1,
+                                  args=[#a_lab{line = 1,
                                                name = <<"svar_0">>,
                                                original = <<"x">>}],
                                   body=#alpaca_binding{
-                                          name=#a_sym{line = 1,
+                                          name=#a_lab{line = 1,
                                                       name = <<"svar_1">>,
                                                       original = <<"y">>},
                                           bound_expr=#a_int{line=1, val=2},
                                           body=#alpaca_apply{
                                                   expr={bif, '+', 1, 'erlang', '+'},
-                                                  args=[#a_sym{line = 1,
+                                                  args=[#a_lab{line = 1,
                                                                name = <<"svar_0">>,
                                                                original = <<"x">>},
-                                                        #a_sym{line = 1,
+                                                        #a_lab{line = 1,
                                                                name = <<"svar_1">>,
                                                                original = <<"y">>}
                                                        ]}}}]}}},
@@ -1841,32 +1886,32 @@ rebinding_test_() ->
      ?_assertMatch(
         {_, _,
          #alpaca_binding{
-            name=#a_sym{line = 1, name = <<"f">>, original = none},
+            name=#a_lab{line = 1, name = <<"f">>, original = none},
             bound_expr=
                 #alpaca_fun{
                    versions=
                        [#alpaca_fun_version{
-                           args=[#a_sym{line = 1, name = <<"svar_0">>}],
+                           args=[#a_lab{line = 1, name = <<"svar_0">>}],
                            body=#alpaca_match{
-                                   match_expr=#a_sym{line = 1, name = <<"svar_0">>},
+                                   match_expr=#a_lab{line = 1, name = <<"svar_0">>},
                                    clauses=
                                        [#alpaca_clause{
                                            pattern=#alpaca_tuple{
                                                       values=
-                                                          [#a_sym{line = 2,
+                                                          [#a_lab{line = 2,
                                                                   name = <<"svar_1">>},
                                                            #a_int{line=2, val=0}]},
-                                           result=#a_sym{line = 2,
+                                           result=#a_lab{line = 2,
                                                          name = <<"svar_1">>}},
                                         #alpaca_clause{
                                            pattern=#alpaca_tuple{
                                                       values=
-                                                          [#a_sym{line = 3,
+                                                          [#a_lab{line = 3,
                                                                   name = <<"svar_2">>},
-                                                           #a_sym{line = 3,
+                                                           #a_lab{line = 3,
                                                                   name = <<"svar_3">>}
                                                           ]},
-                                           result=#a_sym{line = 3,
+                                           result=#a_lab{line = 3,
                                                          name = <<"svar_3">>}}
                                        ]}}]}}},
         rename_bindings(#env{}, C)),
@@ -1881,28 +1926,28 @@ rebinding_test_() ->
                        [#alpaca_fun_version{
                            body=
                                #alpaca_match{
-                                  match_expr=#a_sym{line = 1, name = <<"svar_0">>},
+                                  match_expr=#a_lab{line = 1, name = <<"svar_0">>},
                                   clauses=
                                       [#alpaca_clause{
                                           pattern=
                                               #alpaca_cons{
                                                  head={'_', 2},
                                                  tail=#alpaca_cons{
-                                                         head=#a_sym{line = 2,
+                                                         head=#a_lab{line = 2,
                                                                      name = <<"svar_1">>},
                                                          tail=#alpaca_cons{
                                                                  head=#a_int{line=2,
                                                                              val=0},
                                                                  tail={nil, 2}}}},
-                                          result=#a_sym{line = 2,
+                                          result=#a_lab{line = 2,
                                                         name = <<"svar_1">>}},
                                        #alpaca_clause{
                                           pattern=#alpaca_cons{
-                                                     head=#a_sym{line = 3,
+                                                     head=#a_lab{line = 3,
                                                                  name = <<"svar_2">>},
-                                                     tail=#a_sym{line = 3,
+                                                     tail=#a_lab{line = 3,
                                                                  name = <<"svar_3">>}},
-                                          result=#a_sym{line = 3,
+                                          result=#a_lab{line = 3,
                                                         name = <<"svar_2">>}}
                                       ]}}]}}},
         rename_bindings(#env{}, E)),
@@ -1972,15 +2017,21 @@ expand_exports_test_() ->
     [fun() ->
              Def = fun(Name, Arity) ->
                            #alpaca_binding{
-                              name=ast:symbol(0, list_to_binary(Name)),
+                              name=ast:label(0, list_to_binary(Name)),
                               bound_expr=#alpaca_fun{arity=Arity}}
                    end,
 
              Ms = [#alpaca_module{
-                      function_exports=[<<"foo">>, {<<"bar">>, 1}],
+                      function_exports=[ #a_lab{line=2, name= <<"foo">>}
+                                       , {#a_lab{line=2, name= <<"bar">>}, 1}
+                                       ],
                       functions=[Def("foo", 1), Def("foo", 2), Def("bar", 1)]}],
              [#alpaca_module{function_exports=FEs}] = expand_exports(Ms, []),
-             ?assertEqual([{<<"foo">>, 1}, {<<"foo">>, 2}, {<<"bar">>, 1}], FEs)
+             ?assertEqual([ {ast:label(2, <<"foo">>), 1}
+                          , {ast:label(2, <<"foo">>), 2}
+                          , {ast:label(2, <<"bar">>), 1}
+                          ],
+                          FEs)
      end
     , fun() ->
               Code =
@@ -1992,7 +2043,10 @@ expand_exports_test_() ->
 
               {ok, [Mod]} = test_make_modules([Code]),
               [#alpaca_module{function_exports=FEs}] = expand_exports([Mod], []),
-              ?assertEqual([{<<"foo">>, 1}, {<<"foo">>, 2}, {<<"bar">>, 1}],
+              ?assertEqual([ {#a_lab{line=3, name= <<"foo">> }, 1}
+                           , {#a_lab{line=3, name= <<"foo">> }, 2}
+                           , {#a_lab{line=3, name= <<"bar">> }, 1}
+                           ],
                            FEs)
       end
     ].
@@ -2021,8 +2075,13 @@ expand_imports_test_() ->
                 M1),
              ?assertMatch(
                 #alpaca_module{
-                   function_imports=[{<<"foo">>, {m1, 1}},
-                                     {<<"foo">>, {m1, 2}}]},
+                   function_imports=[#a_qlab{ space=#a_lab{name= <<"m1">>}
+                                            , label=#a_lab{name= <<"foo">>}
+                                            , arity=1},
+                                     #a_qlab{ space=#a_lab{name= <<"m1">>}
+                                            , label=#a_lab{name= <<"foo">>}
+                                            , arity=2}
+                                    ]},
                 M2)
      end
     , fun() ->
@@ -2031,7 +2090,7 @@ expand_imports_test_() ->
                   "import n.foo",
 
               Mod = parse_module({?FILE, Code}),
-              ?assertThrow({parse_error, ?FILE, 1, {no_module, n}},
+              ?assertThrow({parse_error, ?FILE, 1, {no_module, <<"n">>}},
                            expand_imports(expand_exports([Mod])))
       end
     ].
@@ -2048,18 +2107,18 @@ import_rewriting_test_() ->
                  "let f () = add 2 3",
              ?assertMatch(
                 {ok,
-                 [#alpaca_module{name=a},
+                 [#alpaca_module{name= <<"a">>},
                   #alpaca_module{
-                     name=b,
+                     name= <<"b">>,
                      functions=
                          [#alpaca_binding{
                              bound_expr=#alpaca_fun{
                                            versions=
                                                [#alpaca_fun_version{
                                                    body=#alpaca_apply{
-                                                           expr=#alpaca_far_ref{
-                                                                   module=a,
-                                                                   name= <<"add">>,
+                                                           expr=#a_qlab{
+                                                                   space=#a_lab{name= <<"a">>},
+                                                                   label=#a_lab{name= <<"add">>},
                                                                    arity=2}
                                                           }}]
                                           }}]}]},
@@ -2077,9 +2136,9 @@ import_rewriting_test_() ->
                   "let f () = 2 |> add_ten",
               ?assertMatch(
                  {ok,
-                  [#alpaca_module{name=a},
+                  [#alpaca_module{name= <<"a">>},
                    #alpaca_module{
-                      name=b,
+                      name= <<"b">>,
                       functions=
                           [_,
                            #alpaca_binding{
@@ -2087,9 +2146,11 @@ import_rewriting_test_() ->
                                             versions=
                                                 [#alpaca_fun_version{
                                                     body=#alpaca_apply{
-                                                            expr=#alpaca_far_ref{
-                                                                    module=a,
-                                                                    name= <<"(|>)">>,
+                                                            expr=#a_qlab{
+                                                                    space=#a_lab{ name= <<"a">>
+                                                                                , line=7
+                                                                                },
+                                                                    label=#a_lab{name= <<"(|>)">>},
                                                                     arity=2}
                                                            }}]
                                            }}]}]},
@@ -2099,7 +2160,7 @@ import_rewriting_test_() ->
               Code1 =
                   "module b\n\n"
                   "let foo () = let y = bar.baz in y",
-              ?assertEqual({error, {parse_error, ?FILE, 3, {no_module, bar}}},
+              ?assertEqual({error, {parse_error, ?FILE, 3, {no_module, <<"bar">>}}},
                            test_make_modules([Code1]))
     end
     , fun() ->
@@ -2107,8 +2168,14 @@ import_rewriting_test_() ->
               Code2 =
                   "module b\n\n"
                   "let foo () = let y = a.bar in y",
-              ?assertEqual({error, {parse_error, ?FILE, 3,
-                                    {function_not_exported, a, <<"bar">>}}},
+              ?assertEqual({ error
+                           , { parse_error, ?FILE, 3
+                             , { function_not_exported
+                               , <<"a">>
+                               , <<"bar">>
+                               }
+                             }
+                           },
                            test_make_modules([Code1, Code2]))
     end
     ].
@@ -2192,7 +2259,13 @@ infer_modules_test_() ->
           "test \"this\" = o.far_fun 1",
 
     ?_assertMatch(
-       {a_mod, [b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r]},
+       {<<"a_mod">>, [ <<"b">>, <<"c">>, <<"d">>, <<"e">>
+                     , <<"f">>, <<"g">>, <<"h">>, <<"i">>
+                     , <<"j">>, <<"k">>, <<"l">>, <<"m">>
+                     , <<"n">>, <<"o">>, <<"p">>, <<"q">>
+                     , <<"r">>
+                     ]
+       },
        list_dependencies(Src)).
 
 valid_signature_test() ->
@@ -2238,7 +2311,6 @@ duplicate_signature_test() ->
           "val num : int\n"
           "val num : int\n"
           "let num = 42\n",
-    io:format("~p~n", [test_make_modules([Src])]),
     ?assertMatch(
        {error, {parse_error, ?FILE, 3, {duplicate_signature, <<"num">>}}},
        test_make_modules([Src])).
