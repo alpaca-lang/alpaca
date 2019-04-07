@@ -66,7 +66,7 @@ check_exhaustiveness(Mod, #alpaca_binding{type=Type, bound_expr=Bound}=F, AllMod
     end.
 
 check_exhaustiveness(Mod, #alpaca_binding{
-                             name=#a_sym{name=Name},
+                             name=#a_lab{name=Name},
                              bound_expr=#alpaca_fun{}=F},
                      FunArgTypes, AllMods) ->
     #alpaca_fun{arity=Arity, versions=FunArgPatterns} = F,
@@ -199,11 +199,20 @@ lookup_type([_|Rest], Name) ->
 
 lookup_type_from_imports(Name, #alpaca_module{type_imports=Imports},
                          AllMods) ->
-    case lists:keyfind(Name, #alpaca_type_import.type, Imports) of
-        #alpaca_type_import{module=ModName} ->
+    %% This used to be a simple keyfind before (almost) all identifiers became
+    %% "labels" instead of raw binary or string names.
+    Filtered = lists:filter( fun(#alpaca_type_import{type=#a_lab{name=N}}) when Name =:= N ->
+				     true;
+				(_) -> false
+			     end
+			   , Imports
+			   ),
+
+    case Filtered of
+	[#alpaca_type_import{module=#a_lab{name=ModName}}] ->
             Mod = lists:keyfind(ModName, #alpaca_module.name, AllMods),
             lookup_type(Mod#alpaca_module.types, Name);
-        false -> % abstract/hidden type in another module.
+	_ ->  % abstract/hidden type in another module.
             {ok, {unbound, '_', 1}}
     end.
 
@@ -303,7 +312,7 @@ matches_unit(P) ->
 
 matches_wildcard({'_', _}) ->
     true;
-matches_wildcard(#a_sym{}) ->
+matches_wildcard(#a_lab{}) ->
     true;
 matches_wildcard(_)        ->
     false.
@@ -319,7 +328,7 @@ atom_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard :ok = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -336,7 +345,7 @@ binary_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard <<\"\">> = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -350,9 +359,9 @@ boolean_coverage_test() ->
         "let missing_true false = :ok\n\n"
         "let missing_false false = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_true">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_true">>, 1},
          [{missing_pattern,[{t_bool,true}]}]},
-        {partial_function, {coverage, <<"missing_false">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_false">>, 1},
          [{missing_pattern,[{t_bool,true}]}]}
       ], run_checks([Code])).
 
@@ -363,7 +372,7 @@ erlang_string_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard c\"\" = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -374,7 +383,7 @@ float_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard 1.0 = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -385,7 +394,7 @@ int_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard 1 = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -396,7 +405,7 @@ string_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing_wildcard \"\" = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing_wildcard">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing_wildcard">>, 1},
          [{missing_pattern,['_']}]}
       ], run_checks([Code])).
 
@@ -418,7 +427,7 @@ tuple_coverage_test() ->
         "let missing (true, true) = :ok\n"
         "let missing (false, _) = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,[{t_tuple,[{t_bool,true},{t_bool,false}]}]}]}
       ], run_checks([Code])).
 
@@ -429,7 +438,7 @@ list_coverage_test() ->
         "let complete_wildcard _ :: _ = :ok\n\n"
         "let missing [true, false] = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,[{t_list, empty}]},
           {missing_pattern,[{t_list, {t_bool, true}}]},
           {missing_pattern,[{t_list, {t_bool, false}}]}]}
@@ -450,7 +459,7 @@ record_coverage_test() ->
         "let missing {x = false, y = false} = :ok\n"
         "let missing {x = true} = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,
            [{t_record, #{x := {t_bool, false}, y := {t_bool, true}}}]}]}
       ], run_checks([Code])).
@@ -466,7 +475,7 @@ basic_adt_coverage_test() ->
         "let complete_wildcard color = :ok\n\n"
         "let missing Red = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,[{t_adt_cons,"Green",none}]},
           {missing_pattern,[{t_adt_cons,"Blue",none}]}]}
       ], run_checks([Code])).
@@ -482,7 +491,7 @@ parameterized_adt_coverage_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing (Some false) = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,[{t_adt_cons,"None",none}]},
           {missing_pattern,[{t_adt_cons,"Some",{t_bool, true}}]}]}
       ], run_checks([Code])).
@@ -498,7 +507,7 @@ recursive_adt_test() ->
         "let complete_wildcard _ = :ok\n\n"
         "let missing (Tree (Leaf, false, _)) = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern,[{t_adt_cons,"Leaf",none}]},
           {missing_pattern,[{t_adt_cons,"Tree",{t_tuple, ['_', {t_bool, true}, '_']}}]},
           {missing_pattern,[{t_adt_cons,"Tree",{t_tuple, ['_', {t_bool, false}, '_']}}]}
@@ -520,7 +529,7 @@ multi_arg_test() ->
         "let missing false true false = :ok\n"
         "let missing true _ _ = :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 3},
+        {partial_function, {<<"coverage">>, <<"missing">>, 3},
          [{missing_pattern, [{t_bool,false},{t_bool,true},{t_bool,true}]},
           {missing_pattern, [{t_bool,false},{t_bool,false},{t_bool,true}]},
           {missing_pattern, [{t_bool,false},{t_bool,false},{t_bool,false}]}
@@ -537,7 +546,7 @@ imported_type_test() ->
         "let missing Red = :ok\n"
         "let missing Blue = :ok\n\n",
     ?assertMatch([
-        {partial_function, {consumer, <<"missing">>, 1},
+        {partial_function, {<<"consumer">>, <<"missing">>, 1},
          [{missing_pattern, [{t_adt_cons, "Green", none}]}
          ]}], run_checks([Mod1, Mod2])).
 
@@ -559,7 +568,7 @@ receiver_test() ->
         "let missing true = receive with\n"
         "  i, is_integer i -> :ok\n\n",
     ?assertMatch([
-        {partial_function, {coverage, <<"missing">>, 1},
+        {partial_function, {<<"coverage">>, <<"missing">>, 1},
          [{missing_pattern, [{t_bool, false}]}
          ]}], run_checks([Code])).
 
@@ -574,15 +583,15 @@ overloaded_record_test() ->
     Code =
 	"module m \n"
 	"type renameable = Named string | Renamed { name: string, original: string } \n"
-	"type symbol = Symbol { line: int, name: renameable } \n"
-	"let symbol_rename (Symbol {line=l, name=Named n}) new_name = \n"
+	"type label = Symbol { line: int, name: renameable } \n"
+	"let label_rename (Symbol {line=l, name=Named n}) new_name = \n"
 	"  Symbol {line=l, name=Renamed {name=new_name, original=n}} \n"
     %% Using `orig` here should result in a non-exhaustive match warning instead
     %% of a crash as found in issue #260:
-	"let symbol_rename (Symbol {line=l, name=Renamed {orig=o}}) new_name = \n"
+	"let label_rename (Symbol {line=l, name=Renamed {orig=o}}) new_name = \n"
 	"  Symbol {line=l, name=Renamed {name=new_name, original=o}}",
     ?assertEqual(
-       [{partial_function, {m, <<"symbol_rename">>, 2},
+       [{partial_function, {<<"m">>, <<"label_rename">>, 2},
 	 [{missing_pattern,
 	   [{t_adt_cons,"Symbol",
 	     {t_record,
@@ -599,6 +608,7 @@ run_checks(ModeCodeListings) ->
     NamedSources = lists:map(fun(C) -> {?FILE, C} end, ModeCodeListings),
     {ok, ParsedMods} = alpaca_ast_gen:make_modules(NamedSources),
     {ok, TypedMods} = alpaca_typer:type_modules(ParsedMods),
+    io:format("TypedMods:~n~p~n", [TypedMods]),
     Warnings = check_exhaustiveness(TypedMods),
     %% To test the formatter does not crash
     lists:foreach(fun print_warning/1, Warnings),
