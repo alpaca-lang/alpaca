@@ -1,4 +1,4 @@
-module forward_symbol_reference
+module forward_label_reference
 
 export hof_fail, val_fail
 
